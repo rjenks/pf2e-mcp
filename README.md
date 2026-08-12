@@ -23,6 +23,44 @@ It exposes two tool namespaces over a single local SQLite database:
 A companion Claude Skill (`.claude/skills/pf2e-character-builder/`) teaches
 an agent the conversational workflow for using these tools together.
 
+## Quick install
+
+Published on PyPI as [`pf2e-mcp`](https://pypi.org/project/pf2e-mcp/). With
+[uv](https://docs.astral.sh/uv/), nothing needs to be cloned or installed
+up front:
+
+```bash
+# Build the rules database once (~1 minute, a few hundred MB downloaded)
+uvx --from pf2e-mcp python -m pf2e_mcp.ingestion.build
+```
+
+Then point your MCP client at it:
+
+```json
+{
+  "mcpServers": {
+    "pf2e-mcp": {
+      "command": "uvx",
+      "args": ["pf2e-mcp"]
+    }
+  }
+}
+```
+
+Or install it as a normal package (`pip install pf2e-mcp`, `uv tool install
+pf2e-mcp`) and use `pf2e-mcp` as the command instead.
+
+**The database build is not optional** — no game data ships with this
+project (see
+[NOTICE.md](https://github.com/rjenks/pf2e-mcp/blob/main/NOTICE.md)), so the
+server starts but every tool call fails until you run it. It's a one-time
+step; re-run it whenever you want newer rules data. See
+[Where the files go](#where-the-files-go) for where it puts things.
+
+If you'd like the companion character-building Skill as well, or want to
+work on the project itself, clone the repository instead — see
+[Manual setup](#manual-setup-for-developers-or-if-youd-rather-do-it-yourself).
+
 ## Getting started (no coding experience required)
 
 Never used a command line before? You don't need to learn one — the
@@ -109,17 +147,29 @@ control, or are extending the project yourself.
 
 ### Setup
 
+If you only want to *use* the server, you don't need a checkout at all —
+see [Quick install](#quick-install) above. Clone the repository if you want
+the companion Skill, or intend to work on the project:
+
 ```bash
+git clone https://github.com/rjenks/pf2e-mcp
+cd pf2e-mcp
 uv sync
 ```
 
 The server reads from a local SQLite database that isn't checked into the
-repo — no game data ships with this project (see [NOTICE.md](NOTICE.md)), so
+repo — no game data ships with this project (see
+[NOTICE.md](https://github.com/rjenks/pf2e-mcp/blob/main/NOTICE.md)) — so
 you need to build it once before first use:
 
 ```bash
 uv run python -m pf2e_mcp.ingestion.build
 ```
+
+(From a PyPI install rather than a checkout, the equivalent is
+`uvx --from pf2e-mcp python -m pf2e_mcp.ingestion.build`. Either way the
+database lands in the same per-user location, so it doesn't matter which
+one you used to build it.)
 
 This downloads the latest `foundryvtt/pf2e` GitHub release's `json-assets.zip`
 (the official, community-maintained Pathfinder 2e Remastered rules data),
@@ -157,13 +207,31 @@ PF2E_MCP_DB=.data/pf2e.sqlite PF2E_MCP_CACHE=.data/raw \
 
 ### As an MCP server
 
-Register it with an MCP client. For Claude Code, from this directory:
+**From PyPI** (no checkout needed). For Claude Code:
+
+```bash
+claude mcp add pf2e-mcp -- uvx pf2e-mcp
+```
+
+Or in your MCP client's config:
+
+```json
+{
+  "mcpServers": {
+    "pf2e-mcp": {
+      "command": "uvx",
+      "args": ["pf2e-mcp"]
+    }
+  }
+}
+```
+
+**From a checkout**, when you're working on the project and want your local
+edits to be what runs:
 
 ```bash
 claude mcp add pf2e-mcp -- uv run --directory "$(pwd)" pf2e-mcp
 ```
-
-Or add it manually to your MCP client's config:
 
 ```json
 {
@@ -183,7 +251,8 @@ real `.mcp.json` is gitignored, since that path is per-machine.
 To run it directly (e.g. for debugging over stdio):
 
 ```bash
-uv run pf2e-mcp
+uvx pf2e-mcp        # from PyPI
+uv run pf2e-mcp     # from a checkout
 ```
 
 ### The companion Skill
@@ -362,7 +431,7 @@ safe to assume either way.
 
 This project's own code is Apache 2.0 (`LICENSE`); the Pathfinder 2e data
 it ingests is Paizo Inc.'s content, used under separate terms — see
-[NOTICE.md](NOTICE.md) for the full picture. Two things relevant to using
+[NOTICE.md](https://github.com/rjenks/pf2e-mcp/blob/main/NOTICE.md) for the full picture. Two things relevant to using
 the tools:
 
 - Bestiary, Monster Core, NPC Core, and full-adventure packs are excluded
@@ -523,4 +592,4 @@ that licence has to travel with them.
 
 Level 1–20 character creation and leveling across all ancestries,
 backgrounds, and classes, including spellcasting and equipped-armor AC.
-See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for tracked gaps.
+See [KNOWN_ISSUES.md](https://github.com/rjenks/pf2e-mcp/blob/main/KNOWN_ISSUES.md) for tracked gaps.
