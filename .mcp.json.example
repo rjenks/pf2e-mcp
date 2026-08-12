@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pf2e-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/pf2e-mcp",
+        "pf2e-mcp"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "_comment": "Hand-curated Pathfinder Society (Organized Play) legality exceptions layered on top of the rarity heuristic in server/pfs.py (common=legal, uncommon/rare/unique=restricted by default). Starts empty on purpose -- see README 'Maintaining PFS overrides' for why, and how to add entries as real exceptions come up at your table. Keys starting with '_' are ignored as comments, same convention as ingestion/prerequisite_overrides.json.",
+  "_format": "Key = exact entry name, case-insensitive. Value = {\"status\": \"legal\" | \"restricted\" | \"banned\", \"note\": \"free text, ideally citing the Additional Resources revision or scenario/season that changed it\"}. A 'legal' override clears a rarity-based 'restricted' flag (e.g. a common-in-practice uncommon option); 'banned' is stronger than the default 'restricted' (no boon unlocks it). Loaded fresh on every tool call -- edits here take effect immediately, no re-ingestion needed."
+}

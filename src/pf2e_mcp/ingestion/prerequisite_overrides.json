@@ -1,0 +1,37 @@
+{
+  "_comment": "Hand-curated overrides for prerequisite strings the automatic parser cannot structure. Keyed by exact raw text (case-sensitive, must match source verbatim -- a re-ingestion after errata that changes wording will stop matching an entry here, which surfaces it back as unresolved rather than silently applying a stale rule). Value's 'kind' field is dispatched by pf2e_math.check_single_prerequisite's override branch -- any kind with an existing evaluator can be reused (e.g. 'compound_named'), or a bespoke kind like 'spellcasting_trained' can be added there.",
+  "you have a spellcasting class feature": {"kind": "spellcasting_trained"},
+  "You have a spellcasting class feature.": {"kind": "spellcasting_trained"},
+  "spellcasting class feature": {"kind": "spellcasting_trained"},
+  "You have a spellcasting class feature with the divine or primal tradition": {
+    "kind": "spellcasting_trained",
+    "tradition": ["divine", "primal"]
+  },
+  "Counterspell": {
+    "kind": "compound_named",
+    "any_of": [
+      "Counterspell (Spontaneous)", "Counterspell (Prepared)", "Mythic Counterspell",
+      "Clever Counterspell", "Sin Counterspell", "Master's Counterspell"
+    ]
+  },
+  "class granting no more Hit Points per level than 10 + your Constitution modifier": {
+    "kind": "class_hp_threshold",
+    "max_hp": 10
+  },
+  "class granting no more Hit Points per level than 8 + your Constitution modifier": {
+    "kind": "class_hp_threshold",
+    "max_hp": 8
+  },
+  "Spellstrike": {"kind": "class_feature_reference", "class": "Magus"},
+  "Arcane Cascade": {"kind": "class_feature_reference", "class": "Magus"},
+  "starlit span hybrid study": {"kind": "named_reference", "name": "Starlit Span"},
+  "sparkling targe hybrid study": {"kind": "named_reference", "name": "Sparkling Targe"},
+  "laughing shadow hybrid study": {"kind": "named_reference", "name": "Laughing Shadow"},
+  "twisting tree hybrid study": {"kind": "named_reference", "name": "Twisting Tree"},
+  "Twofold Tine Hybrid Study": {"kind": "named_reference", "name": "Twofold Tine"},
+  "inexorable iron hybrid study": {"kind": "named_reference", "name": "Inexorable Iron"},
+  "aloof firmament hybrid study": {"kind": "named_reference", "name": "Aloof Firmament"},
+  "Volatile Spark Hybrid Study": {"kind": "named_reference", "name": "Volatile Spark"},
+  "resurgent maelstrom hybrid study": {"kind": "named_reference", "name": "Resurgent Maelstrom"},
+  "unfurling brocade hybrid study": {"kind": "named_reference", "name": "Unfurling Brocade"}
+}

@@ -1,0 +1,12 @@
+__pycache__/
+characters/
+*.pyc
+.venv/
+*.egg-info/
+.data/
+*.sqlite
+*.sqlite3
+
+# Local MCP client registration -- pins an absolute path to wherever this
+# repo is checked out, so it is per-machine. Copy .mcp.json.example instead.
+.mcp.json

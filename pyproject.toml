@@ -1,0 +1,21 @@
+[project]
+name = "pf2e-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Rob Jenks", email = "robert@housejenks.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.0.0",
+    "pydantic>=2.13.4",
+]
+
+[project.scripts]
+pf2e-mcp = "pf2e_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"
