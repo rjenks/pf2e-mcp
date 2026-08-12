@@ -1,17 +1,42 @@
 [project]
 name = "pf2e-mcp"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP server for Pathfinder 2nd Edition Remastered rules lookup and character building"
 readme = "README.md"
 authors = [
     { name = "Rob Jenks", email = "robert@housejenks.com" }
 ]
 requires-python = ">=3.12"
+license = "Apache-2.0"
+# NOTICE.md and the OFL cover content this package redistributes, not just
+# the repo: the wheel ships sheet_assets.py, whose vendored Noto subsets are
+# OFL-licensed, and OFL condition 2 wants the licence to travel with every
+# copy of the font software.
+license-files = ["LICENSE", "NOTICE.md", "LICENSES/*"]
+keywords = ["mcp", "pathfinder", "pf2e", "ttrpg", "character-builder"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    # No "License ::" classifier on purpose: metadata 2.4 carries the licence
+    # as License-Expression (PEP 639), and PyPI rejects a distribution that
+    # declares both.
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment :: Role-Playing",
+]
 dependencies = [
     "httpx>=0.28.1",
     "mcp[cli]>=2.0.0",
+    "platformdirs>=4.0.0",
     "pydantic>=2.13.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rjenks/pf2e-mcp"
+Repository = "https://github.com/rjenks/pf2e-mcp"
+Issues = "https://github.com/rjenks/pf2e-mcp/issues"
 
 [project.scripts]
 pf2e-mcp = "pf2e_mcp:main"

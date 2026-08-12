@@ -5,15 +5,11 @@ artifact by the server -- tools only ever read from it."""
 
 from __future__ import annotations
 
-import os
 import sqlite3
-from pathlib import Path
 
-_DEFAULT_DB_PATH = Path(__file__).parent.parent.parent.parent / ".data" / "pf2e.sqlite"
+from ..paths import db_path
 
-
-def db_path() -> Path:
-    return Path(os.environ.get("PF2E_MCP_DB", _DEFAULT_DB_PATH))
+__all__ = ["db_path", "get_connection"]
 
 
 def get_connection() -> sqlite3.Connection:

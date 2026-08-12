@@ -114,8 +114,8 @@ uv sync
 ```
 
 The server reads from a local SQLite database that isn't checked into the
-repo (`.data/pf2e.sqlite`, gitignored) — you need to build it once before
-first use:
+repo — no game data ships with this project (see [NOTICE.md](NOTICE.md)), so
+you need to build it once before first use:
 
 ```bash
 uv run python -m pf2e_mcp.ingestion.build
@@ -123,9 +123,35 @@ uv run python -m pf2e_mcp.ingestion.build
 
 This downloads the latest `foundryvtt/pf2e` GitHub release's `json-assets.zip`
 (the official, community-maintained Pathfinder 2e Remastered rules data),
-caches the extracted JSON under `.data/raw/<release-tag>/`, and builds
-`.data/pf2e.sqlite`. Takes under a minute; only re-downloads if a newer
-release than what's cached is available.
+extracts it, and builds the database. Takes under a minute; only re-downloads
+if a newer release than what's cached is available.
+
+#### Where the files go
+
+The two artifacts land in the standard per-user locations for your platform,
+so the server works the same whether it's run from a checkout, installed with
+`pip`, or launched via `uvx`:
+
+| | Linux | macOS |
+| --- | --- | --- |
+| Database (~100 MB) | `~/.local/share/pf2e-mcp/` | `~/Library/Application Support/pf2e-mcp/` |
+| Extracted release cache | `~/.cache/pf2e-mcp/raw/` | `~/Library/Caches/pf2e-mcp/raw/` |
+
+They're split deliberately. The database is expensive to recreate, so it sits
+in the data directory where nothing reclaims it. The extracted release is pure
+cache — a few hundred MB, re-downloadable at any time — so it sits in the
+cache directory, and deleting it costs you one re-download and nothing else.
+A successful build prunes superseded release tags automatically, keeping only
+the one it just ingested.
+
+Override either with `PF2E_MCP_DB` (full path to the `.sqlite` file) and
+`PF2E_MCP_CACHE` (directory) — useful for a throwaway build, a shared
+read-only database, or to keep everything inside a checkout while developing:
+
+```bash
+PF2E_MCP_DB=.data/pf2e.sqlite PF2E_MCP_CACHE=.data/raw \
+  uv run python -m pf2e_mcp.ingestion.build
+```
 
 ## Using it
 

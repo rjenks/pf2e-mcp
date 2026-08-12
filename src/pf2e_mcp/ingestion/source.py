@@ -8,6 +8,7 @@ only re-downloads if it differs from what's cached.
 
 from __future__ import annotations
 
+import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,6 +60,36 @@ def download_and_extract(release: Release, cache_dir: Path) -> Path:
     zip_path.unlink()
 
     return dest
+
+
+def prune_cache(cache_dir: Path, keep_tag: str) -> list[str]:
+    """Delete every cached release except `keep_tag`. Returns what was removed.
+
+    `download_and_extract` keeps each release under its own `<tag>/`
+    directory and never removes the previous one, so re-running ingestion
+    against Paizo's near-weekly errata cadence -- which this module is
+    explicitly designed for -- accumulates a full extracted release every time.
+    At a few hundred MB apiece that grows without bound, and only the tag
+    just ingested is of any use: the database is rebuilt from scratch on
+    every run, so an older extraction can never be consulted again.
+
+    Called after a successful build, so a failed run leaves the cache alone
+    and the next attempt can still reuse whatever was already downloaded.
+    Failures here are swallowed: not reclaiming disk is not a reason to fail
+    an otherwise-good ingestion.
+    """
+    removed: list[str] = []
+    if not cache_dir.is_dir():
+        return removed
+    for child in cache_dir.iterdir():
+        if not child.is_dir() or child.name == keep_tag:
+            continue
+        try:
+            shutil.rmtree(child)
+            removed.append(child.name)
+        except OSError:
+            continue
+    return removed
 
 
 def fetch_source_file(tag: str, repo_path: str, cache_dir: Path) -> str | None:

@@ -18,8 +18,15 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+from ..paths import cache_dir as default_cache_dir
+from ..paths import db_path as default_db_path
 from .prerequisites import PrerequisiteParser, build_name_index
-from .source import download_and_extract, fetch_source_file, get_latest_release
+from .source import (
+    download_and_extract,
+    fetch_source_file,
+    get_latest_release,
+    prune_cache,
+)
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -900,9 +907,14 @@ def build_database(output_path: Path, cache_dir: Path) -> None:
     tmp_path.replace(output_path)
     print(f"Database ready at {output_path} (data_version={release.tag})")
 
+    pruned = prune_cache(cache_dir, release.tag)
+    if pruned:
+        print(f"Pruned {len(pruned)} superseded release(s) from {cache_dir}: {', '.join(sorted(pruned))}")
+
 
 if __name__ == "__main__":
-    default_output = Path(__file__).parent.parent.parent.parent / ".data" / "pf2e.sqlite"
-    default_output.parent.mkdir(parents=True, exist_ok=True)
-    default_cache = default_output.parent / "raw"
-    build_database(default_output, default_cache)
+    output = default_db_path()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cache = default_cache_dir()
+    cache.mkdir(parents=True, exist_ok=True)
+    build_database(output, cache)
