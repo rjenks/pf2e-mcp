@@ -1,0 +1,102 @@
+name: Publish to PyPI
+
+# Fires only on a semver tag. The two patterns are release (v1.2.3) and
+# prerelease (v1.2.3-rc1, v1.2.3-beta.2); GitHub's filter glob has no
+# alternation, so they are listed separately rather than as one regex.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+# A version can never be re-uploaded to PyPI, so two tags racing to publish
+# the same version is not something to resolve by cancelling the newer run.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # The tag is metadata; the version PyPI records comes from
+      # pyproject.toml. Nothing reconciles them, so tagging v0.2.0 while
+      # pyproject still says 0.1.0 would silently publish 0.1.0 -- and since
+      # PyPI refuses re-uploads, that mistake burns the version number
+      # permanently. Fail here instead.
+      - name: Verify tag matches project version
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          project_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          echo "tag:        $tag_version"
+          echo "pyproject:  $project_version"
+          if [ "$tag_version" != "$project_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME implies version $tag_version but pyproject.toml declares $project_version. Bump the version, commit, then re-tag."
+            exit 1
+          fi
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check metadata renders on PyPI
+        run: uvx twine check --strict dist/*
+
+      # The licence files are a compliance requirement, not a nicety: the
+      # wheel bundles sheet_assets.py, whose vendored Noto subsets are
+      # OFL-licensed, and OFL condition 2 wants the licence to travel with
+      # every copy of the font software. A packaging change that silently
+      # dropped them would be a licence violation shipped to every user.
+      - name: Verify licence files are in the wheel
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, sys, zipfile
+
+          required = {"LICENSE", "NOTICE.md", "LICENSES/OFL-1.1.txt"}
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          missing = [
+              r for r in sorted(required)
+              if not any(n.endswith(f"licenses/{r}") for n in names)
+          ]
+          if missing:
+              print(f"::error::{wheel} is missing licence files: {', '.join(missing)}")
+              sys.exit(1)
+          print(f"All licence files present in {wheel}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    # Deliberately a separate job: it never checks out the repository and
+    # holds no permissions beyond the OIDC token, so the credential that can
+    # publish is never exposed to build steps or third-party dependencies.
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pf2e-mcp
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Trusted Publishing: PyPI verifies a short-lived OIDC token minted for
+      # this repo, workflow and environment. No API token exists to leak.
+      - uses: pypa/gh-action-pypi-publish@release/v1

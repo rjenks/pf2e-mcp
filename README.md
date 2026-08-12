@@ -457,6 +457,7 @@ edits take effect immediately.
 
 ```
 src/pf2e_mcp/
+  paths.py            # where the DB and download cache live
   ingestion/          # pulls foundryvtt/pf2e data, builds the SQLite DB
     source.py          # GitHub release fetching
     prerequisites.py    # feat prerequisite parsing
@@ -475,7 +476,48 @@ src/pf2e_mcp/
 scripts/
   spike_prerequisites.py  # standalone prerequisite-parseability report
 .claude/skills/pf2e-character-builder/SKILL.md
+.github/workflows/publish.yml  # tag-triggered PyPI release
 ```
+
+## Releasing
+
+`.github/workflows/publish.yml` publishes to PyPI when a semver tag is
+pushed. It uses [Trusted
+Publishing](https://docs.pypi.org/trusted-publishers/), so no PyPI API token
+exists anywhere — PyPI verifies a short-lived OIDC token minted by GitHub for
+this specific repository, workflow and environment.
+
+**One-time setup on PyPI**, before the first release. Since the project isn't
+on PyPI yet, add a *pending* publisher at
+<https://pypi.org/manage/account/publishing/>:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `pf2e-mcp` |
+| Owner | `rjenks` |
+| Repository name | `pf2e-mcp` |
+| Workflow name | `publish.yml` |
+| Environment name | `pypi` |
+
+Then create a matching `pypi` environment under the repository's Settings →
+Environments. Adding yourself as a required reviewer there makes every
+release pause for a manual approval, which is worth doing given that a
+version number, once uploaded, can never be reused.
+
+To cut a release, bump the version, commit, then tag:
+
+```bash
+# edit pyproject.toml: version = "0.2.0"
+git commit -am "Release 0.2.0"
+git tag v0.2.0
+git push && git push --tags
+```
+
+The workflow refuses to publish if the tag and `pyproject.toml` disagree, so
+a forgotten version bump fails loudly rather than burning the wrong version
+number. It also verifies `LICENSE`, `NOTICE.md` and `LICENSES/OFL-1.1.txt`
+are present in the built wheel — the fonts it bundles are OFL-licensed, and
+that licence has to travel with them.
 
 ## Current status
 
