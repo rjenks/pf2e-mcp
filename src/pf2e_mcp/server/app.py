@@ -25,6 +25,7 @@ mcp.add_tool(rules_tools.rules_data_version, name="rules_data_version")
 mcp.add_tool(rules_tools.list_variant_rules, name="rules_list_variant_rules")
 mcp.add_tool(rules_tools.list_subclass_option_groups, name="rules_list_subclass_option_groups")
 mcp.add_tool(rules_tools.list_subclass_options, name="rules_list_subclass_options")
+mcp.add_tool(rules_tools.rules_search_aon, name="rules_search_aon")
 
 mcp.add_tool(build_tools.list_ancestries, name="build_list_ancestries")
 mcp.add_tool(build_tools.list_backgrounds, name="build_list_backgrounds")

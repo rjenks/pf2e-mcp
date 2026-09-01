@@ -156,6 +156,41 @@ CREATE TABLE class_spell_slots (
     PRIMARY KEY (class_slug, level)
 );
 
+-- Which skill each action belongs to, and whether using it requires being
+-- trained, is not recoverable from the action items themselves: an item of
+-- type='action' carries only actionType/actions/category/traits/frequency and
+-- its description. Nothing names the governing skill -- Treat Wounds mentions
+-- Medicine only in prose and never says "trained" at all -- and not one action
+-- in the whole database has a row in `prerequisites`. The single place
+-- foundryvtt/pf2e records this is the "GM Screen" journal's "Skill Actions"
+-- page (Player Core pg. 227): a table of Skill | Key Attribute | Untrained
+-- Actions | Trained Actions whose cells are @UUID links to the action items.
+-- This table is a parse of that page -- see _insert_skill_actions.
+--
+-- Scope is core skill actions only (50 of them). An action granted by a feat
+-- (Battle Medicine, Bon Mot) is absent, and belongs elsewhere anyway: those are
+-- type='feat' and already carry a structured `prerequisites` row of
+-- kind='skill_rank'.
+CREATE TABLE skill_actions (
+    action_id TEXT NOT NULL REFERENCES entries(id),
+    skill TEXT NOT NULL,           -- lowercase core skill name ('acrobatics', ...),
+                                    -- plus the generic 'lore' row, which stands for
+                                    -- whichever Lore subskills a character actually
+                                    -- has rather than for any one named Lore.
+    min_proficiency TEXT NOT NULL, -- 'untrained' | 'trained'. Only those two values
+                                    -- exist because the source is a two-column table,
+                                    -- not a rank ladder -- no core skill action is
+                                    -- gated at expert or higher, so this isn't a
+                                    -- lossy encoding of one. Deliberately a word and
+                                    -- not an integer: two different numeric rank
+                                    -- conventions are already in play in this project
+                                    -- (Foundry's 0-4 in class_progression, 0/2/4/6/8
+                                    -- in a character's `proficiencies`), and a bare 1
+                                    -- here would be ambiguous between them.
+    PRIMARY KEY (action_id, skill)
+);
+CREATE INDEX idx_skill_actions_skill ON skill_actions(skill);
+
 CREATE TABLE ancestry_boosts (
     ancestry_slug TEXT PRIMARY KEY,
     hp INTEGER,

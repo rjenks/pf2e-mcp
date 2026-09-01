@@ -6,6 +6,81 @@ This project can also be used to build characters which should be stored in path
 
 Please rely on the guides referenced from Zenith Games Guide to the Guides and don't always trust RPGBOT. https://zenithgames.blogspot.com/2019/09/pathfinder-2nd-edition-guide-to-guides.html
 
+# Track bugs and gaps as GitHub issues, not a markdown file
+
+Known bugs, ingestion gaps, and deferred work belong in this repo's
+[GitHub issues](https://github.com/rjenks/pf2e-mcp/issues), not in a
+`KNOWN_ISSUES.md`-style file. A markdown file like that one drifts out of
+sync with reality, can't be assigned/labeled/closed independently, and
+isn't searchable the way an issue tracker is — that file existed once and
+was retired for exactly this reason (its ~30 entries became GitHub issues
+instead). File a new issue for anything discovered during a task rather
+than appending to a doc; label it `bug` for something producing wrong
+output, `enhancement` for missing coverage/deferred scope, or
+`documentation` for a caveat worth recording so it doesn't get
+rediscovered as a "bug" later.
+
+**Every commit ties back to at least one GitHub issue, so the *why* stays
+attached to the code and not just the *what*.** A diff already says what
+changed; the issue is what says why it was worth changing — what was
+broken, what gap it closed, who'd hit it. Before committing:
+
+- If an issue already covers the change (a bug being fixed, a gap being
+  closed), reference it in the commit message body with `Refs #N`, or
+  `Fixes #N`/`Closes #N` when the commit fully resolves it — that syntax
+  auto-closes the issue on merge to the default branch, so use `Refs #N`
+  instead if the commit only partially addresses it or the issue should
+  stay open for follow-up.
+- If no issue exists yet — a new feature, a refactor, a fix for something
+  noticed mid-task — file one first (see above) describing the *why*, then
+  reference it the same way. This is true even for small changes; a
+  one-line issue body beats no record of the motivation at all.
+- Routine maintenance with no real "why" beyond the obvious (a dependency
+  bump, a data re-ingestion re-run, a typo fix) doesn't need an issue —
+  use judgment, but default to filing one if there's any real decision or
+  motivation behind the change worth preserving.
+
+**Never reference a specific character by name in an issue, commit message
+touching `characters/`, or anywhere else meant for other users** — the
+files in `characters/` are the user's personal player characters,
+including ones from live campaigns. Describe the underlying game mechanic
+generically instead: by class, archetype, ancestry, or feature name (all
+public game terms, e.g. "a Magus with Dexterity-keyed AC but
+Intelligence-based spellcasting," "a Wrestler-archetype character with a
+free skill-proficiency grant") rather than by which of the user's
+characters exhibited it. This keeps the issue useful to any user hitting
+the same gap, not just legible to this one.
+
+# Talk in attribute modifiers, not attribute scores
+
+**Always say `+4`, never `18`.** The Remaster works in modifiers throughout:
+Player Core has each attribute modifier start at +0, a boost "adding 1 to an
+attribute modifier" and a flaw subtracting 1. The 10-to-20 score is legacy
+notation that survives only because Pathbuilder's export format stores it, and
+every rule that consumes an attribute — DCs, saves, AC, spell attack, HP per
+level — reads the modifier.
+
+This applies to explanations, tables, character notes in `characters/*.md`,
+commit messages and anything else said to a person. Where scores are
+unavoidable, they're the secondary form: the `abilities` dict of a Pathbuilder
+JSON is scores because that is the file format (don't "fix" it), and the
+character sheet prints the score small beside the modifier because a player
+occasionally needs it for an item requirement.
+
+Two habits follow from working in modifiers, both of which prevent real
+mistakes:
+
+- **Boost arithmetic stays visible.** A boost is +1 to the modifier, except it
+  is +2 to a score below 18 — which is the same statement said twice, and the
+  modifier form has no special case to forget. Say "Dex +4 becomes +5",
+  not "Dex 18 becomes 19, which is still +4".
+- **Half-steps become obvious.** In modifier terms there is nothing to notice:
+  a boost either raises the modifier or it doesn't, where "19" hides it.
+  A half-step is only a *mistake* at 20th, though -- earlier it is half a step
+  that completes at the next milestone, and arrives a milestone sooner than an
+  even score would. When a 20th-level array does have one, redirect the
+  20th-level boost, since that is the one with nothing after it to finish it.
+
 # Paizo Community Use Package assets
 
 Artwork for character sheets comes from Paizo's Community Use Package. The

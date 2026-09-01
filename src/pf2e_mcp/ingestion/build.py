@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..paths import cache_dir as default_cache_dir
 from ..paths import db_path as default_db_path
-from .prerequisites import PrerequisiteParser, build_name_index
+from .prerequisites import _KNOWN_SKILLS, PrerequisiteParser, build_name_index
 from .source import (
     download_and_extract,
     fetch_source_file,
@@ -243,8 +243,8 @@ def _resolve_uuid_to_id(uuid: str) -> str | None:
 # these around or the dictionary's contents change (new weapon group added
 # in a future book, etc.). Deliberately narrow: only the standalone
 # top-level `const <name> = {...}` dictionaries relevant to character
-# building are covered, not every CONFIG.PF2E key -- see
-# KNOWN_ISSUES.md for what's out of scope and why (`baseWeaponTypes`
+# building are covered, not every CONFIG.PF2E key -- see this project's
+# GitHub issues for what's out of scope and why (`baseWeaponTypes`
 # needs a second, localization-JSON source file; `creatureTraits` is
 # composed from several spread sources and mostly monster-flavor, not
 # character-building-relevant; `saves` is nested inside a much larger
@@ -793,11 +793,181 @@ def _insert_class_spell_progression(conn: sqlite3.Connection, data_dir: Path) ->
         if not row:
             continue
         slug = row[0]
+        if slug in _CUMULATIVE_SLOT_CLASSES:
+            progression = _remaster_slot_table()
+            print(f"  {slug}: upstream 'Spells per Day' table is pre-Remaster; "
+                  f"using the published Remaster table instead")
         for level, slots in progression.items():
             conn.execute(
                 "INSERT OR REPLACE INTO class_spell_slots (class_slug, level, slots) VALUES (?, ?, ?)",
                 (slug, level, json.dumps(slots)),
             )
+    _check_slot_monotonicity(conn)
+
+
+# The `foundryvtt/pf2e` "Classes" journal still carries the pre-Remaster
+# Secrets of Magic tables for these two, in which a rank's slots *drop away*
+# as you level (the magus's level-5 row reads "- | 2 | 2"). The remastered
+# versions -- Impossible Magic pg. 9 (Magus) and pg. 63 (Summoner) -- are
+# cumulative. Both classes share one table, so one reconstruction serves both.
+_CUMULATIVE_SLOT_CLASSES = {"magus", "summoner"}
+
+
+def _remaster_slot_table() -> dict[int, dict[str, int]]:
+    """The Magus/Summoner "Spells per Day" table as published in the Remaster:
+    5 cantrips at every level, a new spell rank every odd level to a maximum
+    of 9th, 2 slots of every rank you have -- except a newly gained rank,
+    which starts at 1 and reaches 2 the following level.
+
+    Reconstructed rather than transcribed because the two are identical and
+    the rule generating them is short; the checkpoints in `_SLOT_CHECKPOINTS`
+    are taken verbatim from the published table and assert that it matches.
+    """
+    table: dict[int, dict[str, int]] = {}
+    for level in range(1, 21):
+        highest = min((level + 1) // 2, 9)
+        slots = {"cantrips": 5}
+        for rank in range(1, highest + 1):
+            # A rank is gained at level (2 * rank - 1) and holds 1 slot for
+            # that level only.
+            slots[str(rank)] = 1 if level == 2 * rank - 1 else 2
+        table[level] = slots
+    for level, expected in _SLOT_CHECKPOINTS.items():
+        got = {k: v for k, v in table[level].items() if k != "cantrips"}
+        if got != expected:
+            raise AssertionError(
+                f"Remaster slot table wrong at level {level}: {got} != {expected}")
+    return table
+
+
+# Rows copied off the published table, used to prove the reconstruction above.
+_SLOT_CHECKPOINTS = {
+    1: {"1": 1},
+    5: {"1": 2, "2": 2, "3": 1},
+    6: {"1": 2, "2": 2, "3": 2},
+    17: {str(r): 2 for r in range(1, 9)} | {"9": 1},
+    20: {str(r): 2 for r in range(1, 10)},
+}
+
+
+def _check_slot_monotonicity(conn: sqlite3.Connection) -> None:
+    """No PF2e class loses spell slots as it levels, so a rank whose count
+    goes *down* between consecutive levels means the parsed table is wrong or
+    stale -- which is exactly how the pre-Remaster Magus/Summoner tables got
+    ingested and then rationalised in a docstring as those classes having a
+    "non-monotonic progression". Nothing about the anomaly needed an external
+    source to spot; it contradicts itself. Loud, not fatal: a future class
+    could in principle break the assumption, and an ingestion that refuses to
+    finish would be worse than one that says what it doubts."""
+    rows: dict[str, dict[int, dict]] = {}
+    for slug, level, slots in conn.execute(
+            "SELECT class_slug, level, slots FROM class_spell_slots"):
+        rows.setdefault(slug, {})[level] = json.loads(slots)
+    for slug, levels in sorted(rows.items()):
+        for level in sorted(levels)[1:]:
+            previous, current = levels.get(level - 1, {}), levels[level]
+            dropped = [f"rank {k} {v}->{current.get(k, 0)}"
+                       for k, v in previous.items()
+                       if k != "cantrips" and current.get(k, 0) < v]
+            if dropped:
+                print(f"  WARNING: {slug}'s spell slots decrease at level "
+                      f"{level} ({'; '.join(dropped)}) -- no class loses "
+                      f"slots on level-up, so this table is probably stale")
+
+
+_UUID_LINK_RE = re.compile(r"@UUID\[([^\]]+)\]\{([^}]*)\}")
+
+# The 16 core skills, plus the table's generic "Lore" row -- which is a row for
+# the Lore skill in general, not for any one of the unbounded set of named Lore
+# subskills a character can be trained in.
+_SKILL_ACTION_SKILLS = _KNOWN_SKILLS | {"lore"}
+
+# Corrections applied to the "Skill Actions" table as parsed, keyed by
+# (action name, skill). Both entries below are the same upstream copy-paste:
+# Borrow an Arcane Spell is repeated verbatim into the Occultism and Religion
+# rows, but the action is arcane-only by its own text ("If you're an arcane
+# spellcaster who prepares from a spellbook..."), and Player Core lists it
+# under Arcana alone. Kept as a named exclusion rather than fixed in the
+# journal-parsing code so that it stays visible and reversible: if a future
+# foundryvtt/pf2e release fixes the table, dropping this set is the whole
+# change. Nothing else in the table needed correcting -- notably Crafting's
+# Identify Alchemy, which looks pre-Remaster but is genuinely still a Player
+# Core Crafting action.
+_SKILL_ACTION_EXCLUSIONS = {
+    ("Borrow an Arcane Spell", "occultism"),
+    ("Borrow an Arcane Spell", "religion"),
+}
+
+
+def _insert_skill_actions(conn: sqlite3.Connection, data_dir: Path) -> None:
+    """Reads the "GM Screen" journal's "Skill Actions" page into
+    `skill_actions` (see that table's schema comment for why this page is the
+    only source for it). The page is one table, one row per skill, whose
+    "Untrained Actions" and "Trained Actions" cells hold @UUID links to items
+    in the `actions` pack.
+
+    Only the skill and the trained/untrained gate are taken from the page. Its
+    superscript markers for exploration/downtime are deliberately ignored: the
+    same fact is already on each action item as an `exploration` or `downtime`
+    trait, which is structured data rather than a footnote letter, and reading
+    it from there avoids having to tell a footnote 'D' apart from an action
+    glyph in the same cell.
+
+    Must run after `_insert_entries` -- every referenced action is resolved
+    against `entries` and skipped if absent, so a link into a pack this project
+    excludes on licensing grounds can't produce a dangling row."""
+    journals_path = data_dir / "packs" / "journals.json"
+    try:
+        journals = json.loads(journals_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+    gm_screen = next((j for j in journals if j.get("name") == "GM Screen"), None)
+    if not gm_screen:
+        return
+    page = next((p for p in gm_screen.get("pages", [])
+                 if p.get("name") == "Skill Actions"), None)
+    if not page:
+        return
+
+    parser = _TableExtractor()
+    parser.feed(page.get("text", {}).get("content", ""))
+    table = next((t for t in parser.tables
+                  if "Trained Actions" in t["header"]), None)
+    if table is None:
+        return
+    columns = {name: i for i, name in enumerate(table["header"])}
+    skill_col = columns.get("Skill")
+    gated = [(columns.get("Untrained Actions"), "untrained"),
+             (columns.get("Trained Actions"), "trained")]
+
+    inserted = 0
+    for row in table["rows"]:
+        if skill_col is None or len(row) <= skill_col:
+            continue
+        skill = row[skill_col].strip().lower()
+        # The legend under the table is a single wide colspan cell, so it
+        # arrives as a short row whose "skill" is the footnote prose.
+        if not skill or skill not in _SKILL_ACTION_SKILLS:
+            continue
+        for col, proficiency in gated:
+            if col is None or len(row) <= col:
+                continue
+            for uuid, name in _UUID_LINK_RE.findall(row[col]):
+                action_id = _resolve_uuid_to_id(uuid)
+                if not action_id or (name.strip(), skill) in _SKILL_ACTION_EXCLUSIONS:
+                    continue
+                known = conn.execute(
+                    "SELECT 1 FROM entries WHERE id = ? AND type = 'action'",
+                    (action_id,)).fetchone()
+                if not known:
+                    continue
+                conn.execute(
+                    "INSERT OR REPLACE INTO skill_actions "
+                    "(action_id, skill, min_proficiency) VALUES (?, ?, ?)",
+                    (action_id, skill, proficiency),
+                )
+                inserted += 1
+    print(f"Linked {inserted} skill/action pairs from the Skill Actions table")
 
 
 def _insert_ancestry_boosts(conn: sqlite3.Connection, packs: dict[str, list[dict]]) -> None:
@@ -890,6 +1060,7 @@ def build_database(output_path: Path, cache_dir: Path) -> None:
     _insert_prerequisites(conn, packs)
     _insert_class_progression(conn, packs)
     _insert_class_spell_progression(conn, data_dir)
+    _insert_skill_actions(conn, data_dir)
     _insert_ancestry_boosts(conn, packs)
     _insert_background_boosts(conn, packs)
 

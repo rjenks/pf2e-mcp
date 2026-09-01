@@ -53,8 +53,8 @@ def legacy_filter_sql(include_legacy: bool, column: str = "is_remaster") -> str:
     unless `include_legacy` is True. `is_remaster` does NOT mean "retired"
     or "invalid" when false -- just "not (yet) reprinted under ORC": 54% of
     backgrounds and 38% of ancestries are legacy-flagged and still fully
-    playable (see KNOWN_ISSUES.md's "Rules data" section for the full story
-    on what this flag does and doesn't mean). NULL (no publication data at
+    playable (see github.com/rjenks/pf2e-mcp issue #5 for the full story on
+    what this flag does and doesn't mean). NULL (no publication data at
     all, e.g. the `variant-rules` pack) always passes through regardless of
     `include_legacy` -- degrade to "show it" rather than guess, same
     principle as `content_regime` above."""

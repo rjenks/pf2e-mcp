@@ -140,7 +140,7 @@ export to continue from.
      limits) -- a real Magus guide would likely flag `Magus's Analysis` as
      a strong, commonly-recommended pick, which is exactly the feat a
      `build_list_available_feats` bug once silently hid from a
-     from-scratch, guide-free build (see `KNOWN_ISSUES.md`).
+     from-scratch, guide-free build (see this project's GitHub issues).
 
    Once a guide points at a specific feat/feature/combo, **verify it still
    exists and is still legal against this project's own data**
@@ -153,9 +153,37 @@ export to continue from.
    than discovering the anchor after the fact.
 
 3. **One major decision at a time.** Walk ancestry -> heritage -> background ->
-   class -> ability boosts -> skills -> feats, in that order (it's the order
+   class -> attribute boosts -> skills -> feats, in that order (it's the order
    the boosts/prerequisites actually depend on). Don't ask the user to pick
    five things in one message.
+
+   **Say attribute modifiers, never scores: `+4`, not `18`.** The Remaster
+   works in modifiers -- Player Core starts each modifier at +0, a boost adds
+   1 to it and a flaw subtracts 1 -- and every rule that consumes an attribute
+   reads the modifier. The 10-to-20 score is legacy notation that survives
+   because Pathbuilder's export stores it; keep it in the `abilities` dict of
+   the JSON (that's the file format, don't "fix" it) and out of everything you
+   say to the user, including the companion `.md`. See AGENTS.md.
+
+   Two things this makes harder to get wrong. **Boost arithmetic:** in
+   modifiers a boost is simply +1, with the sole exception that an attribute
+   at +4 or higher needs two boosts to advance -- no 18-threshold special case
+   to forget mid-table.
+
+   **Half-steps only matter at 20th.** A boost that doesn't move the modifier
+   looks wasted, but below 20th it is half a step that completes at the next
+   milestone -- and it gets there one milestone *sooner* than an even score
+   would, so it is usually good. Only at 20th is there nothing left to
+   complete it. Don't tell a mid-career character their odd score is a
+   mistake; `build_validate_build` deliberately reports this at 20th alone.
+
+   When a 20th-level array does have a half-step, **redirect the 20th-level
+   boost** -- it is the one with no later milestone to complete it, and moving
+   an earlier boost instead delays a primary attribute for five levels for no
+   gain at the finish. The exception is worth checking: if the redirect target
+   is something the character actually uses (Constitution for hit points, not
+   Strength on an archer), taking it at 15th buys five levels of benefit and
+   may be worth the delay.
 
 4. **Pull the class's initial proficiency baseline before hand-building
    anything.** As soon as class is chosen, call `build_list_classes` (filter
@@ -250,7 +278,7 @@ export to continue from.
 
 11. **Leveling up**: call `build_get_level_up_choices` for the target level
     -- passing `variant_rules` per step 0's answer -- to see what actually
-    unlocks (feat categories/counts, skill increases, ability boosts,
+    unlocks (feat categories/counts, skill increases, attribute boosts,
     auto-granted class features, plus any `variant_rule_notes`) before asking
     the user what they want. Don't assume every level looks the same, and
     don't assume a plain "1 ancestry feat at 1/5/9/13/17" schedule if Ancestry
@@ -280,13 +308,13 @@ export to continue from.
       class/general/skill feats, hybrid-study/subclass-option picks, skill
       increases) get labeled as choices, with which specific option was
       picked and a short reason why.
-    - **Ability boosts get their own explicit, ordered list** at levels
+    - **Attribute boosts get their own explicit, ordered list** at levels
       that grant them (character creation, then every 5th level) --
       ancestry, then background, then class, then each free boost
       individually, in the order Pathbuilder applies them (this matters:
-      an ability crossing the 18 threshold mid-list changes whether a
-      later boost on it adds +2 or +1) -- followed by the running ability
-      array at that milestone, not just the final scores at the very end.
+      an attribute crossing +4 mid-list changes whether a later boost on it
+      is worth a full step) -- followed by the running attribute array at
+      that milestone, not just the final numbers at the very end.
     - **One level = one section** (a markdown heading per level, or a
       clearly bounded block), even for levels with little happening --
       consistency beats brevity here, since the user is scanning for "what

@@ -280,7 +280,7 @@ other project's `.claude/skills/`, or your user-level `~/.claude/skills/`.
 | `build_list_available_feats`                       | Feats a character currently qualifies for (the main token-saving discovery tool)                                                                      |
 | `build_list_ability_boost_options`                 | Legal ability boosts for a given source (ancestry/background/class/free)                                                                              |
 | `build_list_skill_increase_options`                | Skills legally eligible for a rank increase right now                                                                                                 |
-| `build_list_available_spells`                      | Spells of a tradition at or below the character's current max rank                                                                                    |
+| `build_list_available_spells`                      | Spells of a tradition at or below the character's current max rank, each with its heightening steps; `slot_rank` filters to what's worth preparing in one slot |
 | `build_check_prerequisite`                         | Check one specific feat's eligibility                                                                                                                 |
 | `build_validate_build`                             | Structured errors/warnings for the current build                                                                                                      |
 | `build_calculate_derived_stats`                    | AC, saves, Perception, skills, HP, class DC, spell DC/attack                                                                                          |
@@ -303,26 +303,167 @@ fonts are inlined as base64 WOFF2, every ornament is generated inline SVG,
 and nothing is fetched at view time — so the file can be emailed to a player
 as a single attachment and printed unchanged.
 
-Page 1 is a one-sheet statistics summary (attributes, skills with proficiency
-pips, AC and shield, saves, HP with dying/wounded trackers, Perception,
-strikes, spell DC, a condition tracker and space for session notes). It is
-held to a single physical page for every character, verified against every
-build in `characters/`, from level 2 through a level-9 dual-class. Subsequent
-sections run to whatever length the content needs, in page-width cards that
-reflow across page boundaries rather than being cropped: one page per
-spellcasting entry with each spell's **complete** rules text and traits, then
-features (a deity block where there is one, then ancestry, heritage,
-background, level-appropriate auto-granted class features, detected subclass,
-and every feat), equipment with item rules text, a page showing how each
-number was derived, and a licence attribution page listing only the
-sourcebooks actually quoted.
+Sections are ordered **quick reference first, rules text behind it**. The pages
+a player handles mid-session come first and are tables; everything that exists
+to be looked something up in follows, in page-width cards that reflow across
+page boundaries rather than being cropped. In order:
 
-The attribution section comes last and reproduces the full text of both the
-Open Game License 1.0a (when OGL-licensed rules are quoted) and the SIL Open
-Font License 1.1 (always, since the sheet embeds the Noto fonts). Both are
-required to travel with what the sheet carries, so they can't be dropped from
-the file — but they are the final pages, so you can simply set a page range in
-the Print dialog and leave them off the paper copy.
+| Section | What it is |
+| --- | --- |
+| `core` | One-page statistics summary: attributes, skills with proficiency pips, AC and shield, saves, HP with dying/wounded trackers, Perception, strikes, spell DC and a condition tracker. Held to a single physical page for every character in `characters/`, up to a level-14 animist |
+| `advancement` | Every feat and class feature as a level-by-level table (see below) |
+| `spellcasting` | A casting-statistics band (see below), then the slot table alone — every source's spells, what's prepared, a bubble per slot to strike off as it's spent |
+| `inventory` | The carried-gear table alone — quantity, Bulk, price, notes |
+| `skill-actions` | Skill actions the character's training unlocks, in full (see below) |
+| `spells` | Every spell's **complete** rules text and traits, alphabetical across all casting sources |
+| `features` | A deity block where there is one, then ancestry, heritage, background, level-appropriate auto-granted class features, detected subclass, and every feat |
+| `item-rules` | Full text for the carried gear, in inventory order |
+| `notes` | How each number was derived |
+| `attribution` | Only the sourcebooks actually quoted |
+
+Splitting the slot table off its spell descriptions, and the inventory off its
+item text, is what makes that ordering possible — as one section each, the two
+tables were stranded on top of a dozen pages nobody re-reads. Sections whose
+content is empty are skipped, and the returned `sections` list names those
+actually written, in file order.
+
+The attribution section comes last and carries every notice in one place: the
+Community Use Policy statement, the ORC License attribution, a Reserved
+Material note when a deity block was rendered, the artwork-and-typography
+statement, and then the full text of both the Open Game License 1.0a (when
+OGL-licensed rules are quoted) and the SIL Open Font License 1.1 (always, since
+the sheet embeds the Noto fonts). Both licences are required to travel with
+what the sheet carries, so they can't be dropped from the file — but the
+toolbar's **Notices** switch (below) leaves them off the paper copy.
+
+#### The advancement page
+
+Page 2, modelled on the official sheet's second page: one row per level from 1
+to the character's, ancestry/general/skill feats down the left column and class
+abilities down the right, with the level number in a tinted gutter. Archetype
+feats sit on the class side because that is where their slot comes from —
+PF2e's archetype feats are taken with class feat slots, not a category of their
+own. Levels that grant attribute boosts say so, and every line carries its
+category (`Ancestry feat`, `Class feature`) plus **automatic** where the class
+grants it rather than the player choosing it — the same distinction the
+companion `.md` files draw, and the one that tells you which lines a level-up
+screen will actually prompt for.
+
+Feats used to sit at the foot of page 1, fitted by a character-count budget
+standing in for "how many lines will this wrap to". That proxy failed on a
+dense build: a level-10 character with six feat categories and eighteen
+features spilled onto a second sheet regardless. Giving feats their
+own page removes the budget, the per-character tuning, and the failure mode
+together — page 1 is now unconditionally one page, since nothing on it grows
+with level except within fixed-height blocks.
+
+#### The casting statistics band
+
+In the spirit of the official sheet's Magical Tradition and Spell Statistics
+boxes — except that everything in it is derived rather than blank. Two rows:
+the tradition and casting style this group actually is (`Arcane · Prepared ·
+Focus`), then spell attack, spell DC and proficiency as three stacked cells,
+each label over figure over arithmetic. The proficiency term carries its own
+bonus (`WIS +4 · level 2 · trained +2`) so the parts visibly sum to the figure
+above them.
+
+The official sheet prints a tick-box per tradition and per casting style
+because it's filled in by hand; a rendered sheet already knows the answer, so
+only what the character *is* gets printed. "Not occult, not primal, not
+spontaneous" is nothing a player would act on.
+
+**Each band is followed by its own table**, listing only the spells its numbers
+govern. One combined table under stacked bands made the reader carry "which DC
+applies to this row" down the page — harmless for a cleric whose two entries
+share a statistic, wrong for a magus whose innate cantrips are cast off a
+different attribute entirely.
+
+**Innate groups sort first.** Everything else on the page was studied, prepared
+or bargained for; innate spells are the ones the character simply has. The sort
+is stable, so the character's own order survives within each bucket.
+
+Styles read in the order Prepared, Spontaneous, **Innate** — the official sheet
+knows only the first two — with anything else (Focus) after them. A group can
+carry more than one, and says so: a magus whose focus spell shares the class's
+statistic reads `Arcane · Prepared · Focus`.
+
+Cantrips are *not* in the band. They're a resource like any other, so they get
+a group header row in the slot table itself — `Cleric · Cantrip · At will ·
+5 known, cast at rank 1` — with the cantrip names indented beneath it, exactly
+like a prepared rank or a focus pool. The count and the heightening rank are
+true of the whole group, so they're stated once on the header instead of
+repeated in the Uses column against every name.
+
+One band per **set of statistics**, not per entry in `spellCasters` — the
+grouping key is (tradition, attribute, proficiency), which is exactly what the
+numbers are made of. A cleric's spell list and their divine font are two
+entries sharing one statistic, and printing DC 18 twice under two headings
+invites the reader to hunt for a difference that isn't there; the sources
+sharing a band are named on it instead ("Cleric · Cleric Font", "Bard · Focus
+Spells"). A character with genuinely different statistics — an elf magus whose
+prepared arcane spells run off Intelligence and whose ancestry's innate
+cantrips run off Charisma — gets one band and one table per set.
+
+The arithmetic is spelled out because this is a reference page: a player
+checking a DC against their memory of it wants to see *which* term disagrees.
+
+#### Choosing what prints
+
+A toolbar above the sheet, hidden when printing, carries a checkbox per
+optional section — **Advancement, Skill actions, Spells, Features, Item rules,
+Sheet notes, Notices** — all ticked by default, and each shown only when the
+character actually has that section. Unticking one hides it on screen as well as leaving
+it out of the print: the point is to see what will come out of the printer, and
+a page still on screen but silently absent from the print is worse than no
+switch at all. Untick everything and you get the statistics page and the two
+quick-reference tables, which is what a player who keeps the rules to hand (or
+the file open on a phone) usually wants on paper.
+
+`core`, `spellcasting` and `inventory` have no switch. They are the sheet, and
+a control that can empty it invites printing a character sheet with no
+character on it.
+
+Nothing is removed from the file — the licence text still travels with what the
+sheet carries whatever the boxes say. These switches are the file's only
+script, about twenty lines inline; with scripting off every box stays ticked
+and the whole sheet prints as it always did.
+
+#### The skill actions section
+
+The first of the rules-text sections, since it is the rest of what page 1's
+skills table says the character can do: every core skill action their training
+unlocks, each with its complete rules text, credited to the skill (or skills)
+that grant it.
+Actions reachable through several of a character's skills — Learn a Spell via
+both Arcana and Religion — appear once, listed against all of them, and a
+trained Lore of any topic unlocks the generic Lore row.
+
+Only **trained-gated** actions are printed. Anyone can attempt Balance, Climb or
+Demoralize untrained, so printing those would reprint the basic rules instead of
+telling the player anything about this character. Trained is also the only
+threshold there is to apply: expert and above unlock no further core skill
+actions.
+
+**Downtime** actions — Craft, Earn Income, Create Forgery, Treat Disease — are
+left out as well, on what-is-this-page-for grounds rather than as a rules
+judgement. They happen between sessions with the rules to hand, and their text
+is long out of proportion to that: Earn Income alone carries the whole Income
+Earned table, a printed page by itself. `rules_get_entry` still has them.
+
+Which skill an action belongs to, and whether it needs training, is not
+recoverable from the action items themselves — a `type='action'` item names no
+skill (Treat Wounds mentions Medicine only in prose and never says "trained"),
+and not one action in the database has a `prerequisites` row. The single place
+`foundryvtt/pf2e` records it is the GM Screen journal's "Skill Actions" page
+(Player Core pg. 227), whose cells are `@UUID` links to the action items; that
+page is parsed into the `skill_actions` table at ingestion. One upstream
+copy-paste is corrected there by a named exclusion in `build.py`
+(`_SKILL_ACTION_EXCLUSIONS`): Borrow an Arcane Spell is repeated into the
+Occultism and Religion rows although the action is arcane-only by its own text.
+
+Actions granted by a *feat* (Battle Medicine, Bon Mot) are not in this section.
+They're `type='feat'`, already carry structured `prerequisites` of
+`kind='skill_rank'`, and are printed in full on the features page.
 
 #### The deity block
 
@@ -592,4 +733,4 @@ that licence has to travel with them.
 
 Level 1–20 character creation and leveling across all ancestries,
 backgrounds, and classes, including spellcasting and equipped-armor AC.
-See [KNOWN_ISSUES.md](https://github.com/rjenks/pf2e-mcp/blob/main/KNOWN_ISSUES.md) for tracked gaps.
+See the [GitHub issues](https://github.com/rjenks/pf2e-mcp/issues) for tracked gaps.

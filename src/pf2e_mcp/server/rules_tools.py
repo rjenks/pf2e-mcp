@@ -7,10 +7,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
+
 from . import licensing, pfs
 from .db import get_connection
 
 _GLOSSARY_PACKS = ("conditions", "bestiary-ability-glossary-srd", "actions", "boons-and-curses")
+
+_AON_ENDPOINT = "https://elasticsearch.aonprd.com/aon/_search"
+_AON_SITE = "https://2e.aonprd.com"
 
 
 def _fts_query(text: str) -> str:
@@ -393,3 +398,83 @@ def rules_explain(topic: str, limit: int = 5) -> list[dict[str, Any]]:
         return [_row_full(r, overrides, conn=conn) for r in rows]
     finally:
         conn.close()
+
+
+def rules_search_aon(query: str, limit: int = 5, max_chars: int = 4000) -> list[dict[str, Any]]:
+    """Live search of Archives of Nethys (aonprd.com) -- content this
+    project deliberately does NOT ingest, not a fallback for content that's
+    merely hard to find in `rules_search`. Three concrete gaps this covers:
+
+    1. **Bestiary/Monster Core/NPC Core content, excluded from ingestion
+       entirely** (see this project's GitHub issues, "Licensing" topic) --
+       monster stat blocks, and GM-facing guideline tables like GM Core's
+       "Building Creatures" chapter. Confirmed live: Table 2-5 (Armor Class
+       by Level) and Table 2-6 (Saving Throws by Level) -- e.g. a level-4
+       moderate-threat AC is 20 -- exist only nested several pages deep
+       under "Building Creatures" -> "Defenses" -> "Armor Class"/"Saving
+       Throws", not on the parent page.
+    2. **An archetype's own "Additional Feats" cross-listing** -- a
+       Remaster mechanic where an archetype's overview page names another
+       class's feat as also selectable, sometimes at a re-slotted level
+       (confirmed live: one archetype's page lists two other classes'
+       feats as valid picks at a later level, neither of which carries
+       any structured link back to the archetype anywhere in this
+       project's own data -- see this project's GitHub issues). This tool
+       doesn't fix that gap structurally, but it's the direct way to check
+       a specific archetype before assuming a cross-class feat is illegal.
+    3. **This project's own rules-data gaps** documented in this project's
+       GitHub issues (unresolved prerequisites, silently-dropped feats,
+       etc.) -- when one of those is suspected, checking AoN directly is
+       how to tell a real gap from a one-off ingestion miss.
+
+    Always try `rules_search`/`rules_get_entry` first -- they're instant,
+    ingested from the same authoritative source (foundryvtt/pf2e) for
+    everything this project actually covers, and don't depend on network
+    access or a third-party site being up. Reach for this tool only once
+    those come up empty, or the user explicitly asks to check AoN.
+
+    Content-tree pages (rules topics like "Building Creatures," not a
+    feat/spell/item) are often just a short intro paragraph with the real
+    content nested in nine or ten levels of child pages -- if a result
+    reads as a stub, search more specifically for the sub-topic (e.g.
+    "Armor Class by Level" rather than "Building Creatures") rather than
+    assuming the content doesn't exist.
+
+    `content` is AoN's own markdown, not plain text -- deliberately, since
+    the plain-text extraction silently drops embedded tables entirely
+    (confirmed live: the Armor Class and Saving Throws tables above exist
+    in `markdown` but are absent from `text` on the same entries). Expect
+    inline `[label](/Path.aspx?ID=N)` links and raw `<table>`/`<tr>`/`<td>`
+    tags rather than clean prose. Results are NOT run through this
+    project's own PFS-legality heuristic or license classifier
+    (`pfs.py`/`licensing.py` only apply to the ingested database) --
+    whatever AoN's own `pfs`/`rarity` fields say is passed through as-is.
+    `content` is truncated to `max_chars`; narrow the query rather than
+    raising the limit if a result gets cut off.
+    """
+    resp = httpx.post(
+        _AON_ENDPOINT,
+        json={
+            "query": {"multi_match": {"query": query, "fields": ["name^3", "text"]}},
+            "size": limit,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    hits = resp.json()["hits"]["hits"]
+    results = []
+    for hit in hits:
+        source = hit["_source"]
+        content = source.get("markdown") or source.get("text") or ""
+        truncated = len(content) > max_chars
+        results.append({
+            "id": hit["_id"],
+            "name": source.get("name"),
+            "type": source.get("type"),
+            "level": source.get("level"),
+            "rarity": source.get("rarity"),
+            "source_book": source.get("primary_source_raw") or source.get("primary_source"),
+            "url": (_AON_SITE + source["url"]) if source.get("url") else None,
+            "content": content[:max_chars] + ("... [truncated]" if truncated else ""),
+        })
+    return results

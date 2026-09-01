@@ -40,10 +40,10 @@ deny:
   `server/pf2e_math.py` and `server/build_tools.py` are game rules
   expressed as code. They are what makes this software do anything.
 - **Documentation that discusses specific rules by name.** `README.md`,
-  `KNOWN_ISSUES.md`, `AGENTS.md`, and the character-builder skill describe
-  behaviour and known gaps in terms of the actual feats, spells, classes,
-  and prerequisites involved, because a gap cannot be usefully documented
-  in the abstract.
+  `AGENTS.md`, the character-builder skill, and this project's GitHub
+  issues describe behaviour and known gaps in terms of the actual feats,
+  spells, classes, and prerequisites involved, because a gap cannot be
+  usefully documented in the abstract.
 - **The full text of the Open Game License 1.0a**, reproduced below and
   again in `server/sheet.py` so that rendered character sheets carry it.
   Reproducing it is a requirement of the license, not incidental use.

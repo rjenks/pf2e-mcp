@@ -8,6 +8,7 @@ only re-downloads if it differs from what's cached.
 
 from __future__ import annotations
 
+import re
 import shutil
 import zipfile
 from dataclasses import dataclass
@@ -16,9 +17,18 @@ from pathlib import Path
 import httpx
 
 REPO = "foundryvtt/pf2e"
-RELEASES_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases"
 ASSET_NAME = "json-assets.zip"
 RAW_CONTENT_BASE = f"https://raw.githubusercontent.com/{REPO}"
+
+# The repo also publishes Starfinder (`sf2e-*`) and "anachronism" module
+# releases (e.g. `pf2e-anachronism-2.3.0`), interleaved with the actual
+# PF2e system releases and sometimes newer by publish date -- so
+# GitHub's own `/releases/latest` pointer can land on one of those instead
+# of a PF2e system release, and those releases don't carry a
+# `json-assets.zip` asset at all. Only a bare `pf2e-X.Y.Z` tag is a system
+# release built from the game data this ingestion needs.
+_PF2E_SYSTEM_TAG_RE = re.compile(r"^pf2e-\d+\.\d+\.\d+$")
 
 
 @dataclass
@@ -28,13 +38,16 @@ class Release:
 
 
 def get_latest_release() -> Release:
-    resp = httpx.get(RELEASES_API, timeout=30, follow_redirects=True)
+    resp = httpx.get(RELEASES_API, params={"per_page": 30}, timeout=30, follow_redirects=True)
     resp.raise_for_status()
-    data = resp.json()
-    asset = next((a for a in data["assets"] if a["name"] == ASSET_NAME), None)
+    releases = resp.json()
+    release = next((r for r in releases if _PF2E_SYSTEM_TAG_RE.match(r["tag_name"])), None)
+    if release is None:
+        raise RuntimeError(f"No PF2e system release (pf2e-X.Y.Z) found in latest {len(releases)} releases")
+    asset = next((a for a in release["assets"] if a["name"] == ASSET_NAME), None)
     if asset is None:
-        raise RuntimeError(f"Latest release {data['tag_name']} has no {ASSET_NAME} asset")
-    return Release(tag=data["tag_name"], asset_url=asset["browser_download_url"])
+        raise RuntimeError(f"Latest PF2e release {release['tag_name']} has no {ASSET_NAME} asset")
+    return Release(tag=release["tag_name"], asset_url=asset["browser_download_url"])
 
 
 def download_and_extract(release: Release, cache_dir: Path) -> Path:

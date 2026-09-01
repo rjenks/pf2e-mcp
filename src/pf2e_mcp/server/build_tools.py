@@ -557,7 +557,16 @@ def validate_build(
     trained-or-better skills/lores is below the level-1 minimum implied by
     class fixed+additional skills, background fixed/lore/choice skills, and
     the character's Intelligence modifier if positive -- a floor check, not
-    an identity check, so it stays valid at any level (see
+    an identity check, so it stays valid at any level, and (new) two checks
+    on the attribute array (see `_validate_attribute_boosts`): a **half-step**
+    warning naming any attribute left on an odd score at a boost milestone,
+    where the last point spent buys no modifier at all, and a **derivability**
+    warning when the recorded scores don't match the character's own recorded
+    boosts. The second reads both breakdown schemas found in real files
+    (`backgroundBoosts`/`mapLevelledBoosts` and `backgroundAbilities`/`lvl1`
+    ...`lvl20`) and folds case, since exports disagree on both; a single
+    attribute exactly 2 high is called out as the signature of an invested
+    apex item rather than an illegal array (see
     `_validate_trained_skill_count`; this exists specifically because the
     Intelligence-modifier bonus to a class's additional trained-skill count
     is a universal core rule not baked into `list_classes`' `additional`
@@ -585,9 +594,29 @@ def validate_build(
     pick independent of any variant rule) adds +1 to the ancestry budget on
     its own if taken.
 
-    `pfs_legal_only=True` adds a warning for any taken feat whose
-    best-effort PFS status (see pfs.py) isn't 'legal' -- not authoritative,
-    see that module's docstring."""
+    `pfs_legal_only=True` adds a `pfs` key to the result: a structured report
+    (see `_validate_pfs`) of exactly which options would need a boon, rather
+    than a verdict. A yes/no isn't actionable -- a build is usually one choice
+    away from legal, and the player needs to know *which* choice -- so it
+    carries `requires_boon` (name, kind, status, rarity, source, note per
+    entry), `unchecked` (options this project couldn't resolve, which are not
+    evidence of legality), and `legal`, true only when `requires_boon` is
+    empty. The same findings are mirrored into `warnings` so callers that
+    read only that keep working.
+
+    Coverage is class, ancestry, heritage, background, every feat and every
+    piece of equipment. Until this took its own function it checked *feats
+    alone*, so a character could come back clean while their class or their
+    gear was restricted. Still a rarity-plus-overrides heuristic and still
+    not authoritative -- see pfs.py.
+
+    Also warns about **unfilled feat slots** (`_validate_feat_slots`): a
+    scheduled class/skill/general/ancestry feat at or below the character's
+    level with nothing recorded in it. The class's own level arrays are
+    ingested, so this was always answerable and simply wasn't asked -- it
+    found a level-10 animist missing both 10th-level feats and a rogue
+    missing their 5th-level ancestry feat, both of which had been validating
+    clean for months."""
     variant_rules = variant_rules or []
     errors: list[str] = []
     warnings: list[str] = []
@@ -639,12 +668,6 @@ def validate_build(
                 archetype_trait_taken += 1
             if name.strip().lower() == "ancestral paragon":
                 has_ancestral_paragon = True
-            if pfs_legal_only:
-                status = pfs.pfs_status(name, entry["rarity"], overrides)
-                if status["status"] != "legal":
-                    warnings.append(
-                        f"'{name}' PFS status: {status['status']} ({status['note']})"
-                    )
             prereq_rows = conn.execute(
                 "SELECT raw_text, kind, structured FROM prerequisites WHERE entry_id = ?",
                 (entry["id"],),
@@ -700,8 +723,344 @@ def validate_build(
     warnings.extend(_validate_fixed_trained_skills(character))
     warnings.extend(_validate_trained_skill_count(character))
     warnings.extend(_validate_proficiency_ranks(character))
+    warnings.extend(_validate_attribute_boosts(character))
+    warnings.extend(_validate_feat_slots(character, variant_rules))
 
-    return {"errors": errors, "warnings": warnings}
+    result: dict[str, Any] = {"errors": errors, "warnings": warnings}
+    if pfs_legal_only:
+        report = _validate_pfs(character)
+        result["pfs"] = report
+        # Keep the flat warnings usable on their own -- a caller reading only
+        # `warnings` (as every caller did before `pfs` existed) still sees
+        # what needs a boon.
+        for entry in report["requires_boon"]:
+            warnings.append(
+                f"PFS: {entry['kind']} '{entry['name']}' is {entry['status']} "
+                f"({entry['rarity']}, {entry['source']})")
+        for entry in report["unchecked"]:
+            warnings.append(
+                f"PFS: {entry['kind']} '{entry['name']}' could not be checked "
+                f"-- {entry['reason']}")
+    return result
+
+
+_BOOST_MILESTONES = (1, 5, 10, 15, 20)
+_ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
+
+
+def _feat_slot_bucket(category: str, free_archetype: bool) -> str | None:
+    """Which feat-slot schedule a recorded feat's category counts against, or
+    None when it fills no scheduled slot.
+
+    Character files disagree wildly on this label -- Pathbuilder writes bare
+    slugs ('class', 'skill', 'classfeature'), the hand-written files write
+    prose ('Class Feat', 'Awarded Feat'), and some exports name a class feat
+    after its class instead of the generic label ('Fighter Feat', 'Champion
+    Feat') -- so match on substrings, with traps to avoid:
+
+    * `classfeature` contains "class" but is an automatic class feature, not a
+      feat filling a class slot.
+    * `Skill Increase` contains "skill" but is a proficiency-rank bump, not a
+      feat -- counting it as one would mask a genuinely missing Skill Feat.
+      Confirmed live: real exports use both categories, and PF2e's own
+      skill-feat and skill-increase level lists overlap almost entirely, so
+      this collision fires often, not just in theory.
+    * An archetype feat normally *does* consume a class feat slot, so it
+      counts as one -- unless Free Archetype is running, where it has a slot
+      of its own and the class slot is still owed.
+    * A `'<ClassName> Feat'` label (confirmed live) matches none of the four
+      generic bucket words, so it needs its own fallback rather than being
+      silently dropped as "fills no slot" -- which would report an owed
+      class feat as still missing even though one was taken.
+    """
+    text = (category or "").strip().lower()
+    if not text or "classfeature" in text.replace(" ", ""):
+        return None
+    # Bonus feats from a background, boon or GM award sit outside the
+    # schedule entirely; counting them would mask a genuinely empty slot.
+    if any(word in text for word in ("awarded", "bonus", "heritage", "granted", "increase")):
+        return None
+    if "archetype" in text or "dedication" in text:
+        return None if free_archetype else "class"
+    for bucket in ("class", "skill", "general", "ancestry"):
+        if bucket in text:
+            return bucket
+    if text.rsplit(" ", 1)[-1] == "feat":
+        return "class"
+    return None
+
+
+def _validate_feat_slots(character: dict[str, Any],
+                         variant_rules: list[str]) -> list[str]:
+    """Scheduled feat slots at or below the character's level with no feat
+    recorded in them.
+
+    Every class's own level arrays are ingested (`class_progression`), so
+    "you are owed a 10th-level class feat" is a fact this project holds and
+    was simply never checking -- confirmed live on a real level-10 build
+    with both its 10th-level class and skill feats unfilled and validating
+    clean.
+
+    A warning rather than an error: a character can be mid-level-up, and the
+    category labels are free text that no schema enforces, so a
+    false positive here should never block a build.
+
+    Ancestry is skipped under Ancestry Paragon, whose schedule this doesn't
+    model -- the existing budget check above covers over-spending there.
+    """
+    level = int(character.get("level") or 1)
+    slug = _real_slug("classes", character.get("class", ""))
+    rows = _fetchall(
+        "SELECT class_feat_levels, skill_feat_levels, general_feat_levels, "
+        "ancestry_feat_levels FROM class_progression WHERE class_slug = ?",
+        (slug,))
+    if not rows:
+        return []
+    schedule = rows[0]
+    free_archetype = "free-archetype" in variant_rules
+
+    taken: dict[str, set[int]] = {}
+    for feat in character.get("feats") or []:
+        if not (isinstance(feat, (list, tuple)) and feat):
+            continue
+        bucket = _feat_slot_bucket(
+            str(feat[2]) if len(feat) > 2 and feat[2] else "", free_archetype)
+        if not bucket:
+            continue
+        try:
+            taken.setdefault(bucket, set()).add(int(feat[3]) if len(feat) > 3 and feat[3] else 1)
+        except (TypeError, ValueError):
+            continue
+
+    warnings = []
+    for bucket, column in (("class", "class_feat_levels"),
+                           ("skill", "skill_feat_levels"),
+                           ("general", "general_feat_levels"),
+                           ("ancestry", "ancestry_feat_levels")):
+        if bucket == "ancestry" and "ancestry-paragon" in variant_rules:
+            continue
+        due = [lvl for lvl in json.loads(schedule[column] or "[]") if lvl <= level]
+        missing = [lvl for lvl in due if lvl not in taken.get(bucket, set())]
+        if missing:
+            levels = ", ".join(str(lvl) for lvl in missing)
+            warnings.append(
+                f"No {bucket} feat recorded for level {levels} -- the class "
+                f"grants one at each of those levels and the character is "
+                f"level {level}.")
+    return warnings
+
+# Where to look each part of a character up, in the order a player would read
+# them off a sheet. `pack` is checked first so a name that exists in several
+# packs resolves to the right one -- "Death Warden Dwarf" is both a heritage
+# and a heritage feat, and "Battle Medicine" is a feat and (as a grant) a
+# background line.
+_PFS_SUBJECTS = (
+    ("class", "classes"),
+    ("ancestry", "ancestries"),
+    ("heritage", "heritages"),
+    ("background", "backgrounds"),
+)
+
+
+def _validate_pfs(character: dict[str, Any]) -> dict[str, Any]:
+    """Every option on the character checked against the PFS heuristic, as a
+    structured report rather than a yes/no.
+
+    A verdict alone is not actionable: a player told "not legal" still has to
+    work out *which* choice needs the boon, and a build is usually one option
+    away from legal. So this returns the offending options with their rarity
+    and source, plus the ones that couldn't be checked at all, which matter
+    just as much -- a name this project can't resolve is not evidence of
+    legality.
+
+    Coverage is class, ancestry, heritage, background, every feat, and every
+    piece of equipment. An earlier version checked feats alone, which meant a
+    character could be reported clean while their *class* was restricted.
+
+    The heuristic itself remains rarity plus a curated override list, and is
+    not authoritative -- see pfs.py. Notably it cannot see that the same feat
+    can be Standard in one printing and Limited in another (Defy the Darkness
+    is Limited in the Advanced Player's Guide and Standard in its Player Core
+    reprint), because rarity is identical in both.
+    """
+    overrides = pfs.load_overrides()
+    requires_boon: list[dict[str, Any]] = []
+    unchecked: list[dict[str, Any]] = []
+
+    def check(kind: str, name: str, pack: str | None) -> None:
+        name = str(name or "").strip()
+        if not name or name.lower() in ("not set", "none", "-"):
+            return
+        base = "SELECT name, rarity, source_book FROM entries WHERE "
+        rows: list[dict[str, Any]] = []
+        if pack:
+            rows = _fetchall(base + "name = ? COLLATE NOCASE AND pack = ? LIMIT 1",
+                             (name, pack))
+        if not rows:
+            # The character's own label for a thing often disagrees with the
+            # pack it lives in -- a heritage recorded as a feat, say -- so a
+            # miss in the expected pack is not a miss.
+            rows = _fetchall(base + "name = ? COLLATE NOCASE LIMIT 1", (name,))
+        if not rows:
+            # Several entries are stored under a qualified name the character
+            # records bare: "Spirit Familiar" is "Spirit Familiar (Animist)".
+            escaped = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            rows = _fetchall(
+                base + "name LIKE ? ESCAPE '\\' COLLATE NOCASE", (f"{escaped} (%",))
+            if len({r["rarity"] for r in rows}) > 1:
+                unchecked.append({
+                    "name": name, "kind": kind,
+                    "reason": "several entries share this name and disagree on "
+                              "rarity; check by hand"})
+                return
+        if not rows:
+            unchecked.append({"name": name, "kind": kind,
+                              "reason": "no entry of that name in the rules data"})
+            return
+        row = rows[0]
+        status = pfs.pfs_status(row["name"], row["rarity"], overrides)
+        if status["status"] != "legal":
+            requires_boon.append({
+                "name": row["name"], "kind": kind,
+                "status": status["status"], "rarity": row["rarity"],
+                "source": row["source_book"], "note": status["note"],
+            })
+
+    for kind, pack in _PFS_SUBJECTS:
+        check(kind, character.get(kind), pack)
+    for feat in character.get("feats") or []:
+        if isinstance(feat, (list, tuple)) and feat:
+            check("feat", feat[0], "feats")
+    for weapon in character.get("weapons") or []:
+        if isinstance(weapon, dict):
+            check("weapon", weapon.get("name"), "equipment")
+    for armor in character.get("armor") or []:
+        if isinstance(armor, dict):
+            check("armor", armor.get("name"), "equipment")
+    for item in character.get("equipment") or []:
+        if isinstance(item, (list, tuple)) and item:
+            check("item", item[0], "equipment")
+        elif isinstance(item, dict):
+            check("item", item.get("name"), "equipment")
+
+    return {
+        "legal": not requires_boon,
+        "requires_boon": requires_boon,
+        "unchecked": unchecked,
+        "authoritative": False,
+        "note": ("Rarity-based heuristic plus a curated override list, not a "
+                 "read of Paizo's Additional Resources. 'legal': true means "
+                 "nothing was flagged, not that the build is sanctioned -- "
+                 "check anything that matters against the current Additional "
+                 "Resources document."),
+    }
+
+
+def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
+    """Two checks on a character's attribute array.
+
+    **Half-steps, at 20th only.** An attribute modifier is
+    `(score - 10) // 2`, so an odd score holds a point that isn't buying a
+    modifier -- but below 20th that is usually the *opposite* of waste. An odd
+    score is half-way to its next modifier and completes at the following
+    milestone, arriving one milestone sooner than an even score would reach
+    it: a level-10 character with Con 19 has +5 from 15th, where Con 18
+    would wait until 20th. Only at 20th is there nothing left to complete the
+    step, so only 20th is reported. An earlier version warned at every
+    milestone and was simply wrong about a level-10 character.
+
+    Not an error even then: a player may want a specific score for an item
+    requirement, a story reason, or a planned apex.
+
+    **Derivability.** When the character carries Pathbuilder's `breakdown`
+    (which boosts were applied where), the recorded boosts are replayed --
+    ancestry boosts and flaw, background, class key attribute, then four
+    distinct boosts at each milestone -- and the result compared with the
+    recorded scores. A mismatch is a warning rather than an error because an
+    invested apex item legitimately adds 2 to one attribute *after* the
+    boosts, and this project's character files record the played score
+    (confirmed live on a real build carrying an apex item), so the honest
+    reading of a +2 discrepancy on a single attribute is "probably an apex
+    item", not "illegal array".
+    """
+    warnings: list[str] = []
+    abilities = character.get("abilities") or {}
+    scores = {k: v for k, v in abilities.items()
+              if k in _ABILITIES and isinstance(v, int)}
+    if not scores:
+        return warnings
+    level = int(character.get("level") or 1)
+
+    if level >= 20:
+        odd = sorted(k.upper() for k, v in scores.items() if v % 2)
+        if odd:
+            warnings.append(
+                f"Attribute half-steps at level {level}: {', '.join(odd)} "
+                f"{'is' if len(odd) == 1 else 'are'} odd, and no further "
+                f"boosts are coming, so that point buys no modifier "
+                f"((score - 10) // 2). Redirect it to an attribute that lands "
+                f"even -- and redirect the 20th-level boost specifically, "
+                f"since that is the one with no later milestone to complete "
+                f"it; an earlier boost that leaves a score odd is only half a "
+                f"step, and finishes at the next milestone.")
+
+    breakdown = abilities.get("breakdown")
+    if not isinstance(breakdown, dict):
+        return warnings
+
+    replay = {k: 10 for k in _ABILITIES}
+    for attr in breakdown.get("ancestryFlaws") or []:
+        # Exports capitalise attribute names inconsistently -- Pathbuilder
+        # writes "Wis" in `ancestryFlaws` and "wis" elsewhere in the same
+        # file. Everything here folds case.
+        if str(attr).lower() in replay:
+            replay[str(attr).lower()] -= 2
+
+    def apply(attrs: Any) -> None:
+        for attr in attrs or []:
+            attr = str(attr).lower()
+            if attr in replay:
+                replay[attr] += 2 if replay[attr] < 18 else 1
+
+    apply(breakdown.get("ancestryBoosts"))
+    apply(breakdown.get("ancestryFree"))
+    # Two spellings in the wild for the same thing.
+    apply(breakdown.get("backgroundBoosts") or breakdown.get("backgroundAbilities"))
+    apply(breakdown.get("classBoosts"))
+    # Likewise the milestones: a dict keyed by level, or one key per level.
+    milestones = dict(breakdown.get("mapLevelledBoosts") or {})
+    for level_key in _BOOST_MILESTONES:
+        flat = breakdown.get(f"lvl{level_key}")
+        if flat is not None:
+            milestones.setdefault(str(level_key), flat)
+    for milestone, attrs in sorted(milestones.items(), key=lambda kv: int(kv[0])):
+        if int(milestone) > level:
+            continue
+        chosen = [str(a).lower() for a in attrs or []]
+        if len(set(chosen)) != len(chosen):
+            warnings.append(
+                f"Level-{milestone} attribute boosts repeat an attribute "
+                f"({', '.join(chosen)}); boosts gained at the same time must "
+                f"each go to a different attribute.")
+        if len(chosen) > 4:
+            warnings.append(
+                f"Level-{milestone} grants 4 attribute boosts, but "
+                f"{len(chosen)} are recorded.")
+        apply(chosen)
+
+    off = {k: scores[k] - replay[k] for k in scores
+           if k in replay and scores[k] != replay[k]}
+    if off:
+        detail = ", ".join(f"{k.upper()} {scores[k]} vs {replay[k]}"
+                           for k in sorted(off))
+        apex = [k for k, v in off.items() if v == 2]
+        note = (" A single attribute 2 higher than its boosts is what an "
+                "invested apex item looks like." if len(off) == 1 and apex
+                else "")
+        warnings.append(
+            f"Recorded attributes don't match the recorded boosts: {detail}."
+            f"{note}")
+    return warnings
 
 
 def _worn_armor_stats(character: dict[str, Any]) -> dict[str, Any] | None:
@@ -798,6 +1157,73 @@ def _committed_dedications_below_threshold(character: dict[str, Any]) -> list[st
     return [d for d in dedications if _archetype_member_count(character, d) < 2]
 
 
+_LORE_PREFIX_RE = re.compile(r"^lore\s*:\s*")
+_LORE_SUFFIX_RE = re.compile(r"\s*lore$")
+
+
+def _normalize_lore(name: str) -> str:
+    """Folds the four spellings of a Lore skill name that occur in real
+    data down to a bare, lowercased topic ("undead") for comparison:
+
+    * ``"Undead"`` -- Pathbuilder's own JSON export, which strips the
+      suffix. Confirmed against several real exports in this project, all
+      storing e.g. ``["Warfare", 2]``.
+    * ``"Undead Lore"`` -- the game's real skill name, used by this
+      project's ingested background/class data and by the hand-authored
+      character files in ``characters/``.
+    * ``"UndeadLore "`` -- an upstream ``foundryvtt/pf2e`` typo in Once
+      Bitten's ``system.trainedSkills.lore`` (no space before "Lore", one
+      trailing space). Ingestion mirrors upstream verbatim so the database
+      stays diffable against the source, which means the typo returns with
+      every release and has to be absorbed at comparison time instead.
+    * ``"Lore: Undead"`` -- how Pathbuilder *displays* the skill in its own
+      skills list. Not an export form, but the one someone hand-copying
+      from the app's UI writes, and ``characters/`` already contains
+      hand-authored files.
+
+    A name carrying no "lore" marker at all comes back unchanged (bar
+    lowercasing), which is what lets :func:`_is_choice_lore` separate a
+    named grant from a player-choice one.
+    """
+    text = _LORE_PREFIX_RE.sub("", name.strip().lower())
+    return _LORE_SUFFIX_RE.sub("", text).strip()
+
+
+def _unwrap_lore_grant(name: str) -> str:
+    """Strips editorial decoration off an ingested lore grant, leaving the
+    skill name. Exists for one row: Returned's
+    ``'**Boneyard Lore (with Additional Lore perks)'``, where upstream
+    markdown and a parenthetical aside leaked into the data around an
+    otherwise ordinary ``"Boneyard Lore"``. Leading non-word characters and
+    anything from a ``" ("`` onward come off; every other grant passes
+    through untouched.
+    """
+    text = re.sub(r"^\W+", "", name.strip())
+    return text.split(" (", 1)[0].strip()
+
+
+def _is_choice_lore(name: str) -> bool:
+    """True if a lore grant describes a Lore the *player* names rather than
+    a fixed one, e.g. Foreign Aid's ``'Lore skill pertaining to your place
+    of origin'`` or Energy Scarred's ``'Lore associated with the chosen
+    energy'``. Pathbuilder models exactly these with a free-text box for
+    the player to fill in, and the filled-in value lands in the character's
+    ordinary ``lores`` list -- so the grant is real and worth validating,
+    it just can't be validated *by name*. See
+    :func:`_validate_fixed_trained_skills`, which checks presence instead
+    of identity for these.
+
+    Detection is by shape, not by pattern-matching the prose: a real grant
+    is a skill name ending in "Lore" (428 of 430 rows once
+    :func:`_unwrap_lore_grant` has run, which recovers Returned's
+    markdown-wrapped ``"Boneyard Lore"``); the two choice grants are
+    sentences that merely *begin* with the word, ending in "origin" and
+    "energy". Requiring the suffix separates them without encoding either
+    sentence.
+    """
+    return not _LORE_SUFFIX_RE.search(name.strip().lower())
+
+
 def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
     """Checks the character has at least trained rank in every skill their
     background and class *unconditionally* grant (their `trained_skills.
@@ -812,14 +1238,12 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
     part that's unambiguous at any level."""
     warnings: list[str] = []
     prof = character.get("proficiencies", {})
-    # Pathbuilder strips the trailing " Lore" suffix in its own `lores`
-    # field (stores "Warfare", not "Warfare Lore") where this project's
-    # ingested background/class data uses the game's real skill name --
-    # confirmed live against two different real character exports (Tag,
-    # Kaldrek Stonewake), both storing `["Warfare", 2]`. Normalize both
-    # sides by stripping the suffix rather than comparing raw strings.
+    # Character-side and grant-side lore names use different conventions
+    # (and more than one convention each) -- see `_normalize_lore` for the
+    # four spellings and where each comes from. Fold both sides through it
+    # rather than comparing raw strings.
     lore_names = {
-        l[0].strip().lower().removesuffix(" lore")
+        _normalize_lore(l[0])
         for l in character.get("lores", []) if l and l[0]
     }
 
@@ -831,6 +1255,8 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
         "SELECT trained_skills FROM class_progression WHERE class_slug = ?",
         (_real_slug("classes", character.get("class", "")),),
     )
+    named_grants: list[tuple[str, str]] = []
+    choice_grants: list[str] = []
     for label, rows in (("background", bg_rows), ("class", class_rows)):
         if not rows or not rows[0]["trained_skills"]:
             continue
@@ -842,11 +1268,41 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
                     "trained (or higher) in this character's proficiencies"
                 )
         for lore in trained.get("lore", []):
-            if lore.strip().lower().removesuffix(" lore") not in lore_names:
-                warnings.append(
-                    f"{label.capitalize()} grants training in the '{lore}' Lore skill "
-                    "but it's not present in this character's lores"
-                )
+            grant = _unwrap_lore_grant(lore)
+            if _is_choice_lore(grant):
+                choice_grants.append(label)
+            else:
+                named_grants.append((label, grant))
+
+    matched: set[str] = set()
+    for label, grant in named_grants:
+        key = _normalize_lore(grant)
+        if key in lore_names:
+            matched.add(key)
+        else:
+            warnings.append(
+                f"{label.capitalize()} grants training in the '{grant}' Lore "
+                "skill but it's not present in this character's lores"
+            )
+
+    # A player-choice grant has no name to match against, so check presence
+    # rather than identity: each one needs a recorded Lore left spare once
+    # the named grants have claimed theirs. Catches the case that actually
+    # goes wrong -- a character with such a background and no Lore recorded
+    # at all -- without inventing an identity check that can't exist.
+    if choice_grants:
+        spare = len(lore_names - matched)
+        if spare < len(choice_grants):
+            source = (
+                choice_grants[0].capitalize()
+                if len(set(choice_grants)) == 1
+                else "Background/class"
+            )
+            warnings.append(
+                f"{source} grants {len(choice_grants)} Lore skill(s) of the "
+                f"player's own choosing, but the character records {spare} "
+                "Lore not already accounted for by a named grant"
+            )
     return warnings
 
 
@@ -869,7 +1325,15 @@ def _level1_ability_score(character: dict[str, Any], ability: str) -> int | None
     if not isinstance(breakdown, dict):
         return None
     score = 10
-    if ability in breakdown.get("ancestryFlaws", []):
+    # Real Pathbuilder exports capitalize ability names in `breakdown`
+    # ("Str", "Con") where this project's hand-authored character files use
+    # lowercase -- confirmed against a live export. Both sides get folded,
+    # here and in the boost loop below; comparing raw would silently drop a
+    # capitalized flaw and overstate the score by 2.
+    flaws = breakdown.get("ancestryFlaws", [])
+    if not isinstance(flaws, list):
+        return None
+    if any(isinstance(f, str) and f.lower() == ability for f in flaws):
         score -= 2
     boost_sources = [
         breakdown.get("ancestryFree", []),
@@ -989,15 +1453,15 @@ def _validate_proficiency_ranks(character: dict[str, Any]) -> list[str]:
     baseline plus every class feature/feat granting a rank increase up to
     their level should produce.
 
-    This closes a gap KNOWN_ISSUES.md previously called genuinely blocked
-    on unstructured data: class features like Juggernaut (Fortitude to
-    master), Weapon Legend, and Perception Mastery don't carry a rule
-    element for their rank bump at all (confirmed live -- their own
-    `system.rules` is empty) -- Foundry's actor-preparation code reads a
-    separate structured field instead, `system.subfeatures.proficiencies`
-    (see `item_proficiency_grants`), which this project's ingestion
-    previously never read either. It's real structured data, not flavor
-    text, so it's safe to validate against.
+    This closes a gap once tracked as genuinely blocked on unstructured
+    data: class features like Juggernaut (Fortitude to master), Weapon
+    Legend, and Perception Mastery don't carry a rule element for their
+    rank bump at all (confirmed live -- their own `system.rules` is empty)
+    -- Foundry's actor-preparation code reads a separate structured field
+    instead, `system.subfeatures.proficiencies` (see
+    `item_proficiency_grants`), which this project's ingestion previously
+    never read either. It's real structured data, not flavor text, so it's
+    safe to validate against.
 
     Deliberately a floor check, not an exact-match one: warns only when the
     character's actual rank is *lower* than the computed minimum, never
@@ -1415,11 +1879,72 @@ def _class_spell_slots(character: dict[str, Any]) -> dict[str, int] | None:
     return json.loads(rows[0]["slots"]) if rows else None
 
 
+_HEIGHTEN_INTERVAL_RE = re.compile(r"Heightened \(\+(\d+)\)")
+_HEIGHTEN_FIXED_RE = re.compile(r"Heightened \((\d+)(?:st|nd|rd|th)\)")
+
+
+def _heightening(system: dict[str, Any], description: str,
+                 base_rank: int) -> dict[str, Any] | None:
+    """How a spell heightens, as `{"type": "interval", "interval": n}` or
+    `{"type": "fixed", "ranks": [...]}`, or None if it gains nothing from
+    being cast in a higher slot.
+
+    Read from `system.heightening` where it exists and from the description's
+    "Heightened (+2)" / "Heightened (5th)" lines otherwise, because the
+    structured field is only present where Foundry needs it to automate
+    damage: **528 spells state their heightening in prose alone**, against
+    597 carrying the structured field. Using one source would miss almost
+    half of them, and the half it missed would be exactly the spells whose
+    heightening changes duration, targets or conditions rather than dice --
+    which is most of what makes heightening a low-rank spell worthwhile.
+    """
+    structured = system.get("heightening") or {}
+    kind = structured.get("type")
+    if kind == "interval" and structured.get("interval"):
+        return {"type": "interval", "interval": int(structured["interval"])}
+    if kind == "fixed" and structured.get("levels"):
+        ranks = sorted(int(r) for r in structured["levels"])
+        if ranks:
+            return {"type": "fixed", "ranks": ranks}
+
+    interval = _HEIGHTEN_INTERVAL_RE.search(description or "")
+    if interval:
+        return {"type": "interval", "interval": int(interval.group(1))}
+    fixed = sorted({int(m) for m in _HEIGHTEN_FIXED_RE.findall(description or "")
+                    if int(m) > base_rank})
+    if fixed:
+        return {"type": "fixed", "ranks": fixed}
+    return None
+
+
+def _useful_ranks(base_rank: int, heightening: dict[str, Any] | None,
+                  cap: int) -> list[int]:
+    """Every rank up to `cap` at which casting this spell gains something over
+    casting it at the rank below.
+
+    A spell can always be cast from a higher slot -- and doing so does raise
+    its rank for counteracting and for effects that care about spell rank --
+    but its *effects* only improve at its own heightening steps. Putting a
+    "Heightened (+2)" spell in a slot one rank up buys nothing but a
+    counteract level, which is why this returns the steps rather than the
+    whole range: it answers "which slots is this spell worth preparing in".
+    """
+    if base_rank > cap:
+        return []
+    if not heightening:
+        return [base_rank]
+    if heightening["type"] == "interval":
+        step = max(1, heightening["interval"])
+        return list(range(base_rank, cap + 1, step))
+    return [base_rank] + [r for r in heightening["ranks"] if base_rank < r <= cap]
+
+
 def list_available_spells(
     character: dict[str, Any],
     tradition: Literal["arcane", "divine", "occult", "primal"],
     max_rank: int | None = None,
     include_legacy: bool = False,
+    slot_rank: int | None = None,
 ) -> dict[str, Any]:
     """Spells of the given tradition at or below the highest rank the
     character can currently access, plus (new) the character's actual spell
@@ -1431,9 +1956,14 @@ def list_available_spells(
     all); otherwise the character class's own real slot table (see
     `_class_spell_slots`) if it has one -- this replaces the standard
     full-caster `ceil(level/2)` heuristic with the class's actual
-    progression, which matters for Magus/Summoner specifically (both delayed
-    relative to full casters, and non-monotonic -- they only ever hold 2
-    active ranks at once); if neither applies (the character's class isn't
+    progression, which matters for Magus/Summoner specifically, whose new
+    ranks arrive two levels behind a full caster's and who hold 2 slots per
+    rank rather than 3-4. (An earlier version of this docstring claimed those
+    two were also *non-monotonic*, holding only their top two ranks. They are
+    not: that was the pre-Remaster table being ingested from a stale journal
+    page, explained away rather than checked. Ingestion now overrides both
+    tables and warns on any class whose slots decrease on level-up.) If
+    neither applies (the character's class isn't
     a recognized caster at all), falls back to the `ceil(level/2)`
     heuristic same as before, since a caller may still be probing a
     non-standard tradition/dedication combination this project can't
@@ -1450,6 +1980,36 @@ def list_available_spells(
     each result is tagged `is_cantrip` to keep that mechanical distinction
     visible (cantrips are at-will, leveled spells consume slots).
 
+    **Heightening.** A high-rank slot is often best filled with a heightened
+    lower-rank spell, so every result carries:
+
+    * `heightening` -- `{"type": "interval", "interval": n}` for a
+      "Heightened (+n)" spell, `{"type": "fixed", "ranks": [...]}` for one
+      with named steps, or `null` if the spell gains nothing from a bigger
+      slot.
+    * `useful_ranks` -- the ranks up to the cap at which casting it actually
+      improves. A spell can always be *cast* from a higher slot, and that
+      does raise its rank for counteracting, but its effects only change at
+      its own steps: a "Heightened (+2)" 3rd-rank spell is worth preparing at
+      3rd, 5th, 7th, 9th and nowhere between. Empty for cantrips, which
+      auto-heighten and never take a slot.
+
+    Pass `slot_rank` to ask the question a caster actually asks -- *what is
+    worth putting in this slot?* -- and the result is filtered to spells whose
+    `useful_ranks` include that rank, each carrying `heightened_from` (its
+    base rank, or null when it natively belongs there). That puts a 1st-rank
+    Force Barrage heightened to 9th beside the natively-9th spells, which is
+    the comparison the choice really is.
+
+    Both fields read `system.heightening` where it exists and the
+    description's "Heightened (...)" lines otherwise -- 528 spells state
+    their heightening only in prose, against 597 with the structured field,
+    and the prose-only ones are disproportionately the spells whose
+    heightening changes duration, targets or conditions rather than damage
+    dice. What neither source captures is whether a given step is *worth* a
+    higher slot to this character; that is a judgement, and this tool
+    deliberately reports the steps rather than ranking them.
+
     `include_legacy` (default False): excludes pre-Remaster/OGL-flagged
     spells unless set. See `_legacy_filter_sql`."""
     class_slots = _class_spell_slots(character)
@@ -1462,21 +2022,38 @@ def list_available_spells(
         cap = _max_spell_rank(character.get("level", 1))
 
     rows = _fetchall(
-        "SELECT id, name, level, traits, raw_json FROM entries WHERE pack = 'spells' AND level <= ?"
+        "SELECT id, name, level, traits, description, raw_json FROM entries "
+        "WHERE pack = 'spells' AND level <= ?"
         + licensing.legacy_filter_sql(include_legacy),
         (cap,),
     )
     matches = []
     for r in rows:
-        traditions = json.loads(r["raw_json"]).get("system", {}).get("traits", {}).get("traditions", [])
-        if tradition in traditions:
-            matches.append({
-                "id": r["id"], "name": r["name"], "rank": r["level"],
-                "is_cantrip": "cantrip" in json.loads(r["traits"] or "[]"),
-            })
-    matches.sort(key=lambda s: (s["rank"], not s["is_cantrip"]))
+        system = json.loads(r["raw_json"]).get("system", {})
+        if tradition not in system.get("traits", {}).get("traditions", []):
+            continue
+        traits = json.loads(r["traits"] or "[]")
+        is_cantrip = "cantrip" in traits
+        heightening = _heightening(system, r["description"] or "", r["level"])
+        spell = {
+            "id": r["id"], "name": r["name"], "rank": r["level"],
+            "is_cantrip": is_cantrip,
+            "heightening": heightening,
+            # A cantrip auto-heightens to half the caster's level and never
+            # occupies a slot, so "which slots is it worth preparing in" is
+            # not a question that applies to it.
+            "useful_ranks": ([] if is_cantrip
+                             else _useful_ranks(r["level"], heightening, cap)),
+        }
+        if slot_rank is not None:
+            if is_cantrip or slot_rank not in spell["useful_ranks"]:
+                continue
+            spell["heightened_from"] = r["level"] if r["level"] < slot_rank else None
+        matches.append(spell)
+    matches.sort(key=lambda s: (s["rank"], not s["is_cantrip"], s["name"]))
     return {
         "max_rank": cap,
+        "slot_rank": slot_rank,
         "spell_slots": {k: v for k, v in class_slots.items() if k != "cantrips"} if class_slots else None,
         "cantrips_known": class_slots.get("cantrips") if class_slots else None,
         "spells": matches,
