@@ -2981,7 +2981,7 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     happen -- the same distinction the companion .md files draw.
     """
     ch, lib = ctx["character"], ctx["lib"]
-    rows = [{"level": n, "ancestry": [], "class": [], "skill_increase_named": False}
+    rows = [{"level": n, "ancestry": [], "class": [], "skill_increases": []}
             for n in range(1, max(1, ctx["level"]) + 1)]
 
     def add(level: Any, side: str, label: str, note: str = "") -> None:
@@ -3010,6 +3010,40 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         name = str(feat[0])
         category = str(feat[2]) if len(feat) > 2 and feat[2] else "Feat"
         chosen = str(feat[1]) if len(feat) > 1 and feat[1] else ""
+        level = feat[3] if len(feat) > 3 else 1
+        cat_key = category.strip().lower()
+        if cat_key in ("skill increase", "skill training"):
+            # A named Skill Increase, or a feat's own text granting brand-new
+            # training in a specific skill (e.g. an archetype dedication's
+            # "trained in Stealth or Thievery" -- "Skill Training" is this
+            # project's own convention for that, parallel to "Skill
+            # Increase", used when the grant genuinely can't be derived from
+            # this project's data: some dedication grants are conditional on
+            # the character's proficiency state *before* the feat was taken,
+            # e.g. Rogue Dedication's "if already trained in both Stealth and
+            # Thievery, train an additional skill instead" -- which a
+            # snapshot export has no way to check) -- is a mechanical grant
+            # like an attribute boost, not a chosen feat. It belongs with the
+            # boost/training lines on the Advancement page (same visual
+            # treatment, same "structural, not a pick from a list" meaning),
+            # not blended into the feat column looking like one more feat
+            # card. Pulled out here rather than through `add()`, and the
+            # leading "Skill Increase: "/"Skill Training: " prefix (this
+            # project's own naming convention, not Pathbuilder's) is
+            # stripped since the skill reads better inline with its tier
+            # change/source than repeated as a prefix.
+            try:
+                n = int(level or 1)
+            except (TypeError, ValueError):
+                n = 1
+            if 1 <= n <= len(rows):
+                skill = re.sub(rf"^\s*{re.escape(cat_key)}\s*:\s*", "", name, flags=re.IGNORECASE).strip()
+                is_increase = cat_key == "skill increase"
+                rows[n - 1]["skill_increases"].append({
+                    "label": "Skill increase" if is_increase else "Skill training",
+                    "skill": skill or name, "note": chosen, "is_increase": is_increase,
+                })
+            continue
         label = _adv_category(category)
         # A recorded note can run to a paragraph of build rationale (confirmed
         # live: a feat like Emblazon Armament). One clause of it identifies
@@ -3017,15 +3051,7 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         # rest verbatim.
         note = (label if not chosen
                 else f"{label} &mdash; {_esc(_clip(chosen, 52))}")
-        level = feat[3] if len(feat) > 3 else 1
         add(level, _adv_side(category), name, note)
-        if category.strip().lower() == "skill increase":
-            try:
-                n = int(level or 1)
-            except (TypeError, ValueError):
-                n = 1
-            if 1 <= n <= len(rows):
-                rows[n - 1]["skill_increase_named"] = True
 
     for feature in ctx["class_features"]:
         add(feature.get("granted_level"), "class", feature["name"], "Automatic")
@@ -3074,7 +3100,11 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
             parts = [_esc(n) for n in named] + ([f"+{free} free"] if free else [])
             if parts:
                 extra.append(f"Skill training ({', '.join(parts)})")
-        if r["level"] in skill_inc_levels and not r["skill_increase_named"]:
+        for si in r["skill_increases"]:
+            note = f" ({_esc(si['note'])})" if si["note"] else ""
+            extra.append(f"{si['label']}: {_esc(si['skill'])}{note}")
+        if (r["level"] in skill_inc_levels
+                and not any(si["is_increase"] for si in r["skill_increases"])):
             extra.append("Skill increase")
         return extra
 
