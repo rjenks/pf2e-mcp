@@ -157,6 +157,30 @@ export to continue from.
    the boosts/prerequisites actually depend on). Don't ask the user to pick
    five things in one message.
 
+   **A source that grants two boosts (ancestry's two free boosts, a
+   background's "X-or-Y plus one free" pair) can never put both on the same
+   ability -- each boost from that source must land on a different ability.**
+   This is a real, repeated failure mode, not a hypothetical: it's been
+   corrected by the user three separate times across different builds,
+   most recently when a background's "Strength or Constitution, plus one
+   free" pair was about to be spent as Strength twice to argue one
+   background was more Strength-efficient than another (it wasn't -- both
+   backgrounds can put exactly one boost into Strength, since the free
+   boost is unrestricted in either case). Don't reason about which
+   ability a background/ancestry's free boost "should" hit from memory or
+   in a table -- call `build_list_ability_boost_options(character,
+   source=...)` for that source, record the chosen ability into
+   `character.abilities.breakdown` immediately, then call it again for
+   that same source's second boost before offering it -- the second call
+   will correctly exclude whatever the first one just used. This applies
+   separately per source (ancestry's pair, background's pair, the 4 free
+   boosts at character creation, and again at every 5th-level boost
+   milestone) -- a later source can still boost an ability an earlier
+   source already touched (e.g. class key ability landing on the same
+   ability ancestry already boosted, exactly how Str reaches +4 at 1st in
+   a typical Str-primary build), it's only *within* one source that a
+   repeat is illegal.
+
    **Say attribute modifiers, never scores: `+4`, not `18`.** The Remaster
    works in modifiers -- Player Core starts each modifier at +0, a boost adds
    1 to it and a flaw subtracts 1 -- and every rule that consumes an attribute
