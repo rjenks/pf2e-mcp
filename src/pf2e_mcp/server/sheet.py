@@ -3649,11 +3649,12 @@ def _page_features(ctx: dict[str, Any]) -> str:
 
     feat_cards = ""
     for name, note, cat, lvl in feats:
-        if cat.strip().lower() == "skill increase":
-            # Not a feat at all -- a proficiency-rank bump recorded in the
-            # feat array only so the level-by-level advancement table has
-            # somewhere to put it. No rules-database entry will ever exist
-            # for one, so don't resolve it and don't report it unresolved;
+        if cat.strip().lower() in ("skill increase", "skill training"):
+            # Not a feat at all -- a proficiency-rank bump or a feat-granted
+            # skill training, recorded in the feat array only so the
+            # level-by-level advancement table has somewhere to put it (see
+            # _advancement). No rules-database entry will ever exist for
+            # either, so don't resolve it and don't report it unresolved;
             # that would flag an expected, structural non-match as if it
             # were a data problem on every character that has any skill
             # increases at all -- which is every character past 2nd level.
