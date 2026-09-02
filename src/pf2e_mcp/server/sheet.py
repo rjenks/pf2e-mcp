@@ -2798,6 +2798,111 @@ def _boost_abilities(ch: dict[str, Any], level: int) -> list[str]:
     return [_ABILITY_NAMES[k][1] for k in _ABILITY_KEYS if k in boosted]
 
 
+def _skill_increase_levels(class_name: str) -> list[int]:
+    """Levels this class grants a Skill Increase, straight from
+    `class_progression.skill_increase_levels` (read off the class item
+    itself, not derived from the universal 3/5/7/9/.../19 rule -- a class
+    can add its own beyond that baseline)."""
+    rows = build_tools._fetchall(
+        "SELECT skill_increase_levels FROM class_progression WHERE class_slug = ?",
+        (build_tools._real_slug("classes", class_name or ""),),
+    )
+    if not rows or not rows[0]["skill_increase_levels"]:
+        return []
+    try:
+        return json.loads(rows[0]["skill_increase_levels"])
+    except (TypeError, ValueError):
+        return []
+
+
+_LORE_NAME_RE = re.compile(r"^[A-Z][A-Za-z'\- ]*\sLore$")
+
+
+def _level1_skill_training(ch: dict[str, Any]) -> tuple[list[str], int]:
+    """Skills the character starts trained in at 1st level: the class's and
+    background's guaranteed *fixed* grants (and any background Lore), named
+    from the database, plus a count of remaining free picks -- the class's
+    baseline `additional` slots, one per background ChoiceSet skill pick,
+    and the level-1 Intelligence modifier if positive (the universal
+    trained-skill-count rule; see `_level1_ability_score`'s caller in
+    build_tools for why this must be the level-1 score, not the current
+    one). The free count's specific skill can't be named: Pathbuilder's
+    export format doesn't record which skill a free pick chose, only the
+    character's current (possibly since-increased) proficiency rank.
+    """
+    named: list[str] = []
+    seen: set[str] = set()
+    free = 0
+
+    def add_named(skill: str) -> None:
+        # PF2e's initial-proficiencies rule: a fixed grant that would
+        # duplicate a skill the character is already trained in instead
+        # trains a skill of the player's choice (Player Core, Skills step
+        # of character creation) -- confirmed live where a Thaumaturge's
+        # class-fixed Occultism collided with its background also fixing
+        # Occultism. That replacement skill can't be named from Pathbuilder's
+        # export format, so the second grant becomes an uncounted free pick
+        # rather than a misleading repeated name.
+        nonlocal free
+        if skill.lower() in seen:
+            free += 1
+            return
+        seen.add(skill.lower())
+        named.append(skill)
+
+    class_rows = build_tools._fetchall(
+        "SELECT trained_skills FROM class_progression WHERE class_slug = ?",
+        (build_tools._real_slug("classes", ch.get("class") or ""),),
+    )
+    if class_rows and class_rows[0]["trained_skills"]:
+        class_trained = json.loads(class_rows[0]["trained_skills"])
+        for skill in class_trained.get("fixed", []) or []:
+            if skill:
+                add_named(skill.capitalize())
+        free += class_trained.get("additional", 0) or 0
+
+    background_slug = build_tools._real_slug("backgrounds", ch.get("background") or "")
+    bg_rows = build_tools._fetchall(
+        "SELECT trained_skills FROM background_boosts WHERE background_slug = ?",
+        (background_slug,),
+    )
+    if bg_rows and bg_rows[0]["trained_skills"]:
+        bg_trained = json.loads(bg_rows[0]["trained_skills"])
+        for skill in bg_trained.get("fixed", []) or []:
+            if skill:
+                add_named(skill.capitalize())
+        # `lore` is a straight copy of the background item's own free text,
+        # and isn't always a single clean name (confirmed live: concatenated
+        # "UndeadLore " with no space, "X Lore or Y Lore" choice phrasing,
+        # even one with a stray markdown "**" prefix). Only name it when it
+        # unambiguously reads as one proper Lore name; anything else is a
+        # choice or malformed entry, so it becomes an uncounted free pick
+        # instead of a wrong or garbled name on the sheet.
+        for lore in bg_trained.get("lore", []) or []:
+            lore = lore.strip()
+            if not lore:
+                continue
+            if (_LORE_NAME_RE.match(lore)
+                    and " or " not in lore and " and " not in lore):
+                add_named(lore)
+            else:
+                free += 1
+        bg_choice_rows = build_tools._fetchall(
+            "SELECT cs.choices FROM item_choice_sets cs "
+            "JOIN entries e ON e.id = cs.entry_id "
+            "WHERE e.pack = 'backgrounds' AND e.slug = ?",
+            (background_slug,),
+        )
+        free += len(bg_choice_rows)
+
+    level1_int = build_tools._level1_ability_score(ch, "int")
+    if level1_int is None:
+        level1_int = m.default_character_abilities(ch).get("int", 10)
+    free += max(0, m.ability_mod(level1_int))
+
+    return named, free
+
+
 # Exports disagree about how to spell a feat's category: Pathbuilder's own
 # writes bare lowercase slugs ('classfeature', 'skill'), while the
 # hand-authored files in characters/ write prose ('Class Feat', 'Awarded
@@ -2856,7 +2961,7 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     happen -- the same distinction the companion .md files draw.
     """
     ch, lib = ctx["character"], ctx["lib"]
-    rows = [{"level": n, "ancestry": [], "class": []}
+    rows = [{"level": n, "ancestry": [], "class": [], "skill_increase_named": False}
             for n in range(1, max(1, ctx["level"]) + 1)]
 
     def add(level: Any, side: str, label: str, note: str = "") -> None:
@@ -2892,7 +2997,15 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         # rest verbatim.
         note = (label if not chosen
                 else f"{label} &mdash; {_esc(_clip(chosen, 52))}")
-        add(feat[3] if len(feat) > 3 else 1, _adv_side(category), name, note)
+        level = feat[3] if len(feat) > 3 else 1
+        add(level, _adv_side(category), name, note)
+        if category.strip().lower() == "skill increase":
+            try:
+                n = int(level or 1)
+            except (TypeError, ValueError):
+                n = 1
+            if 1 <= n <= len(rows):
+                rows[n - 1]["skill_increase_named"] = True
 
     for feature in ctx["class_features"]:
         add(feature.get("granted_level"), "class", feature["name"], "Automatic")
@@ -2913,20 +3026,36 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
     if not any(r["ancestry"] or r["class"] for r in rows):
         return ""
 
-    def cell(items: list[dict[str, str]], boosted: list[str] | None = None) -> str:
+    ch = ctx["character"]
+    skill_inc_levels = set(_skill_increase_levels(ch.get("class") or ""))
+
+    def cell(items: list[dict[str, str]], extra: list[str] | None = None) -> str:
         html = "".join(
             f'<div class="adv-item">{_esc(i["label"])}'
             f'{f"<span class=\'cat\'>{i["note"]}</span>" if i["note"] else ""}'
             f'</div>' for i in items)
-        if boosted is not None:
-            label = ("Attribute boosts "
-                      f"({', '.join(boosted)})" if boosted else "Attribute boosts")
-            html += f'<div class="adv-boost">{label}</div>'
+        for line in extra or []:
+            html += f'<div class="adv-boost">{line}</div>'
         return html or '<span class="adv-none">&mdash;</span>'
+
+    def ancestry_extra(r: dict[str, Any]) -> list[str]:
+        extra = []
+        if r["level"] in _BOOST_LEVELS:
+            boosted = _boost_abilities(ch, r["level"])
+            extra.append(f"Attribute boosts ({', '.join(boosted)})"
+                         if boosted else "Attribute boosts")
+        if r["level"] == 1:
+            named, free = _level1_skill_training(ch)
+            parts = [_esc(n) for n in named] + ([f"+{free} free"] if free else [])
+            if parts:
+                extra.append(f"Skill training ({', '.join(parts)})")
+        if r["level"] in skill_inc_levels and not r["skill_increase_named"]:
+            extra.append("Skill increase")
+        return extra
 
     body = "".join(
         f'<tr><td class="lvl">{r["level"]}</td>'
-        f'<td>{cell(r["ancestry"], _boost_abilities(ctx["character"], r["level"]) if r["level"] in _BOOST_LEVELS else None)}</td>'
+        f'<td>{cell(r["ancestry"], ancestry_extra(r))}</td>'
         f'<td class="col last">{cell(r["class"])}</td></tr>'
         for r in rows
     )
