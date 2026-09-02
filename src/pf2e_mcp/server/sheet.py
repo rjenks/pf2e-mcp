@@ -2767,6 +2767,37 @@ _CASTER_KINDS = ("Prepared", "Spontaneous", "Innate")
 # Ability boosts land at character creation and every fifth level after.
 _BOOST_LEVELS = (1, 5, 10, 15, 20)
 
+
+def _boost_abilities(ch: dict[str, Any], level: int) -> list[str]:
+    """Which abilities (as abbreviations, canonical STR..CHA order) were
+    boosted at a given milestone level, from Pathbuilder's own
+    `abilities.breakdown` boost history. 1st level folds in every
+    creation-time source (ancestry free/fixed, background, class) alongside
+    `mapLevelledBoosts["1"]`, since all of those land at character creation
+    together; levels 5/10/15/20 read only that level's `mapLevelledBoosts`
+    entry. Returns [] if `breakdown` is missing or malformed -- the caller
+    falls back to an unlabeled "Attribute boosts" line rather than guessing.
+    """
+    breakdown = ch.get("abilities", {}).get("breakdown")
+    if not isinstance(breakdown, dict):
+        return []
+    boosted: set[str] = set()
+    sources = []
+    if level == 1:
+        sources += ["ancestryFree", "ancestryBoosts",
+                    "backgroundBoosts", "backgroundAbilities", "classBoosts"]
+    for key in sources:
+        src = breakdown.get(key)
+        if isinstance(src, list):
+            boosted.update(a.lower() for a in src if isinstance(a, str))
+    milestones = breakdown.get("mapLevelledBoosts")
+    if isinstance(milestones, dict):
+        src = milestones.get(str(level))
+        if isinstance(src, list):
+            boosted.update(a.lower() for a in src if isinstance(a, str))
+    return [_ABILITY_NAMES[k][1] for k in _ABILITY_KEYS if k in boosted]
+
+
 # Exports disagree about how to spell a feat's category: Pathbuilder's own
 # writes bare lowercase slugs ('classfeature', 'skill'), while the
 # hand-authored files in characters/ write prose ('Class Feat', 'Awarded
@@ -2882,18 +2913,20 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
     if not any(r["ancestry"] or r["class"] for r in rows):
         return ""
 
-    def cell(items: list[dict[str, str]], boosts: bool = False) -> str:
+    def cell(items: list[dict[str, str]], boosted: list[str] | None = None) -> str:
         html = "".join(
             f'<div class="adv-item">{_esc(i["label"])}'
             f'{f"<span class=\'cat\'>{i["note"]}</span>" if i["note"] else ""}'
             f'</div>' for i in items)
-        if boosts:
-            html += '<div class="adv-boost">Attribute boosts</div>'
+        if boosted is not None:
+            label = ("Attribute boosts "
+                      f"({', '.join(boosted)})" if boosted else "Attribute boosts")
+            html += f'<div class="adv-boost">{label}</div>'
         return html or '<span class="adv-none">&mdash;</span>'
 
     body = "".join(
         f'<tr><td class="lvl">{r["level"]}</td>'
-        f'<td>{cell(r["ancestry"], r["level"] in _BOOST_LEVELS)}</td>'
+        f'<td>{cell(r["ancestry"], _boost_abilities(ctx["character"], r["level"]) if r["level"] in _BOOST_LEVELS else None)}</td>'
         f'<td class="col last">{cell(r["class"])}</td></tr>'
         for r in rows
     )
