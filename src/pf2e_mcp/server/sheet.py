@@ -2818,18 +2818,38 @@ def _skill_increase_levels(class_name: str) -> list[int]:
 _LORE_NAME_RE = re.compile(r"^[A-Z][A-Za-z'\- ]*\sLore$")
 
 
-def _level1_skill_training(ch: dict[str, Any]) -> tuple[list[str], int]:
-    """Skills the character starts trained in at 1st level: the class's and
-    background's guaranteed *fixed* grants (and any background Lore), named
-    from the database, plus a count of remaining free picks -- the class's
+def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], int]:
+    """Skills the character starts trained in at 1st level.
+
+    When `safe` is True -- the character's current level is below its
+    class's first Skill Increase level (see `_skill_increase_levels`) --
+    every skill or Lore currently trained was necessarily trained at 1st
+    level, since no Skill Increase has had the chance to happen yet. In
+    that case the character's own current `proficiencies`/`lores` are the
+    ground truth and are read directly, naming every one of them (fixed
+    grants and free picks alike) with no need to reconcile against a
+    computed pick count.
+
+    Otherwise a currently-trained skill might have arrived later instead
+    of at 1st level (a Skill Increase can train a brand-new skill, not
+    only raise an existing one), so this can only name the class's and
+    background's guaranteed *fixed* grants (and any background Lore) from
+    the database, falling back to a bare count for the rest -- the class's
     baseline `additional` slots, one per background ChoiceSet skill pick,
     and the level-1 Intelligence modifier if positive (the universal
     trained-skill-count rule; see `_level1_ability_score`'s caller in
     build_tools for why this must be the level-1 score, not the current
-    one). The free count's specific skill can't be named: Pathbuilder's
+    one). That count's specific skill genuinely can't be named: Pathbuilder's
     export format doesn't record which skill a free pick chose, only the
     character's current (possibly since-increased) proficiency rank.
     """
+    if safe:
+        prof = ch.get("proficiencies", {}) or {}
+        named = [skill.capitalize() for skill in sorted(m.KNOWN_SKILLS)
+                 if (prof.get(skill, 0) or 0) >= 2]
+        named += [label for label, rank in _lore_entries(ch) if rank >= 2]
+        return named, 0
+
     named: list[str] = []
     seen: set[str] = set()
     free = 0
@@ -3028,6 +3048,11 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
 
     ch = ctx["character"]
     skill_inc_levels = set(_skill_increase_levels(ch.get("class") or ""))
+    # Below the class's first Skill Increase level, nothing has had the
+    # chance to change a skill's training since 1st level, so the current
+    # proficiencies can be read directly and named in full rather than
+    # falling back to a bare pick count -- see _level1_skill_training.
+    training_safe = ctx["level"] < min(skill_inc_levels, default=2)
 
     def cell(items: list[dict[str, str]], extra: list[str] | None = None) -> str:
         html = "".join(
@@ -3045,7 +3070,7 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
             extra.append(f"Attribute boosts ({', '.join(boosted)})"
                          if boosted else "Attribute boosts")
         if r["level"] == 1:
-            named, free = _level1_skill_training(ch)
+            named, free = _level1_skill_training(ch, training_safe)
             parts = [_esc(n) for n in named] + ([f"+{free} free"] if free else [])
             if parts:
                 extra.append(f"Skill training ({', '.join(parts)})")
