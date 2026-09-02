@@ -317,8 +317,15 @@ def _find_symbol(symbol_dir: str, deity_name: str) -> Path | None:
     return None
 
 
-def _name_variants(name: str) -> list[str]:
+def _name_variants(name: str) -> list[tuple[str, bool]]:
     """Candidate spellings to try for one recorded name, most-faithful first.
+
+    Each candidate is paired with whether it's the *player-appended-qualifier*
+    strip specifically -- e.g. "Assurance (Medicine)" -> "Assurance", where the
+    parenthetical is this project's own annotation of which skill/tradition/
+    etc. a repeatable feat was taken for, not a second spelling of the feat
+    itself. A match on that candidate isn't a data disagreement worth flagging
+    to the caller; every other candidate here is.
 
     Character exports and the rules data disagree in a handful of systematic
     ways, and every one of these was observed in real files in this repo:
@@ -330,21 +337,23 @@ def _name_variants(name: str) -> list[str]:
     rather than guessed at.
     """
     name = name.strip()
-    out = [name]
+    out: list[tuple[str, bool]] = [(name, False)]
+    seen = {name}
 
-    def push(candidate: str) -> None:
+    def push(candidate: str, is_qualifier_strip: bool = False) -> None:
         candidate = re.sub(r"\s+", " ", candidate).strip()
-        if candidate and candidate not in out:
-            out.append(candidate)
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            out.append((candidate, is_qualifier_strip))
 
     bare = re.sub(r"\s*\([^)]*\)\s*$", "", name).strip()
-    push(bare)
+    push(bare, is_qualifier_strip=True)
 
     inverted = re.match(r"^(.*?)\s*\(([^)]*)\)\s*$", name)
     if inverted:
         push(f"{inverted.group(2)} {inverted.group(1)}")
 
-    for base in list(out):
+    for base, _ in list(out):
         if re.search(r"\bTools\b", base):
             push(re.sub(r"\bTools\b", "Toolkit", base))
         elif re.search(r"\bKit\b", base):
@@ -353,7 +362,7 @@ def _name_variants(name: str) -> list[str]:
             push(re.sub(r"\bToolkit\b", "Tools", base))
             push(re.sub(r"\bToolkit\b", "Kit", base))
 
-    for base in list(out):
+    for base, _ in list(out):
         if base.endswith("s") and not base.endswith("ss"):
             push(base[:-1])
 
@@ -385,12 +394,16 @@ class _Library:
         if key in self._cache:
             return self._cache[key]
         entry = None
-        for i, variant in enumerate(_name_variants(name)):
+        for i, (variant, is_qualifier_strip) in enumerate(_name_variants(name)):
             entry = self._query(variant, kind)
             if entry is not None:
-                if i:
-                    # Matched on something other than the recorded name; say so
-                    # rather than letting a near-miss pass for an exact hit.
+                if i and not is_qualifier_strip:
+                    # Matched on something other than the recorded name, and
+                    # not just by stripping a qualifier we appended ourselves
+                    # (e.g. "Assurance (Medicine)" -> "Assurance") -- that
+                    # case is expected by design, not a data disagreement
+                    # worth flagging. Anything else is a real near-miss; say
+                    # so rather than letting it pass for an exact hit.
                     self.aliased.append({"recorded": name, "matched": entry["name"],
                                          "kind": kind})
                 break
@@ -3419,6 +3432,15 @@ def _page_features(ctx: dict[str, Any]) -> str:
 
     feat_cards = ""
     for name, note, cat, lvl in feats:
+        if cat.strip().lower() == "skill increase":
+            # Not a feat at all -- a proficiency-rank bump recorded in the
+            # feat array only so the level-by-level advancement table has
+            # somewhere to put it. No rules-database entry will ever exist
+            # for one, so don't resolve it and don't report it unresolved;
+            # that would flag an expected, structural non-match as if it
+            # were a data problem on every character that has any skill
+            # increases at all -- which is every character past 2nd level.
+            continue
         entry = lib.get(name, "feat")
         if entry is None:
             continue
