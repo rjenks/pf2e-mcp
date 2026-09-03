@@ -1728,6 +1728,8 @@ div.sub:first-child{margin-top:0;}
   color:var(--muted);margin-top:2px;}
 .identity{display:grid;grid-template-columns:repeat(6,1fr);
   border-bottom:1px solid var(--rule);}
+/* One more column, PFS characters only -- see .identity's Faction field. */
+.identity.pfs{grid-template-columns:repeat(7,1fr);}
 .identity .f{padding:4px 7px 5px;border-right:1px solid var(--hair);}
 .identity .f:last-child{border-right:0;}
 .identity .v{font-size:8.6pt;font-weight:620;line-height:1.25;margin-top:1px;}
@@ -2394,7 +2396,7 @@ def _page_core(ctx: dict[str, Any]) -> str:
     <div class="cls">{_esc(ch.get('class') or '')} {level}
       <small>{_esc(ctx['subclass_label'])}</small></div>
   </div>
-  <div class="identity">
+  <div class="identity{' pfs' if ch.get('faction') else ''}">
     <div class="f"><div class="lbl">Ancestry &amp; Heritage</div>
       <div class="v">{_esc(ch.get('ancestry') or '—')}
         <span style="color:var(--muted)">/</span>
@@ -2410,6 +2412,8 @@ def _page_core(ctx: dict[str, Any]) -> str:
       <div class="v sm">{_esc(", ".join(ch.get('languages') or []) or '—')}</div></div>
     <div class="f"><div class="lbl">Hero Points</div>
       <div class="v">{_circles(3)}</div></div>
+    {f'<div class="f"><div class="lbl">PFS Faction</div>'
+     f'<div class="v">{_esc(ch["faction"])}</div></div>' if ch.get('faction') else ''}
   </div>
 
   <div class="cols">
