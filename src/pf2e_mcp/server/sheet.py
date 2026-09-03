@@ -1376,6 +1376,31 @@ def _lore_entries(character: dict[str, Any]) -> list[tuple[str, int]]:
     return out
 
 
+def _assurance_skills(character: dict[str, Any]) -> set[str]:
+    """Lowercased skill/Lore names this character has taken Assurance for,
+    parsed from the feats array. Handles both this project's own
+    "Assurance (Skill)" naming convention and Pathbuilder's raw export
+    convention -- name literally "Assurance", the chosen skill in the
+    separate note/choice field -- since a repeatable feat like this shows
+    up both ways across `characters/*.json` (see `_name_variants`, which
+    handles the same split for database lookups)."""
+    out: set[str] = set()
+    for feat in character.get("feats", []) or []:
+        if not (isinstance(feat, (list, tuple)) and feat):
+            continue
+        name = str(feat[0]).strip()
+        if not name.lower().startswith("assurance"):
+            continue
+        paren = re.match(r"assurance\s*\(([^)]+)\)\s*$", name, re.IGNORECASE)
+        if paren:
+            out.add(paren.group(1).strip().lower())
+            continue
+        note = str(feat[1]).strip() if len(feat) > 1 and feat[1] else ""
+        if note:
+            out.add(note.lower())
+    return out
+
+
 def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
                 level: int,
                 hidden_lores: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
@@ -1390,23 +1415,43 @@ def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
     training the character always has.
     """
     prof = character.get("proficiencies", {}) or {}
+    assurance = _assurance_skills(character)
+
+    def _assurance_value(name: str, rank: int) -> int | None:
+        # A repeatable feat like Assurance can be recorded either against
+        # the bare skill name ("Medicine") or, for a Lore, with or without
+        # the "Lore" suffix ("Underworld" vs "Underworld Lore") -- check
+        # both forms rather than silently missing the trained-skill match.
+        low = name.lower()
+        if low in assurance or low.removesuffix(" lore") in assurance:
+            return 10 + level + rank
+        return None
+
     rows = []
     for skill, key in sorted(_CORE_SKILLS.items()):
         rank = prof.get(skill, 0) or 0
-        rows.append({
+        row = {
             "name": skill.title(),
             "key": _ABILITY_NAMES[key][1],
             "rank": rank,
             "total": m.total_bonus(abilities[key], rank, level),
-        })
+        }
+        assurance_val = _assurance_value(row["name"], rank)
+        if assurance_val is not None:
+            row["assurance"] = assurance_val
+        rows.append(row)
     for label, rank in _lore_entries(character):
         if label.lower() in hidden_lores:
             continue
-        rows.append({
+        row = {
             "name": label,
             "key": "INT", "rank": rank,
             "total": m.total_bonus(abilities["int"], rank, level),
-        })
+        }
+        assurance_val = _assurance_value(label, rank)
+        if assurance_val is not None:
+            row["assurance"] = assurance_val
+        rows.append(row)
     return rows
 
 
@@ -1771,6 +1816,12 @@ table.sk .ka{font-family:'SheetSans',sans-serif;font-size:5.7pt;font-weight:650;
 table.sk .p{text-align:right;padding-right:5px;white-space:nowrap;}
 table.sk .t{text-align:right;font-size:9pt;font-weight:700;width:26px;}
 table.sk .t.untr{font-weight:500;color:var(--muted);}
+table.sk td.noline{border-bottom:0;padding-bottom:0;}
+table.sk tr.sk-assure td{padding-top:0;padding-bottom:1.05px;}
+table.sk tr.sk-assure .n{font-size:6.2pt;font-weight:500;font-style:italic;
+  color:var(--muted);padding-left:7px;}
+table.sk tr.sk-assure .ka{font-size:5.2pt;}
+table.sk tr.sk-assure .t{font-size:7.4pt;font-weight:600;color:var(--muted);}
 .sk-foot{font-size:6.4pt;color:var(--muted);margin-top:4px;line-height:1.35;}
 .tile{border:1.4px solid var(--ink);display:flex;align-items:stretch;
   background:var(--warm);margin-bottom:6px;}
@@ -2261,13 +2312,27 @@ def _page_core(ctx: dict[str, Any]) -> str:
         for k in _ABILITY_KEYS
     )
 
-    sk_html = "".join(
-        f'<tr><td class="n{"" if r["rank"] else " untr"}">{_esc(r["name"])}'
-        f'<span class="ka">{r["key"]}</span></td>'
-        f'<td class="p">{_pips(r["rank"])}</td>'
-        f'<td class="t{"" if r["rank"] else " untr"}">{_mod(r["total"])}</td></tr>'
-        for r in ctx["skills"]
-    )
+    def sk_row(r: dict[str, Any]) -> str:
+        has_assurance = r.get("assurance") is not None
+        # When an Assurance line follows, the skill's own row gives up its
+        # separator so the pair reads as one visual group, with the
+        # separator appearing after the Assurance line instead.
+        no_line = " noline" if has_assurance else ""
+        html = (
+            f'<tr><td class="n{no_line}{"" if r["rank"] else " untr"}">{_esc(r["name"])}'
+            f'<span class="ka">{r["key"]}</span></td>'
+            f'<td class="p{no_line}">{_pips(r["rank"])}</td>'
+            f'<td class="t{no_line}{"" if r["rank"] else " untr"}">{_mod(r["total"])}</td></tr>'
+        )
+        if has_assurance:
+            html += (
+                '<tr class="sk-assure"><td class="n">Assurance '
+                '<span class="ka">10 + PROF</span></td><td class="p"></td>'
+                f'<td class="t">{r["assurance"]}</td></tr>'
+            )
+        return html
+
+    sk_html = "".join(sk_row(r) for r in ctx["skills"])
 
     save_html = "".join(
         f'<div class="statrow"><span class="nm">{label}</span>'
