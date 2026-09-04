@@ -111,6 +111,34 @@ _STRIKING_DICE = {
     "striking": 2, "greater striking": 3, "major striking": 4,
 }
 
+# Resilient's rune tier is recorded as this project's own 0/1/2/3 armor.res
+# convention (parallel to a weapon's pot field), not by name -- these are
+# the display labels for each tier.
+_RESILIENT_NAMES = {1: "resilient", 2: "greater resilient", 3: "major resilient"}
+
+# A fixed rune -- potency (weapon or armor) or resilient -- is always read
+# from this project's own dedicated numeric field (pot/res), never from the
+# freeform `runes` list. A hand-authored file has been seen recording both
+# ("pot": 1 alongside a redundant "Weapon Potency (+1)" string in `runes`),
+# so entries matching this pattern are dropped from the freeform list rather
+# than risk printing the same fact twice.
+_FIXED_RUNE_RE = re.compile(
+    r"^(weapon|armor)\s+potency\b|^(greater\s+|major\s+)?resilient\b",
+    re.IGNORECASE)
+
+
+def _rune_labels(fixed: list[str], other_runes: list[str]) -> list[str]:
+    """Human-readable rune labels for a weapon or suit of armor: `fixed`
+    (potency/resilient tiers, already formatted by the caller from this
+    project's numeric pot/res fields) plus any other named property rune,
+    skipping ones that just restate a fixed tier in prose."""
+    labels = list(fixed)
+    for rune in other_runes:
+        text = str(rune).strip()
+        if text and not _FIXED_RUNE_RE.match(text):
+            labels.append(text)
+    return labels
+
 # PF2e's damage die ladder, for effects that step a die up.
 _DIE_LADDER = ("d4", "d6", "d8", "d10", "d12")
 
@@ -1273,9 +1301,11 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         bonus = (level + rank if rank else 0) + potency
         attack = atk_mod + bonus
 
-        runes = [str(r).lower() for r in (weapon.get("runes") or [])]
+        raw_runes = [str(r) for r in (weapon.get("runes") or [])]
+        runes = [r.lower() for r in raw_runes]
         dice = max((_STRIKING_DICE[r] for r in runes if r in _STRIKING_DICE),
                    default=1)
+        rune_labels = _rune_labels([f"+{potency} potency"] if potency else [], raw_runes)
         die = weapon.get("die") or "d4"
         base_die = ((entry or {}).get("system", {}).get("damage") or {}).get("die")
         slug = ((entry or {}).get("system", {}).get("slug")
@@ -1334,6 +1364,7 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
             "category": category,
             "rank": rank,
             "stepped_by": stepped_by,
+            "rune_labels": rune_labels,
         }
         rows.append(row)
 
@@ -2037,6 +2068,7 @@ table.str td{padding:3px 3px 3px 0;border-bottom:.6px dotted var(--hair);
 table.str .wn{font-weight:640;}
 table.str .bn{font-weight:700;font-size:9pt;}
 table.str .tr{font-size:6.2pt;color:var(--muted);line-height:1.35;}
+table.str .tr.rune{color:var(--accent);font-weight:600;text-transform:capitalize;}
 .track{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:2px;}
 .track .grp{display:flex;align-items:center;gap:4px;}
 .track .grp .lbl{font-size:5.8pt;}
@@ -2351,11 +2383,13 @@ def _page_core(ctx: dict[str, Any]) -> str:
         # swamp the column, and a die mismatch is reported as a warning anyway.
         note = s["display"] if len(s["display"]) <= 80 else ""
         extra = f'<div class="tr">{_esc(note)}</div>' if note else ""
+        runes_line = (f'<div class="tr rune">{_esc(", ".join(s["rune_labels"]))}</div>'
+                      if s.get("rune_labels") else "")
         strike_html += (
             f'<tr><td><div class="wn">{_esc(s["name"])}'
             f'{f" &times;{s['qty']}" if s["qty"] > 1 else ""}</div>'
             f'<div class="tr">{_esc(", ".join(t.replace("-", " ") for t in s["traits"]))}</div>'
-            f'{extra}</td>'
+            f'{runes_line}{extra}</td>'
             f'<td class="r bn">{_mod(s["attack"])}</td>'
             f'<td class="r">{_esc(s["damage"])}<div class="tr">{_esc(s["type"])}</div></td></tr>'
         )
@@ -2380,7 +2414,9 @@ def _page_core(ctx: dict[str, Any]) -> str:
         ac_cap = (f'<b>{_esc(armor["display_name"])}</b>'
                   f'<span class="capmeta"> &middot; '
                   f'{_RANK_NAME.get(armor_rank, "?")} '
-                  f'({_mod(level + armor_rank if armor_rank else 0)})')
+                  f'({_mod(level + armor_rank if armor_rank else 0)})'
+                  + (f' &middot; {_esc(", ".join(armor["rune_labels"]))}'
+                     if armor.get("rune_labels") else ""))
     else:
         unarmored_rank = prof.get("unarmored", 0) or 0
         ac_cells = (mstat("Item", "—") + mstat("Dex cap", "—")
@@ -4168,6 +4204,12 @@ def _armor_stats(character: dict[str, Any], lib: _Library,
             "check_penalty": check or 0,
             "speed_penalty": speed or 0,
             "potency": item.get("pot") or 0,
+            "rune_labels": _rune_labels(
+                ([f"+{item.get('pot')} potency"] if item.get("pot") else [])
+                + ([_RESILIENT_NAMES[tier]]
+                   if (tier := m.resilient_tier(item.get("res"))) else []),
+                item.get("runes") or [],
+            ),
         }, note
     return None, ""
 
