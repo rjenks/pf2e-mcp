@@ -1069,9 +1069,10 @@ def _worn_armor_stats(character: dict[str, Any]) -> dict[str, Any] | None:
     equipment pack for its acBonus/dexCap/category. Returns None if nothing
     is worn or the name isn't found, in which case the caller should fall
     back to the unarmored baseline. `potency` (the armor's potency rune
-    bonus) comes from the character's own armor entry (Pathbuilder's `pot`
-    field), not the equipment pack -- it's a property of the specific
-    physical item the player has, not the base armor type."""
+    bonus) and `resilient` (its resilient rune's item bonus to saves) come
+    from the character's own armor entry (Pathbuilder's `pot`/`res` fields),
+    not the equipment pack -- they're a property of the specific physical
+    item the player has, not the base armor type."""
     worn = next((a for a in character.get("armor", []) if a.get("worn")), None)
     if not worn:
         return None
@@ -1087,6 +1088,7 @@ def _worn_armor_stats(character: dict[str, Any]) -> dict[str, Any] | None:
         "dex_cap": system.get("dexCap"),
         "category": system.get("category", "unarmored"),
         "potency": worn.get("pot", 0) or 0,
+        "resilient": m.resilient_tier(worn.get("res")),
     }
 
 
@@ -1751,7 +1753,10 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
     AC uses the character's worn armor (Pathbuilder's `armor` list) if
     present, else the unarmored baseline, and includes the armor's potency
     rune if any. Does not yet include a raised shield's bonus -- see
-    pf2e_math.armor_ac docstring.
+    pf2e_math.armor_ac docstring. All three saves include the armor's
+    resilient rune's item bonus, if any -- previously omitted entirely, so
+    a character wearing resilient armor had their printed saves understate
+    what they actually have.
 
     HP's `attributes.ancestryhp`/`attributes.classhp` and AC's
     `proficiencies.unarmored` fall back to a lookup against this project's
@@ -1784,14 +1789,16 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
         if "unarmored" not in prof and fallback_unarmored is not None:
             prof = {**prof, "unarmored": fallback_unarmored}
 
+    armor = _worn_armor_stats(character)
+    resilient = armor["resilient"] if armor else 0
+
     saves = {
-        "fortitude": m.total_bonus(abilities["con"], prof.get("fortitude", 0), level),
-        "reflex": m.total_bonus(abilities["dex"], prof.get("reflex", 0), level),
-        "will": m.total_bonus(abilities["wis"], prof.get("will", 0), level),
+        "fortitude": m.total_bonus(abilities["con"], prof.get("fortitude", 0), level) + resilient,
+        "reflex": m.total_bonus(abilities["dex"], prof.get("reflex", 0), level) + resilient,
+        "will": m.total_bonus(abilities["wis"], prof.get("will", 0), level) + resilient,
     }
     perception = m.total_bonus(abilities["wis"], prof.get("perception", 0), level)
 
-    armor = _worn_armor_stats(character)
     if armor:
         ac = m.armor_ac(
             abilities["dex"], prof.get(armor["category"], 0), level,

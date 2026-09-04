@@ -25,6 +25,27 @@ RANK_BONUS = {"untrained": 0, "trained": 2, "expert": 4, "master": 6, "legendary
 # Pathbuilder stores proficiencies as this same 0/2/4/6/8 rank-bonus value directly.
 RANK_BY_VALUE = {v: k for k, v in RANK_BONUS.items()}
 
+_RESILIENT_TIER_NAMES = {"resilient": 1, "greater resilient": 2, "major resilient": 3}
+
+
+def resilient_tier(res: Any) -> int:
+    """Normalizes an armor's `res` field to a 0-3 tier number (the rune's
+    item bonus to saves). Confirmed against real Pathbuilder exports that
+    this is stored as the rune's name ("resilient", "Greater Resilient",
+    any case) -- not the numeric 0-3 convention a hand-authored file might
+    use instead (mirroring a weapon's numeric `pot` field). Handles both,
+    plus a missing/empty/malformed value as 0 rather than raising, since
+    this reads third-party export data of inconsistent shape."""
+    if isinstance(res, str):
+        text = res.strip().lower()
+        if text in _RESILIENT_TIER_NAMES:
+            return _RESILIENT_TIER_NAMES[text]
+        res = text
+    try:
+        return int(res or 0)
+    except (TypeError, ValueError):
+        return 0
+
 # Fixed core rule (PF2e Player Core, Skill Increase choices): a skill
 # cannot be raised to a given rank before the character reaches this level,
 # regardless of class.
