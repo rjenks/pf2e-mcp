@@ -50,6 +50,7 @@ mcp.add_tool(build_tools.to_pathbuilder_export, name="build_to_pathbuilder_expor
 
 mcp.add_tool(character_tools.character_schema, name="build_character_schema")
 mcp.add_tool(character_tools.validate_character, name="build_validate_character")
+mcp.add_tool(character_tools.character_at_level, name="build_character_at_level")
 
 mcp.add_tool(pfs_tools.get_adventure, name="pfs_get_adventure")
 mcp.add_tool(pfs_tools.find_adventures, name="pfs_find_adventures")

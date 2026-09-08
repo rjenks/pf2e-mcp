@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import character as ch
+from . import character_replay as replay
 from .db import get_connection
 
 
@@ -111,5 +112,46 @@ def validate_character(character: dict[str, Any]) -> dict[str, Any]:
     conn = get_connection()
     try:
         return ch.validate_document(character, conn)
+    finally:
+        conn.close()
+
+
+def character_at_level(
+    character: dict[str, Any], level: int | None = None
+) -> dict[str, Any]:
+    """Work out what a character looks like at a given level.
+
+    A character file records the choices made at each level and nothing about
+    their consequences. This replays the plan from 1st level up to `level` and
+    returns the resulting state -- attributes, proficiency ranks, feats,
+    automatic class features, skills and Lores, gear and spellcasting -- in the
+    Pathbuilder shape that `build_calculate_derived_stats`,
+    `build_validate_build` and `build_render_character_sheet` all accept. Pass
+    the result straight to any of them.
+
+    Because nothing is stored, any level is as cheap as any other: this is how
+    to see a 10th-level plan's numbers on a 3rd-level character, or to render
+    the sheet the character had five levels ago. It replaces keeping separate
+    per-level export files.
+
+    The result carries a `_derivation` key explaining itself -- which class
+    features granted which proficiency bumps and at what level, where each
+    trained skill came from, which feats contributed Hit Points, and any
+    `proficiencyOverrides` that derivation has caught up with and that can now
+    be deleted. Underscore-prefixed keys are stripped from a Pathbuilder
+    export, so this never leaks into a file meant for Pathbuilder.
+
+    Args:
+        character: A character document matching `build_character_schema`.
+        level: Which level to replay to, 1-20. Defaults to the character's
+            `identity.currentLevel`. A level beyond the plan's coverage is
+            allowed and returns what the plan does cover, saying so in
+            `_derivation.notes`.
+    """
+    if not isinstance(character, dict) or not character:
+        raise ValueError("character must be a non-empty character document")
+    conn = get_connection()
+    try:
+        return replay.at_level(character, level, conn)
     finally:
         conn.close()
