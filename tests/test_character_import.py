@@ -1,12 +1,18 @@
 """Pathbuilder import and export.
 
-The centrepiece is `test_every_real_character_round_trips`, which runs the real
-`characters/` corpus through import and back out again. Those files are the
+The centrepiece is `test_every_real_character_survives_a_pathbuilder_round_trip`,
+which exports each character in the real `characters/` library to Pathbuilder,
+reads it straight back, and checks that nothing changed. Those files are the
 only large body of genuine builds this project has -- twenty-odd characters
-across a dozen classes, levels 1 to 20, several with archetypes, two written by
-hand rather than exported -- and they exercise combinations no fixture would
-think to invent. It skips when the directory is absent, since `characters/` is
-gitignored personal data and will not exist in a fresh clone.
+across a dozen classes, levels 1 to 20, several with archetypes -- and they
+exercise combinations no invented fixture would think of. It is also the check
+that a player can send a character to Pathbuilder and back without losing
+anything.
+
+These tests skip when `characters/` is absent, since it is gitignored personal
+data and will not exist in a fresh clone. That also means they are the only
+guard on files nothing else holds a copy of: a broken character file cannot be
+recovered from history.
 """
 
 from __future__ import annotations
@@ -17,30 +23,15 @@ from pathlib import Path
 import pytest
 
 from pf2e_mcp.server import character, character_import, character_replay
-from pf2e_mcp.server.build_tools import _feat_slot_bucket
 
 CHARACTERS = Path("characters")
 
-#: Picks in the real corpus that genuinely do not resolve, because the source
-#: file is wrong rather than because the importer is. Listed so that a *new*
-#: unresolvable name still fails the suite.
-#:
-#: One entry so far: a character recording "Chosen One" -- a background -- in an
-#: ancestry feat slot. That character's own notes already flag it under "the two
-#: bad ancestry-feat picks", so import surfacing it is the tooling agreeing with
-#: a conclusion a human had already reached by hand.
-KNOWN_BAD_PICKS: dict[str, set[str]] = {
-    "Tag.json": {"chosen one"},
-}
-
 
 def _corpus() -> list[Path]:
+    """The real character library, now stored natively rather than as exports."""
     if not CHARACTERS.is_dir():
         return []
-    return sorted(
-        path for path in CHARACTERS.glob("*.json")
-        if ".chronicles" not in path.name and " - Level " not in path.name
-    )
+    return sorted(CHARACTERS.glob("*.yaml"))
 
 
 @pytest.fixture
@@ -260,65 +251,71 @@ def test_export_can_render_any_level(export, conn):
 
 @pytest.mark.skipif(not _corpus(), reason="no characters/ directory in this checkout")
 @pytest.mark.parametrize("path", _corpus(), ids=lambda p: p.stem)
-def test_every_real_character_round_trips(path, conn):
-    """Import a real build, replay it, and check nothing was lost.
+def test_every_real_character_survives_a_pathbuilder_round_trip(path, conn):
+    """Export a real character to Pathbuilder, read it back, and compare.
 
-    Feats are the assertion that matters: every feat that spends a slot in the
-    source must reappear, at the same level. That is what proves the plan was
-    reconstructed rather than approximated, and it is what caught the two
-    category vocabularies in the corpus -- Pathbuilder's "Class Feat" and the
-    hand-written files' "class" -- when nearly forty feats vanished from one
-    character.
+    The library is stored natively now, so the round trip runs the other way
+    round from how it did during migration -- but it exercises the same three
+    pieces, and against the same twenty-odd genuine builds across a dozen
+    classes and every level from 1 to 20. Those combinations are what caught
+    the two feat-category vocabularies, the parentheticals that are part of a
+    name rather than a parameter, and the Lores that Pathbuilder keeps outside
+    the feat list.
+
+    Attributes and every chosen feat must come back identical. Anything that
+    does not survive export and re-import is something a player would lose by
+    sending their character to Pathbuilder and back.
     """
-    source = json.loads(path.read_text())
-    build = source.get("build", source)
+    document = character.load(path)
+    direct = character_replay.at_level(document, None, conn)
 
-    document = character_import.from_pathbuilder(source, conn)
-    document.pop("_import")
-    assert character.validate_document(document, conn)["valid"], (
-        f"{path.name} did not import into a valid document"
+    exported = character_import.to_pathbuilder(document, None, conn)
+    reimported = character_import.from_pathbuilder(exported, conn)
+    reimported.pop("_import")
+    round_tripped = character_replay.at_level(reimported, None, conn)
+
+    assert round_tripped["level"] == direct["level"]
+
+    before = {k: v for k, v in direct["abilities"].items() if k != "breakdown"}
+    after = {k: v for k, v in round_tripped["abilities"].items() if k != "breakdown"}
+    assert before == after, f"{path.name}: attributes changed"
+
+    expected = {(f[0].lower(), f[3]) for f in direct["feats"]}
+    actual = {(f[0].lower(), f[3]) for f in round_tripped["feats"]}
+    assert not expected - actual, f"{path.name} lost feats: {sorted(expected - actual)}"
+
+    assert sorted(direct["lores"]) == sorted(round_tripped["lores"]), (
+        f"{path.name}: Lores changed"
     )
-
-    replayed = character_replay.at_level(document, None, conn)
-
-    # Compared case-insensitively on purpose. Replay emits the rules
-    # database's canonical name, so a file recording "Rock the Boat" comes back
-    # as "Rock The Boat" -- a normalisation, not a loss.
-    expected = {
-        (str(feat[0]).lower(), feat[3] if len(feat) > 3 else 1)
-        for feat in build.get("feats") or []
-        if len(feat) > 2 and _feat_slot_bucket(str(feat[2]), False)
-    }
-    actual = {
-        (feat[0].lower(), feat[3]) for feat in replayed["feats"]
-        if feat[2] != "Heritage"
-    }
-    missing = sorted(expected - actual)
-    known = KNOWN_BAD_PICKS.get(path.name, set())
-    unexplained = [feat for feat in missing if feat[0] not in known]
-    assert not unexplained, f"{path.name} lost feats: {unexplained}"
 
 
 @pytest.mark.skipif(not _corpus(), reason="no characters/ directory in this checkout")
-def test_the_corpus_has_no_unresolvable_names(conn):
-    """Every name in every real build maps to a slug.
+def test_the_whole_library_is_valid(conn):
+    """Every stored character passes both validation layers.
 
-    Import is the only place this format matches on a name. If a name here
-    resolves to nothing, that character cannot be converted without losing
-    something, so this is the gate on migration.
+    These files are the only copy: they are gitignored, so nothing else holds
+    them. A malformed one is not recoverable from history.
     """
     failures = {}
     for path in _corpus():
-        document = character_import.from_pathbuilder(
-            json.loads(path.read_text()), conn
-        )
-        unresolved = [
-            name for name in document["_import"]["unresolved"]
-            if not any(bad in name.lower() for bad in KNOWN_BAD_PICKS.get(path.name, ()))
-        ]
-        if unresolved:
-            failures[path.name] = unresolved
-    assert not failures, f"Unresolvable names: {failures}"
+        result = character.validate_document(character.load(path), conn)
+        if not result["valid"]:
+            failures[path.name] = [
+                i for i in result["issues"] if i["level"] == "error"
+            ]
+    assert not failures, f"Invalid character files: {failures}"
+
+
+@pytest.mark.skipif(not _corpus(), reason="no characters/ directory in this checkout")
+def test_the_whole_library_replays_and_computes(conn):
+    """Every character produces a coherent sheet's worth of numbers."""
+    from pf2e_mcp.server import build_tools
+
+    for path in _corpus():
+        build = character_replay.at_level(character.load(path), None, conn)
+        derived = build_tools.calculate_derived_stats(build)
+        assert derived["hp"] > 0, f"{path.name}: non-positive Hit Points"
+        assert derived["ac"] > 0, f"{path.name}: non-positive Armor Class"
 
 
 def test_a_name_from_the_wrong_pack_is_not_silently_accepted(conn):
