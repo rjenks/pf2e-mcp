@@ -17,43 +17,58 @@ answering a rules or eligibility question from memory.**
 - `rules_*` (`rules_search`, `rules_get_entry`, `rules_related`, `rules_explain`,
   `rules_data_version`, `rules_list_variant_rules`): general reference lookup,
   independent of any character.
-- `build_*` (`build_list_ancestries`, `build_list_backgrounds`, `build_list_classes`,
-  `build_list_available_feats`, `build_list_ability_boost_options`,
-  `build_check_prerequisite`, `build_validate_build`, `build_calculate_derived_stats`,
-  `build_get_level_up_choices`, `build_to_pathbuilder_export`): character-building
-  tools. Every `build_*` tool that takes a `character` argument is a pure
-  function -- it reads the character JSON you pass it and returns a result, but
-  the server keeps no state between calls. **You are responsible for holding
-  the in-progress character JSON across the conversation** and passing the
-  current version into each call.
-
-**Also hold the chosen variant rules, PFS mode, and legacy-content setting
-across the conversation**, the same way you hold the character JSON -- they
-aren't stored in the character JSON itself (keeps it a clean, portable
-Pathbuilder export), so you pass them as explicit arguments on every call
-where they matter:
-- `variant_rules: list[str]` -- on `build_get_level_up_choices` and
-  `build_validate_build`. Only `'free-archetype'` and `'ancestry-paragon'`
-  currently change computed results; other valid slugs (see
-  `rules_list_variant_rules`) are accepted but don't affect output yet.
-- `pfs_legal_only: bool` -- on `build_validate_build`, to get a warning for
-  any taken option whose best-effort PFS status isn't `'legal'`.
-- `include_legacy: bool` -- on every `rules_search`/`build_list_*` discovery
-  tool (`rules_search`, `build_list_ancestries`, `build_list_backgrounds`,
+- `build_*` discovery and math (`build_list_ancestries`, `build_list_backgrounds`,
   `build_list_classes`, `build_list_available_feats`,
-  `build_list_available_spells`, `build_list_equipment`). Defaults to
-  `False` (Remaster-only) in every one of them -- pass `True` for the whole
-  rest of the build once the user says they want legacy content included,
-  don't ask per-tool-call.
+  `build_list_ability_boost_options`, `build_list_skill_increase_options`,
+  `build_check_prerequisite`, `build_validate_build`,
+  `build_calculate_derived_stats`, `build_get_level_up_choices`,
+  `build_list_available_spells`, `build_list_equipment`): everything that
+  answers "what can this character do".
+- `build_character_*` (`build_character_schema`, `build_validate_character`,
+  `build_character_at_level`, `build_import_pathbuilder`,
+  `build_export_pathbuilder`): the character *file* -- its shape, its
+  validity, and conversion in and out of Pathbuilder.
+- `pfs_*`: Organized Play adventure lookup and chronicle validation.
 
-The character JSON follows Pathbuilder 2e's own export schema (confirmed
-against real Pathbuilder importer source, not invented) -- fields like `name`,
-`level`, `ancestry`, `heritage`, `background`, `class`, `keyability`,
-`abilities`, `proficiencies`, `feats` (each a `[name, extra, type, level,
-featChoiceRef, choiceKind, parentFeatChoiceRef]` tuple), `lores`, `attributes`.
-When in doubt about a field, call `build_to_pathbuilder_export` and inspect the
-shape of what comes back, or ask the user to paste an existing Pathbuilder
-export to continue from.
+## The character file
+
+**A character is one YAML file and you edit it in place.** Not a JSON blob you
+carry in your head across the conversation -- write the file early, keep
+writing to it, and read it back when you need it.
+
+    characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml
+
+Everything else about that character lives in the same folder: rendered sheets,
+chronicle scans, a portrait. **Call `build_character_schema` before writing your
+first one** -- the schema carries a description on every field and is the actual
+specification, not this document.
+
+Four things about the format change how you work:
+
+- **The plan is the source of truth and state is derived from it.** The file
+  records the *choices* made at each level from 1st to 20th and nothing about
+  their consequences -- no proficiency ranks, no Hit Points, no attribute
+  scores. `build_character_at_level` replays the plan and computes those. So
+  never write a derived number into the file, and never ask the user to
+  re-state one.
+- **A plan may run past where the character is.** `identity.currentLevel` says
+  how far they have actually got; everything above it is intent. Recording a
+  20th-level plan for a 3rd-level character is the point of the format, not an
+  overreach -- but say which is which when you present it.
+- **Rules content is referenced by slug**, from the `slug` field on any
+  `rules_*`/`build_list_*` result -- `soul-warden-dedication`, not "Soul Warden
+  Dedication". A name is ambiguous ("Spirit Familiar" is two different feats)
+  and the validator rejects one where a slug belongs.
+- **Reasoning is a field, not a separate document.** See step 12.
+
+Two settings are *not* in the file and must be held across the conversation and
+passed explicitly, because they describe the table rather than the character:
+`pfs_legal_only` on `build_validate_build`, and `include_legacy` on every
+discovery tool (defaults to `False`, Remaster-only -- pass `True` for the whole
+rest of the build once the user asks for legacy content, don't ask per call).
+Variant rules *are* in the file, at `build.variantRules`, but
+`build_validate_build` and `build_get_level_up_choices` still take them as an
+argument -- pass what the file says.
 
 ## Conversational flow
 
@@ -185,9 +200,11 @@ export to continue from.
    works in modifiers -- Player Core starts each modifier at +0, a boost adds
    1 to it and a flaw subtracts 1 -- and every rule that consumes an attribute
    reads the modifier. The 10-to-20 score is legacy notation that survives
-   because Pathbuilder's export stores it; keep it in the `abilities` dict of
-   the JSON (that's the file format, don't "fix" it) and out of everything you
-   say to the user, including the companion `.md`. See AGENTS.md.
+   because Pathbuilder's export stores it. The character file records boosts,
+   not scores, so there is nowhere for a score to hide in it -- a Pathbuilder
+   *export* still carries the `abilities` dict, and that is the file format, so
+   don't "fix" it there. Keep scores out of everything you say to the user. See
+   AGENTS.md.
 
    Two things this makes harder to get wrong. **Boost arithmetic:** in
    modifiers a boost is simply +1, with the sole exception that an attribute
@@ -288,12 +305,18 @@ export to continue from.
    needs to change before we continue") and `warnings` as "worth double
    checking" -- don't silently ignore either.
 
-9. **Backtracking re-runs discovery, it doesn't hand-patch JSON.** If the user
-   changes an earlier decision (e.g. swaps ancestry after already picking
-   feats), don't just edit the `ancestry` field and leave stale feat choices
-   in place -- re-run `build_list_available_feats`/`build_check_prerequisite`
-   against the changed character to see what's still valid, and flag anything
-   that no longer qualifies via `build_validate_build`.
+9. **Backtracking re-runs discovery, it doesn't hand-patch one field.** If the
+   user changes an earlier decision (e.g. swaps ancestry after already picking
+   feats), don't just edit `build.ancestry` and leave stale choices in place --
+   re-run `build_list_available_feats`/`build_check_prerequisite` against the
+   changed character to see what's still valid, and flag anything that no
+   longer qualifies via `build_validate_build`.
+
+   Check `dependsOn` before changing anything. A choice recorded as depending
+   on the pick being removed has just lost its reason to exist, and
+   `build_validate_character` reports it -- that is what the field is for.
+   Mark a swapped slot `status: retrained` and move the old pick into
+   `alternatives` with a note, rather than deleting the history.
 
 10. **Derived stats are always computed, never eyeballed.** Use
    `build_calculate_derived_stats` for AC/saves/Perception/skills/HP/class DC/
@@ -309,50 +332,96 @@ export to continue from.
     Paragon is active, or that level 2/4/6/... only grants a normal class
     feat if Free Archetype is active.
 
-12. **Exporting**: once the user is happy with the build, offer
-    `build_to_pathbuilder_export` so they can bring it into Pathbuilder,
-    Foundry, or any other Pathbuilder-JSON-compatible tool. Save the result
-    to `characters/<Name>.json` (per this project's CLAUDE.md convention).
+12. **Write the reasoning into the file as you go, not afterwards.** The
+    `note` on each choice is where a build's argument lives. This used to be a
+    separate markdown document written at the end; it is a field now, and
+    writing it at the moment of the decision is both easier and more honest
+    than reconstructing it later.
 
-13. **Always write a companion `characters/<Name>.md` alongside the JSON,
-    structured level by level in build order -- not grouped by category
-    (all ancestry feats together, all class feats together, etc.).** The
-    user will likely be re-entering these choices by hand into Pathbuilder
-    or Foundry, one level-up screen at a time -- a category-grouped writeup
-    forces them to cross-reference five different lists to figure out what
-    level 6 needs, while a level-ordered one reads top to bottom exactly
-    like the level-up flow they're clicking through. Concretely, for each
-    level from 1 to the character's current level, in order:
-    - **Separate what's automatic from what's a choice.** Automatically
-      granted class features, proficiency-rank bumps (e.g. "Perception
-      Expertise -- Perception trained -> expert"), and background/heritage
-      grants (e.g. a background's bonus skill feat) are not something the
-      user picks from a list in Pathbuilder -- label them as automatic so
-      they aren't mistaken for a decision point. Actual choices (ancestry/
-      class/general/skill feats, hybrid-study/subclass-option picks, skill
-      increases) get labeled as choices, with which specific option was
-      picked and a short reason why.
-    - **Attribute boosts get their own explicit, ordered list** at levels
-      that grant them (character creation, then every 5th level) --
-      ancestry, then background, then class, then each free boost
-      individually, in the order Pathbuilder applies them (this matters:
-      an attribute crossing +4 mid-list changes whether a later boost on it
-      is worth a full step) -- followed by the running attribute array at
-      that milestone, not just the final numbers at the very end.
-    - **One level = one section** (a markdown heading per level, or a
-      clearly bounded block), even for levels with little happening --
-      consistency beats brevity here, since the user is scanning for "what
-      do I do at level 6" not reading straight through.
-    - **Equipment, prepared spells, familiar loadout, final derived stats,
-      and any tool caveats/open items belong in their own sections after
-      the level-by-level sequence**, not interleaved into it -- they aren't
-      part of the level-up click-through and would break the flow.
+    What goes in a `note` is **why this pick, for this character** -- what it
+    combines with, what it is instead of, what breaks without it. What does
+    *not* go in is what the feat does: that is in the rules database, it will
+    be re-read from there whenever a sheet is rendered, and a copy in the
+    character file goes stale at the next errata.
+
+    Three neighbouring fields carry the rest of the argument:
+
+    - **`alternatives`** on a choice: options considered and rejected, each
+      with a note. The reason a build did *not* take the obvious feat is
+      exactly what gets re-litigated when it is picked up again months later.
+    - **`dependsOn`**: other picks this one exists to serve. "The dedication is
+      only here to reach Combat Grab at 4th" is the single most common thing a
+      build's prose says, and as a field it becomes checkable -- the validator
+      catches a dependency on a pick that was retrained away, or on one taken
+      at a later level than the choice needing it. Record the forward direction
+      only; the reverse is found by searching.
+    - **`role`** (`keystone`, `core`, `support`, `prerequisite`, `filler`,
+      `flexible`): what the pick is doing for the build. Use it sparingly --
+      it earns its place by marking the two or three picks that cannot change
+      and the ones that can, and a build where everything is a keystone has
+      said nothing.
+
+    Longer argument that is not about one pick -- how a turn works, why one
+    subclass beat another, what the build does against an on-level boss --
+    goes in `notes[]` as headed markdown. Narrative goes in `story`:
+    `backstory`, `introduction` (written to be read aloud to a new party),
+    `roleplaying`, `appearance`.
+
+    **Notes about the *tools* do not go in the character file at all.** A
+    calculator that got something wrong or a gap in the rules data belongs in
+    this repo's GitHub issues, where it can be fixed and closed. See AGENTS.md.
+
+13. **Validate the file, not just the build.** `build_validate_build` checks
+    the *rules* -- prerequisites, feat budgets, skill caps.
+    `build_validate_character` checks the *file*: schema conformance, plan
+    levels in order and covering the current level, no two boosts from one
+    source landing on the same attribute, every slug resolving to a real
+    entry, dependencies that still point at something. Run both. Findings from
+    the second name the offending field as a JSON pointer, so fix what it
+    points at rather than guessing.
+
+14. **Sheets and exports are outputs, generated on demand.** Nothing needs
+    storing per level any more:
+
+    - `build_render_character_sheet` takes a `level`, so one file produces the
+      sheet the character had at 1st, has now, or will have at 20th. Write it
+      into the character's own folder.
+    - `build_export_pathbuilder` produces a Pathbuilder file at any level, for
+      when the user wants to open the build in Pathbuilder or Foundry. Offer
+      it; don't write one by default.
+    - `build_import_pathbuilder` goes the other way, for a build the user made
+      in Pathbuilder first. Read its `_import` block before saving: it reports
+      names that resolved to nothing, proficiencies it had to state outright
+      because the plan could not reach them, and attributes that disagree with
+      their own boost list. Then delete that block -- it is a report on the
+      conversion, not part of the character.
+
+    **Do not write a companion `.md`.** That document existed because the
+    Pathbuilder format had nowhere to put a plan or a reason. Both now have
+    fields, and a second file would drift from the first.
 
 ## Known limits (say so, don't paper over them)
 
-- `build_calculate_derived_stats` uses worn armor (Pathbuilder's `armor` list,
-  `worn: true`) for AC, but doesn't yet add potency runes or a raised shield's
-  bonus -- AC may read slightly low for a fully-kitted-out character.
+- `build_calculate_derived_stats` uses worn armor for AC and does apply its
+  potency and Resilient runes, but still doesn't add a raised shield's bonus
+  (#8) or item bonuses from other worn gear -- AC may read slightly low for a
+  fully-kitted-out character.
+- **Replaying a plan cannot derive four things**, all of which the character
+  file states outright instead. Say so rather than letting a number stand
+  unexplained:
+  - Training granted by a feat rather than by level -- a dedication that
+    trains "a skill of your choice". Goes in `proficiencyOverrides` with the
+    granting feat named as its `source`. `build_character_at_level` reports
+    any override that derivation has since caught up with, so they can be
+    deleted as the data improves.
+  - Hit Points per level from Toughness or Mountain's Stoutness -- the
+    ingestion drops the rule element that would supply them (#61), so a
+    curated list stands in.
+  - Skills a subclass option grants in prose rather than in a rule element,
+    such as an Animist apparition's two Lores (#62). Record them as
+    `skillTraining` choices with a note saying what granted them.
+  - An apex item's attribute bonus (#63). A character wearing one comes out a
+    modifier short.
 - `build_validate_build` checks skill ranks against the fixed level-3/7/15
   expert/master/legendary caps, and now also warns if a save/Perception/
   weapon/armor/class-DC proficiency rank is lower than the character's
@@ -373,9 +442,10 @@ export to continue from.
   caster. Still pass it explicitly for a caster archetype/dedication (e.g.
   a Fighter with Wizard Dedication), since `class` there isn't the caster
   and `spell_slots` comes back `None` in that case.
-- No retraining/respec tool -- to change an earlier choice, edit the
-  character JSON directly (remove the old feat/proficiency, add the new
-  one) and re-run `build_validate_build`.
+- No retraining/respec tool -- to change an earlier choice, edit the choice in
+  the character file, mark it `status: retrained`, move the old pick into
+  `alternatives`, and re-run both validators. Check `dependsOn` first: another
+  choice may exist only to serve the one being removed.
 - Of the 8 character-building variant rules `rules_list_variant_rules`
   surfaces, only **Free Archetype** and **Ancestry Paragon** have real
   mechanical support (extra slots, feat-count budget checks). Proficiency
@@ -390,6 +460,10 @@ export to continue from.
   Resources document in the data this project ingests. Always say so when
   it comes up, and point the user at the current Additional Resources
   document for anything that actually matters to their table.
+
+- Character files are gitignored and nothing else holds a copy. There is no
+  history to recover a broken one from, so validate after writing rather than
+  before, and don't overwrite a file you have not read.
 
 If the user runs into one of these, say what's not covered rather than
 guessing at an answer the tools can't yet back up.

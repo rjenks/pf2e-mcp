@@ -424,3 +424,51 @@ def test_role_is_constrained_to_the_vocabulary(minimal):
         {"slot": "classFeat", "pick": "power-attack", "role": "linchpin"},
     ]}]
     assert character.check_structure(minimal)
+
+
+# ------------------------------------------------------------- storage
+
+
+def test_storage_path_is_name_ancestry_class():
+    document = {
+        "identity": {"name": "Kaldrek Stonewake"},
+        "build": {"ancestry": "dwarf", "class": "animist"},
+    }
+    assert str(character.storage_path(document)) == (
+        "characters/kaldrek-stonewake-dwarf-animist/kaldrek-stonewake.pf2e.yaml"
+    )
+
+
+def test_punctuation_is_dropped_not_hyphenated():
+    """`Agrippa "Grip" Thorne` must not become `agrippa--grip--thorne`."""
+    document = {
+        "identity": {"name": 'Agrippa "Grip" Thorne'},
+        "build": {"ancestry": "human", "class": "monk"},
+    }
+    assert character.storage_path(document).parent.name == "agrippa-grip-thorne-human-monk"
+
+
+def test_two_builds_of_one_character_collide_and_are_reported():
+    """The mistake that cost two files during the move to this layout.
+
+    A base build and an archetype variant share a name, ancestry and class, so
+    they resolve to one path and writing both destroys the first. Any bulk
+    write must check for this rather than discover it afterwards.
+    """
+    rogue = {"ancestry": "human", "class": "rogue"}
+    collisions = character.check_collisions({
+        "base": {"identity": {"name": "Sable"}, "build": rogue},
+        "variant": {"identity": {"name": "Sable"}, "build": rogue},
+        "other": {"identity": {"name": "Vex"}, "build": rogue},
+    })
+    assert len(collisions) == 1
+    assert collisions[0]["code"] == "storage_collision"
+    assert "base" in collisions[0]["message"] and "variant" in collisions[0]["message"]
+
+
+def test_a_distinct_name_resolves_a_collision():
+    rogue = {"ancestry": "human", "class": "rogue"}
+    assert not character.check_collisions({
+        "base": {"identity": {"name": "Sable"}, "build": rogue},
+        "variant": {"identity": {"name": "Sable (Solo)"}, "build": rogue},
+    })

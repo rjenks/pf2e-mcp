@@ -8,8 +8,9 @@ design document carrying the 1-20 plan and the reasoning, a chronicle sidecar
 paired only by filename, and a scatter of per-level snapshot exports. Nothing
 linked them and nothing validated any of them.
 
-This module defines the replacement: `characters/<Name>.yaml`, one file, schema
-checked.
+This module defines the replacement:
+`characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml` -- one file per
+character, schema checked, in a folder holding everything else about them.
 
 The plan is the source of truth
 -------------------------------
@@ -54,6 +55,7 @@ first and served to callers but never actually enforced (see
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from io import StringIO
 from pathlib import Path
@@ -599,3 +601,97 @@ def as_legacy(
     if isinstance(character, dict):
         return character.get("build", character)
     return character
+
+
+# ------------------------------------------------------------- storage
+
+
+#: The extension every character file carries. Doubled up (`.pf2e.yaml` rather
+#: than `.yaml`) so that a glob can find character files specifically, and so
+#: an editor still recognises the YAML.
+SUFFIX = ".pf2e.yaml"
+
+#: Where character files live, relative to the project root.
+LIBRARY = "characters"
+
+
+def _kebab(text: str) -> str:
+    """A filesystem-safe, lowercase, hyphenated form of a name.
+
+    Quotes and punctuation go entirely rather than becoming hyphens, so
+    `Agrippa "Grip" Thorne` is `agrippa-grip-thorne` and not
+    `agrippa--grip--thorne`.
+    """
+    cleaned = re.sub(r"[^\w\s-]", "", str(text or ""), flags=re.UNICODE)
+    return re.sub(r"[\s_-]+", "-", cleaned).strip("-").lower()
+
+
+def directory_name(document: Any) -> str:
+    """The folder one character's files live in: name, ancestry and class.
+
+    Ancestry and class are in the folder name because a library of twenty
+    characters is browsed by what they *are* far more often than by what they
+    are called -- "the dwarf animist" is how a character gets referred to when
+    the name has slipped. They are display-only: the document remains the
+    authority, and renaming a folder changes nothing.
+    """
+    document = to_plain(document)
+    identity = document.get("identity") or {}
+    build = document.get("build") or {}
+    parts = [
+        _kebab(identity.get("name") or "unnamed"),
+        _kebab(build.get("ancestry") or ""),
+        _kebab(build.get("class") or ""),
+    ]
+    return "-".join(part for part in parts if part)
+
+
+def storage_path(document: Any, root: str | Path = LIBRARY) -> Path:
+    """Where a character document belongs on disk.
+
+    `characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml`, with everything
+    else about that character -- rendered sheets, chronicle scans, a portrait
+    -- kept in the same folder. One directory per character rather than one
+    flat pile keeps a character's artefacts together as they accumulate, which
+    a library of twenty with four files each had stopped doing.
+    """
+    document = to_plain(document)
+    name = _kebab((document.get("identity") or {}).get("name") or "unnamed")
+    return Path(root) / directory_name(document) / f"{name}{SUFFIX}"
+
+
+def find_all(root: str | Path = LIBRARY) -> list[Path]:
+    """Every character file in a library, in a stable order."""
+    return sorted(Path(root).glob(f"*/*{SUFFIX}"))
+
+
+def check_collisions(documents: dict[str, Any]) -> list[dict[str, Any]]:
+    """Which of these documents would be written to the same place.
+
+    `storage_path` is derived entirely from name, ancestry and class, so two
+    builds of the same character -- a base build and an archetype variant, say
+    -- resolve to one path and the second silently destroys the first. That is
+    not hypothetical: it happened to two pairs during the move to this layout,
+    and the fix is that a variant needs its own `identity.name`.
+
+    Takes a mapping of some caller-meaningful key to document, and returns one
+    finding per collision. Any bulk write must call this first.
+    """
+    seen: dict[str, list[str]] = {}
+    for key, document in documents.items():
+        seen.setdefault(str(storage_path(document)), []).append(key)
+    return [
+        {
+            "level": "error",
+            "code": "storage_collision",
+            "path": path,
+            "message": (
+                f"{len(keys)} characters resolve to the same file: "
+                f"{', '.join(sorted(keys))}. Name, ancestry and class are all "
+                f"they are distinguished by, so give one of them a distinct "
+                f"`identity.name` -- a variant build is not the same character "
+                f"as the build it varies from."
+            ),
+        }
+        for path, keys in sorted(seen.items()) if len(keys) > 1
+    ]

@@ -31,7 +31,7 @@ def _corpus() -> list[Path]:
     """The real character library, now stored natively rather than as exports."""
     if not CHARACTERS.is_dir():
         return []
-    return sorted(CHARACTERS.glob("*.yaml"))
+    return character.find_all(CHARACTERS)
 
 
 @pytest.fixture
@@ -330,3 +330,26 @@ def test_a_name_from_the_wrong_pack_is_not_silently_accepted(conn):
     assert "exists as backgrounds" in character_import._describe_unresolved(
         conn, "Chosen One"
     )
+
+
+@pytest.mark.skipif(not _corpus(), reason="no characters/ directory in this checkout")
+def test_no_two_characters_share_a_file(conn):
+    """Nothing in the library is one save away from overwriting something else."""
+    documents = {str(path): character.load(path) for path in _corpus()}
+    assert not character.check_collisions(documents)
+
+
+@pytest.mark.skipif(not _corpus(), reason="no characters/ directory in this checkout")
+def test_every_character_sits_where_its_own_document_says_it_should(conn):
+    """A file whose folder no longer matches its contents has drifted.
+
+    Renaming a character, or retraining into a different class, changes where
+    the document says it belongs -- and a stale folder is how a library starts
+    lying about what is in it.
+    """
+    misplaced = {
+        str(path): str(character.storage_path(character.load(path)))
+        for path in _corpus()
+        if character.storage_path(character.load(path)) != path
+    }
+    assert not misplaced, f"Files not at their canonical path: {misplaced}"

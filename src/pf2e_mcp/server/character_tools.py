@@ -55,8 +55,12 @@ def character_schema() -> dict[str, Any]:
     return {
         "schema": ch.load_schema(),
         "schema_version": ch.SCHEMA_VERSION,
-        "storage": "characters/<Name>.yaml",
+        "storage": "characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml",
         "notes": [
+            "One folder per character, holding the .pf2e.yaml alongside "
+            "everything else about them -- rendered sheets, chronicle scans, a "
+            "portrait. Two builds of the same character collide on that path, "
+            "so a variant needs its own `identity.name`.",
             "YAML, not JSON: these files carry multi-paragraph prose, and are "
             "edited by hand as well as written by this server. Comments and "
             "key order are preserved across a tool write.",
