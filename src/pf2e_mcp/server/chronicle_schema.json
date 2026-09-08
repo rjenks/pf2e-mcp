@@ -1,0 +1,480 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rjenks/pf2e-mcp/chronicle_schema.json",
+  "title": "PFS Chronicle Log",
+  "description": "A Pathfinder Society character's Organized Play record: identity, how the character was equipped at creation, and every Chronicle Sheet earned, in play order. Stored as a characters/<Name>.chronicles.json sidecar rather than inside the Pathbuilder JSON, so that export stays a clean, portable Pathbuilder file. A chronicle is a ledger entry, not a snapshot: each one's starting XP and currency must equal the previous one's ending values. Purchases are itemised so the whole history composes into a gold journal -- one running column of every coin in and out, from starting funds through each item bought to each adventure's award.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "character",
+    "chronicles"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the file was written against.",
+      "type": "integer",
+      "const": 2
+    },
+    "character": {
+      "description": "Character name. Should match the `name` in the character's Pathbuilder JSON so the two files can be paired.",
+      "type": "string",
+      "minLength": 1
+    },
+    "organizedPlayId": {
+      "description": "The player's Paizo Organized Play ID -- the number before the dash in a character number such as 123456-2001. Belongs to the player, so it is the same across all of their characters.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+$"
+    },
+    "characterNumber": {
+      "description": "This character's number within the player's account. Paizo numbers Pathfinder Society characters from 2001 upward. Combined with organizedPlayId this gives the full identifier printed on a chronicle sheet.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "faction": {
+      "description": "The faction this character represents, and so the faction that receives Reputation by default. A character that has chosen none earns Reputation with the Horizon Hunters.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "Envoy's Alliance",
+        "Grand Archive",
+        "Horizon Hunters",
+        "Radiant Oath",
+        "Vigilant Seal",
+        "Verdant Wheel",
+        null
+      ]
+    },
+    "advancement": {
+      "description": "Slow advancement halves XP, Reputation, currency and downtime without rounding. Applies to the whole character, so it is recorded once here rather than per chronicle.",
+      "type": "string",
+      "enum": [
+        "standard",
+        "slow"
+      ],
+      "default": "standard"
+    },
+    "startingCurrency": {
+      "description": "Starting funds in gold, before any equipment is bought. The credits-only option is 15 gp at 1st level, 75 gp at 3rd, 270 gp at 5th and 720 gp at 7th. A character taking the permanent-items option instead records the smaller remaining purse here (25 gp at 3rd, 50 gp at 5th, 125 gp at 7th) and lists the granted items in startingItems. Omit to take the credits-only amount for startingLevel.",
+      "type": "number",
+      "minimum": 0
+    },
+    "notes": {
+      "description": "Free-text notes about the character's Organized Play record as a whole -- boon slots in use, replay credit spent, anything not tied to one session.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "chronicles": {
+      "description": "Chronicle sheets in the order they were applied. Order is significant: the ledger chain is validated against it, and it need not match the order the sessions were played in if sheets were applied later.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/chronicle"
+      }
+    },
+    "startingLevel": {
+      "description": "The level the character was created at. Pathfinder Society allows 1st, 3rd, 5th or 7th and nothing else, and a character's starting level cannot be changed, even by a rebuild. This matters for two reasons: it sets the starting funds, and it is what XP counts up from -- characters begin play with 0 XP regardless of starting level, so XP alone does not tell you the character's level.",
+      "type": "integer",
+      "enum": [
+        1,
+        3,
+        5,
+        7
+      ],
+      "default": 1
+    },
+    "startingPurchases": {
+      "description": "Equipment bought at character creation, one line per item, in the order you want them to appear in the gold journal. These are subtracted from startingCurrency to give the balance the first chronicle starts from.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/purchase"
+      },
+      "default": []
+    },
+    "startingItems": {
+      "description": "Permanent items granted at creation under the permanent-items option, which cost nothing and so never appear in the gold journal. Free text per item, e.g. '+1 weapon potency rune (2nd-level item)'.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "chronicle": {
+      "type": "object",
+      "title": "Chronicle Sheet",
+      "required": [
+        "adventure",
+        "characterLevel",
+        "xp",
+        "currency"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "adventure": {
+          "description": "Adventure code as Paizo numbers it. Scenarios use the Society code ('8-02', including the evergreen intros 99-1 and 99-2); quests use 'Q<series>-<number>' ('Q2-26'); bounties use 'B<number>' ('B21'). Resolvable through pfs_get_adventure.",
+          "type": "string",
+          "minLength": 1
+        },
+        "adventureName": {
+          "description": "Adventure title. Optional and purely for readability of the file by a human -- the code is authoritative, and validation reports a mismatch against the index rather than trusting this.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "playedAs": {
+          "description": "Whether the credit was earned playing or running the adventure. A GM earns full rewards: all currency, XP, Reputation, downtime, and access to every item and boon the adventure offers.",
+          "type": "string",
+          "enum": [
+            "player",
+            "gm"
+          ],
+          "default": "player"
+        },
+        "replay": {
+          "description": "True when this credit was a legal repeat of an adventure already on this character -- a Repeatable-tagged adventure, or one replayed using a boon. Validation flags a duplicate that is not marked this way.",
+          "type": "boolean",
+          "default": false
+        },
+        "characterLevel": {
+          "description": "The character's level while playing. This drives the Treasure Bundle value, and two characters at the same table earn different gold for that reason. Not the adventure's tier.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "date": {
+          "description": "Session date, ISO 8601 (YYYY-MM-DD).",
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "event": {
+          "description": "Event name, as printed in the chronicle's Event field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventCode": {
+          "description": "Paizo's unique identifier for the event the session was reported under.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gmOrganizedPlayId": {
+          "description": "The GM's Organized Play ID. Note that GMs are no longer required to sign or initial a chronicle, even on older sheets that print a signature box.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "partnerCode": {
+          "description": "Partner code identifying the chronicle for third-party reference.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "xp": {
+          "$ref": "#/$defs/xpLedger"
+        },
+        "currency": {
+          "$ref": "#/$defs/currencyLedger"
+        },
+        "reputation": {
+          "description": "Reputation gained, per faction. Normally one entry for the faction the character represents; a Faction-tagged adventure can award a second block to the named faction on top of that.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reputationAward"
+          },
+          "default": []
+        },
+        "downtimeDays": {
+          "description": "Downtime days awarded. Scenarios grant 8, Series 2 quests 4, Series 1 quests 2, bounties none. Modern chronicle sheets have no printed box for this -- the player tracks it -- but it is recorded here so the running total is derivable.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "summaryCheckboxes": {
+          "description": "Which numbered checkboxes in the adventure summary the table earned. Determines outcomes and, on many sheets, the treasure bundle count.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "default": []
+        },
+        "boons": {
+          "description": "Boons unlocked by this chronicle.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/boon"
+          },
+          "default": []
+        },
+        "itemAccess": {
+          "description": "The chronicle's Treasure Access list: uncommon, rare or above-level items the character may now buy. Lines are struck out on the paper sheet as they are purchased, which `purchased` records.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/itemAccess"
+          },
+          "default": []
+        },
+        "notes": {
+          "description": "The chronicle's free-text notes area.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "purchases": {
+          "description": "Items bought against this chronicle, itemised for the gold journal. Their total must not exceed currency.spent; if it is less, the journal shows the difference as one unlabelled line so it still reconciles.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/purchase"
+          },
+          "default": []
+        },
+        "earnIncomeNote": {
+          "description": "How the Earn Income result for this chronicle's Downtime Unit was arrived at -- the die roll, modifier, DC and degree of success. Free text; the gold value itself goes in currency.incomeEarned.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "xpLedger": {
+      "type": "object",
+      "title": "XP ledger",
+      "description": "start + gained must equal end, and start must equal the previous chronicle's end. A character gains a level for every 12 XP and must take it immediately.",
+      "required": [
+        "start",
+        "gained",
+        "end"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gained": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "currencyLedger": {
+      "type": "object",
+      "title": "Currency ledger",
+      "description": "All values in gold pieces; fractional gold is normal, since a 1st-level Treasure Bundle is 1 gp 4 sp and Earn Income pays in silver. start + gained - spent must equal end, and start must equal the previous chronicle's end. Per the Guide, rewards are applied in the order: earn currency, then spend downtime, then gain XP.",
+      "required": [
+        "start",
+        "gained",
+        "end"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "treasureBundles": {
+          "description": "Number of Treasure Bundles earned. A scenario is typically 8, but this genuinely varies by adventure and by how much the table accomplished.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "treasureBundleValue": {
+          "description": "Gold from those bundles. Should equal treasureBundles multiplied by the per-bundle value for the character's level.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "incomeEarned": {
+          "description": "Gold from Earn Income during downtime.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "gained": {
+          "description": "Total gold gained: treasure bundles plus income plus anything else the chronicle awards.",
+          "type": "number",
+          "minimum": 0
+        },
+        "spent": {
+          "description": "Gold spent against this chronicle, typically on items purchased from its Treasure Access list.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "default": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "reputationAward": {
+      "type": "object",
+      "required": [
+        "faction",
+        "amount"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "faction": {
+          "type": "string",
+          "enum": [
+            "Envoy's Alliance",
+            "Grand Archive",
+            "Horizon Hunters",
+            "Radiant Oath",
+            "Vigilant Seal",
+            "Verdant Wheel"
+          ]
+        },
+        "amount": {
+          "type": "number"
+        }
+      }
+    },
+    "boon": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "used": {
+          "description": "Whether a one-shot boon has been spent.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "itemAccess": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "level": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "price": {
+          "description": "Price as printed on the chronicle, e.g. '50 gp'. Free text because chronicles print it that way and some entries are conditional.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "Sourcebook and page, where the chronicle cites one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "purchased": {
+          "description": "True once bought -- the struck-out line on the paper sheet.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "purchase": {
+      "type": "object",
+      "title": "Purchase",
+      "description": "One line of the gold journal. Give either `price` (the line total) or `unitPrice`, which is multiplied by `quantity` -- 'torch x5' is one line, not five.",
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1
+        },
+        "quantity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "default": 1
+        },
+        "unitPrice": {
+          "description": "Price of one, in gold. Fractional gold is normal: 1 sp is 0.1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "price": {
+          "description": "Line total in gold. Takes precedence over unitPrice x quantity.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
