@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import character as ch
+from . import character_import as imports
 from . import character_replay as replay
 from .db import get_connection
 
@@ -153,5 +154,77 @@ def character_at_level(
     conn = get_connection()
     try:
         return replay.at_level(character, level, conn)
+    finally:
+        conn.close()
+
+
+def import_pathbuilder(export: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Pathbuilder export into a character document.
+
+    Takes either the `{"success": true, "build": {...}}` envelope Pathbuilder
+    produces or a bare build object, and returns a document in the native
+    format -- ready to check with `build_validate_character` and save as
+    `characters/<Name>.yaml`.
+
+    A Pathbuilder file records more than it looks: each feat tuple carries the
+    level and the slot it was taken in, so the plan is *reconstructed* level by
+    level rather than guessed. Levels above the character's current one come
+    back empty, because the export has nothing to say about them -- filling
+    those in is the reason to move to this format.
+
+    Three things import cannot recover, and reports rather than invents:
+
+    - **Reasons.** No export records why a pick was made. Where prose had been
+      smuggled into a feat tuple's "choice" slot, it is rescued into that
+      choice's `note`.
+    - **Proficiency the rules data cannot derive.** Anything the export rates
+      higher than replaying the plan reaches becomes a `proficiencyOverride`
+      sourced to `pathbuilder-import`. Each is a claim worth reviewing: either
+      a genuine feat grant nothing models yet, or a gap in derivation.
+    - **Attributes that disagree with their own boosts.** An export's scores
+      and its boost list are two statements of the same thing, and when they
+      differ one is wrong -- usually because an apex item was folded into the
+      scores. Reported in `_import.attribute_mismatch` rather than resolved.
+
+    The `_import` block carries all of that, plus any name that resolved to no
+    rules entry. Review it, then delete it: it is a report on the conversion,
+    not part of the character.
+
+    Args:
+        export: A Pathbuilder export object or bare build.
+    """
+    if not isinstance(export, dict) or not export:
+        raise ValueError("export must be a non-empty Pathbuilder export object")
+    conn = get_connection()
+    try:
+        return imports.from_pathbuilder(export, conn)
+    finally:
+        conn.close()
+
+
+def export_pathbuilder(
+    character: dict[str, Any], level: int | None = None
+) -> dict[str, Any]:
+    """Render a character at a given level as a Pathbuilder export.
+
+    Replays the plan to `level` and wraps the result in Pathbuilder's
+    `{"success": true, "build": {...}}` envelope, dropping this format's own
+    provenance keys so what comes back is a plain Pathbuilder file its importer
+    will accept.
+
+    Because any level replays as cheaply as any other, this is also how to get
+    the character as they were five levels ago, or as they will be at 20th,
+    without keeping separate files for each.
+
+    Args:
+        character: A character document matching `build_character_schema`.
+        level: Which level to export, 1-20. Defaults to the character's
+            `identity.currentLevel`.
+    """
+    if not isinstance(character, dict) or not character:
+        raise ValueError("character must be a non-empty character document")
+    conn = get_connection()
+    try:
+        return imports.to_pathbuilder(character, level, conn)
     finally:
         conn.close()
