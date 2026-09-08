@@ -208,6 +208,44 @@ def _boosts_from_breakdown(breakdown: dict[str, Any]) -> dict[int, dict[str, Any
     return per_level
 
 
+def _fundamental_runes(
+    potency: Any, potency_prefix: str, striking: Any = None, resilient: Any = None
+) -> list[str]:
+    """Pathbuilder's `pot`, `res` and `increasedDice` fields as rune slugs.
+
+    Pathbuilder keeps fundamental runes out of the `runes` list and in fields
+    of their own -- `pot` as an integer, `res` as either a name or a tier
+    number. The native format has one list, so they are folded in here. Missing
+    this is why an imported character's Armor Class came out up to three points
+    low.
+    """
+    out: list[str] = []
+    try:
+        tier = int(potency or 0)
+    except (TypeError, ValueError):
+        tier = 0
+    if 1 <= tier <= 3:
+        out.append(f"{potency_prefix}-{tier}")
+
+    if striking:
+        out.append("striking")
+
+    if resilient:
+        text = str(resilient).strip().lower()
+        if text.isdigit():
+            text = {"1": "resilient", "2": "greater resilient",
+                    "3": "major resilient"}.get(text, "")
+        for slug, name in (
+            ("resilient-major", "major resilient"),
+            ("resilient-greater", "greater resilient"),
+            ("resilient", "resilient"),
+        ):
+            if text == name:
+                out.append(slug)
+                break
+    return out
+
+
 def _gear_from_export(
     conn: sqlite3.Connection, build: dict[str, Any], unresolved: list[str]
 ) -> dict[str, Any]:
@@ -222,6 +260,10 @@ def _gear_from_export(
         if (weapon.get("qty") or 1) != 1:
             item["quantity"] = weapon["qty"]
         runes = _rune_slugs(conn, weapon.get("runes"), unresolved, str(weapon.get("name")))
+        runes += _fundamental_runes(
+            weapon.get("pot"), "weapon-potency",
+            striking=weapon.get("increasedDice"),
+        )
         if runes:
             item["runes"] = runes
         carried.append(item)
@@ -234,6 +276,9 @@ def _gear_from_export(
         if armor.get("worn"):
             item["worn"] = True
         runes = _rune_slugs(conn, armor.get("runes"), unresolved, str(armor.get("name")))
+        runes += _fundamental_runes(
+            armor.get("pot"), "armor-potency", resilient=armor.get("res"),
+        )
         if runes:
             item["runes"] = runes
         carried.append(item)
@@ -442,6 +487,8 @@ def from_pathbuilder(
             "body": notes.strip(),
         }]
 
+    _recover_lores(document, build, conn)
+
     overrides, unexplained = _overrides_for(document, build, conn)
     if overrides:
         document["proficiencyOverrides"] = overrides
@@ -555,3 +602,68 @@ def _attribute_mismatch(
         }
         for key, value in stated.items() if derived.get(key) != value
     }
+
+
+def _lore_slug(name: str) -> str:
+    """A Lore's display name into the form a choice records.
+
+    Strips a trailing "Lore" that some files include and others do not -- the
+    corpus has one "Theatre Lore" among eighteen bare names -- so both spellings
+    converge on the same value.
+    """
+    text = str(name).strip()
+    if text.lower().endswith(" lore"):
+        text = text[:-5].strip()
+    return text.lower().replace(" ", "-")
+
+
+def _recover_lores(
+    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+) -> None:
+    """Record Lores the plan does not account for as explicit grants.
+
+    Pathbuilder keeps Lores in their own `lores` array, separate from the feat
+    tuples, so nothing in a reconstructed plan explains them. Some are
+    derivable -- a background's granted Lore comes back on its own -- but the
+    rest arrive from sources the rules data does not model, most often a
+    subclass option that names its skills in prose only (#62).
+
+    Anything replay cannot reach is added as a `skillTraining` choice at 1st
+    level. That is what the slot is for, and without it a character silently
+    loses most of their Lores: one real 10th-level build kept one of seven.
+    """
+    stated = {
+        str(row[0]).strip(): row[1]
+        for row in build.get("lores") or []
+        if isinstance(row, (list, tuple)) and row
+    }
+    if not stated:
+        return
+    try:
+        derived = {
+            str(name) for name, _ in replay.at_level(
+                document, document["identity"]["currentLevel"], conn
+            )["lores"]
+        }
+    except ValueError:
+        derived = set()
+
+    missing = sorted(name for name in stated if name not in derived)
+    if not missing:
+        return
+
+    level_one = next(
+        (entry for entry in document["plan"] if entry.get("level") == 1), None
+    )
+    if level_one is None:
+        level_one = {"level": 1}
+        document["plan"].insert(0, level_one)
+    level_one.setdefault("choices", []).append({
+        "slot": "skillTraining",
+        "pick": [_lore_slug(name) for name in missing],
+        "note": (
+            "Lores carried over from the Pathbuilder export. Replaying the plan "
+            "does not account for them, so their real source -- a subclass "
+            "option, a feat, or a free pick -- is worth recording here."
+        ),
+    })

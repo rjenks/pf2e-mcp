@@ -61,6 +61,7 @@ underscore-prefixed keys) but is what makes a surprising number explicable.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any
 
@@ -81,6 +82,20 @@ SKILLS = (
 HP_PER_LEVEL_FEATS = {
     "toughness": 1,
     "mountains-stoutness": 1,
+}
+
+#: Fundamental runes, as slug -> the Pathbuilder field and value they set.
+#: Property runes are not here: they stay in the `runes` list, which is where
+#: the sheet reads them from.
+_POTENCY = {
+    "weapon-potency-1": 1, "weapon-potency-2": 2, "weapon-potency-3": 3,
+    "armor-potency-1": 1, "armor-potency-2": 2, "armor-potency-3": 3,
+}
+_STRIKING = {"striking": 1, "striking-greater": 2, "striking-major": 3}
+_RESILIENT = {
+    "resilient": "resilient",
+    "resilient-greater": "greater resilient",
+    "resilient-major": "major resilient",
 }
 
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
@@ -316,8 +331,37 @@ def _apply_feature_proficiencies(
 
 
 def _lore_key(name: str) -> str:
-    """A Lore's display name from the slug-ish form recorded in a choice."""
-    return " ".join(part.capitalize() for part in str(name).split("-"))
+    """A Lore's display name from the slug-ish form recorded in a choice.
+
+    Hyphens are preserved rather than turned into spaces: "Fortune-Telling
+    Lore" is genuinely hyphenated, and every other Lore in practice is a single
+    word, so restoring a space would corrupt the one name that needs the
+    hyphen to be right.
+    """
+    return "-".join(part.capitalize() for part in str(name).split("-"))
+
+
+def _background_lore_name(raw: Any) -> str | None:
+    """One background's granted Lore, cleaned up, or None if it is prose.
+
+    `background_boosts.trained_skills.lore` is not reliably a single Lore name
+    (#39). Most entries that read as prose are legitimately a free choice --
+    "a Lore skill pertaining to your place of origin" -- and grant nothing
+    specific, so they are skipped. Two are genuine ingestion damage:
+    "UndeadLore " with the space missing, and one carrying a stray markdown
+    prefix. Both are repaired here rather than propagated onto a sheet, which
+    is what the sheet renderer already does defensively for the same reason.
+    """
+    text = str(raw or "").strip().lstrip("*").strip()
+    if not text:
+        return None
+    # A free-text choice, not a grant.
+    if " or " in text.lower() or "pertaining" in text.lower():
+        return None
+    text = re.sub(r"\s*\(.*$", "", text).strip()
+    # "UndeadLore" -> "Undead Lore"
+    text = re.sub(r"(?<=[a-z])Lore$", " Lore", text)
+    return text.removesuffix(" Lore").strip() or None
 
 
 def _replay_skills(
@@ -351,7 +395,9 @@ def _replay_skills(
             proficiencies[skill] = max(proficiencies.get(skill, 0), 2)
             trace.append(f"background grants {skill}")
         for lore in granted.get("lore") or []:
-            name = str(lore).removesuffix(" Lore").strip()
+            name = _background_lore_name(lore)
+            if not name:
+                continue
             lores[name] = max(lores.get(name, 0), 2)
             trace.append(f"background grants {name} Lore")
 
@@ -484,15 +530,15 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "qty": quantity,
                 "prof": (system.get("category") or "simple"),
                 "die": (system.get("damage") or {}).get("die") or "d4",
-                "pot": 0,
+                "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
                 "str": "",
                 "mat": None,
                 "display": name,
-                "runes": runes,
+                "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING],
+                "increasedDice": any(r in _STRIKING for r in runes),
                 "damageType": ((system.get("damage") or {}).get("damageType") or "B")[:1].upper(),
                 "damageBonus": 0,
                 "extraDamage": [],
-                "increasedDice": False,
                 "isInventor": False,
                 "grade": item.get("grade") or "",
             })
@@ -502,12 +548,14 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "name": name,
                 "qty": quantity,
                 "prof": system.get("category") or "light",
-                "pot": 0,
-                "res": "",
+                "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
+                "res": next((_RESILIENT[r] for r in runes if r in _RESILIENT), ""),
                 "mat": None,
                 "display": name,
                 "worn": bool(item.get("worn")),
-                "runes": runes,
+                "runes": [
+                    r for r in runes if r not in _POTENCY and r not in _RESILIENT
+                ],
                 "grade": item.get("grade") or "",
             })
         else:
@@ -622,6 +670,23 @@ def at_level(
     ancestry_system = (
         json.loads(ancestry_entry["raw_json"])["system"] if ancestry_entry else {}
     )
+    # A heritage can override ancestry Hit Points -- Hold-Scarred Orc takes an
+    # orc from 10 to 12. Foundry expresses that as an ActiveEffectLike on
+    # `system.attributes.ancestryhp`, which the ingestion does capture.
+    ancestry_hp = ancestry_row.get("hp") or 8
+    if build.get("heritage"):
+        override = _one(
+            conn,
+            "SELECT m.value FROM item_stat_modifiers m JOIN entries e ON e.id = m.entry_id "
+            "WHERE e.slug = ? AND m.path = 'system.attributes.ancestryhp' "
+            "AND m.mode = 'override' LIMIT 1",
+            (build["heritage"],),
+        )
+        if override:
+            try:
+                ancestry_hp = int(override["value"])
+            except (TypeError, ValueError):
+                pass
 
     notes: list[str] = []
     planned = {e.get("level") for e in plan if isinstance(e.get("level"), int)}
@@ -713,7 +778,7 @@ def at_level(
         "inventorMods": [],
         "abilities": {**abilities, "breakdown": breakdown},
         "attributes": {
-            "ancestryhp": ancestry_row.get("hp") or 8,
+            "ancestryhp": ancestry_hp,
             "classhp": progression.get("hp") or 8,
             "bonushp": 0,
             "bonushpPerLevel": hp_per_level,
