@@ -36,7 +36,11 @@ answering a rules or eligibility question from memory.**
 carry in your head across the conversation -- write the file early, keep
 writing to it, and read it back when you need it.
 
-    characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml
+    characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml
+
+The folder is the character's name, ancestry and class -- each section
+PascalCase, the sections joined with hyphens, so a hyphen always means a
+section boundary and a two-word name never looks like one.
 
 Everything else about that character lives in the same folder: rendered sheets,
 chronicle scans, a portrait. **Call `build_character_schema` before writing your

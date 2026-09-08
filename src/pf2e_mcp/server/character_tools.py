@@ -55,7 +55,7 @@ def character_schema() -> dict[str, Any]:
     return {
         "schema": ch.load_schema(),
         "schema_version": ch.SCHEMA_VERSION,
-        "storage": "characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml",
+        "storage": "characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml",
         "notes": [
             "One folder per character, holding the .pf2e.yaml alongside "
             "everything else about them -- rendered sheets, chronicle scans, a "

@@ -435,17 +435,34 @@ def test_storage_path_is_name_ancestry_class():
         "build": {"ancestry": "dwarf", "class": "animist"},
     }
     assert str(character.storage_path(document)) == (
-        "characters/kaldrek-stonewake-dwarf-animist/kaldrek-stonewake.pf2e.yaml"
+        "characters/KaldrekStonewake-Dwarf-Animist/KaldrekStonewake.pf2e.yaml"
     )
 
 
-def test_punctuation_is_dropped_not_hyphenated():
-    """`Agrippa "Grip" Thorne` must not become `agrippa--grip--thorne`."""
+def test_punctuation_and_spaces_close_up_within_a_section():
+    """A hyphen marks a section boundary, so a name may not introduce one.
+
+    `Agrippa "Grip" Thorne` is one section, `AgrippaGripThorne`. Turning its
+    spaces into hyphens would make a three-word name look like three sections.
+    """
     document = {
         "identity": {"name": 'Agrippa "Grip" Thorne'},
         "build": {"ancestry": "human", "class": "monk"},
     }
-    assert character.storage_path(document).parent.name == "agrippa-grip-thorne-human-monk"
+    assert character.storage_path(document).parent.name == "AgrippaGripThorne-Human-Monk"
+    assert character.storage_path(document).name == "AgrippaGripThorne.pf2e.yaml"
+
+
+def test_interior_capitals_survive():
+    """Title-casing would flatten `McCoy` to `Mccoy`."""
+    assert character._pascal("Fiona McCoy") == "FionaMcCoy"
+
+
+def test_a_folder_name_has_exactly_three_sections(conn):
+    """Every character in the library, so a stray hyphen would show up here."""
+    for path in character.find_all():
+        sections = path.parent.name.split("-")
+        assert len(sections) == 3, f"{path.parent.name} is not name-ancestry-class"
 
 
 def test_two_builds_of_one_character_collide_and_are_reported():

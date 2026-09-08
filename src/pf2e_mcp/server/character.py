@@ -9,7 +9,7 @@ paired only by filename, and a scatter of per-level snapshot exports. Nothing
 linked them and nothing validated any of them.
 
 This module defines the replacement:
-`characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml` -- one file per
+`characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml` -- one file per
 character, schema checked, in a folder holding everything else about them.
 
 The plan is the source of truth
@@ -615,19 +615,26 @@ SUFFIX = ".pf2e.yaml"
 LIBRARY = "characters"
 
 
-def _kebab(text: str) -> str:
-    """A filesystem-safe, lowercase, hyphenated form of a name.
+def _pascal(text: str) -> str:
+    """One path section: PascalCase, with spaces and punctuation removed.
 
-    Quotes and punctuation go entirely rather than becoming hyphens, so
-    `Agrippa "Grip" Thorne` is `agrippa-grip-thorne` and not
-    `agrippa--grip--thorne`.
+    `Agrippa "Grip" Thorne` becomes `AgrippaGripThorne`. Quotes and punctuation
+    are dropped entirely rather than becoming separators, because in a path
+    built by this module a hyphen means one thing -- the boundary between name,
+    ancestry and class -- and a two-word name must not look like a section
+    break. Interior capitals are left alone, so `McCoy` survives rather than
+    flattening to `Mccoy`.
     """
     cleaned = re.sub(r"[^\w\s-]", "", str(text or ""), flags=re.UNICODE)
-    return re.sub(r"[\s_-]+", "-", cleaned).strip("-").lower()
+    words = [word for word in re.split(r"[\s_-]+", cleaned) if word]
+    return "".join(word[0].upper() + word[1:] for word in words)
 
 
 def directory_name(document: Any) -> str:
     """The folder one character's files live in: name, ancestry and class.
+
+    `AshKordun-Orc-Cleric` -- each section PascalCase, the sections joined with
+    hyphens.
 
     Ancestry and class are in the folder name because a library of twenty
     characters is browsed by what they *are* far more often than by what they
@@ -639,9 +646,9 @@ def directory_name(document: Any) -> str:
     identity = document.get("identity") or {}
     build = document.get("build") or {}
     parts = [
-        _kebab(identity.get("name") or "unnamed"),
-        _kebab(build.get("ancestry") or ""),
-        _kebab(build.get("class") or ""),
+        _pascal(identity.get("name") or "unnamed"),
+        _pascal(build.get("ancestry") or ""),
+        _pascal(build.get("class") or ""),
     ]
     return "-".join(part for part in parts if part)
 
@@ -649,14 +656,14 @@ def directory_name(document: Any) -> str:
 def storage_path(document: Any, root: str | Path = LIBRARY) -> Path:
     """Where a character document belongs on disk.
 
-    `characters/<name>-<ancestry>-<class>/<name>.pf2e.yaml`, with everything
-    else about that character -- rendered sheets, chronicle scans, a portrait
-    -- kept in the same folder. One directory per character rather than one
-    flat pile keeps a character's artefacts together as they accumulate, which
-    a library of twenty with four files each had stopped doing.
+    `characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml`, with everything else
+    about that character -- rendered sheets, chronicle scans, a portrait --
+    kept in the same folder. One directory per character rather than one flat
+    pile keeps a character's artefacts together as they accumulate, which a
+    library of twenty with four files each had stopped doing.
     """
     document = to_plain(document)
-    name = _kebab((document.get("identity") or {}).get("name") or "unnamed")
+    name = _pascal((document.get("identity") or {}).get("name") or "unnamed")
     return Path(root) / directory_name(document) / f"{name}{SUFFIX}"
 
 
