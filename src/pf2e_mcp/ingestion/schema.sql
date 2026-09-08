@@ -355,3 +355,56 @@ CREATE TABLE item_proficiency_grants (
 );
 
 CREATE INDEX idx_item_proficiency_grants_entry ON item_proficiency_grants(entry_id);
+
+-- Pathfinder Society adventure index, sourced from PathfinderWiki's `Facts:`
+-- namespace rather than from the foundryvtt/pf2e data -- adventure packs are
+-- excluded from ingestion on licensing grounds, and Paizo publishes no usable
+-- machine-readable list of its own (see ingestion/pfs_adventures.py for why the
+-- store, Archives of Nethys and the abandoned `pathfinder-society` npm package
+-- were all rejected). Exists so that a chronicle log can be keyed by the code a
+-- player actually says out loud ("8-02") and so that recorded rewards can be
+-- checked against what that adventure's type and tier should award.
+--
+-- Deliberately factual-only: no blurb/marketing copy is stored, consistent with
+-- NOTICE.md and the product-identity pack exclusions in build.py.
+CREATE TABLE pfs_adventures (
+    code TEXT PRIMARY KEY, -- "8-02" for scenarios (Paizo's own Society code,
+                            -- including the 99-1/99-2 evergreen intros); "B21"
+                            -- and "Q2-26" for bounties and quests, which carry
+                            -- no Society code field and whose numbering
+                            -- restarts per kind and per quest series.
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,    -- scenario | quest | bounty. Determines the standard
+                            -- XP/Reputation/downtime award -- see
+                            -- server/chronicle.py's ADVENTURE_AWARDS.
+    full_title TEXT,       -- e.g. "Pathfinder Society #8-02: The Fey Reclamation"
+    season INTEGER,        -- scenarios only; NULL for quests and bounties, which
+                            -- are numbered in their own continuous series
+    number INTEGER,        -- the part after the dash, for ordering within a season
+    tier_low INTEGER,      -- inclusive character-level range the adventure is
+    tier_high INTEGER,      -- written for. Single-level bounties store the same
+                            -- value in both rather than leaving tier_high NULL,
+                            -- so an in-tier check never has an open upper bound.
+    series TEXT,           -- the season's in-world year name, e.g. "Year of
+                            -- Clockwork Mystery". NULL for quests/bounties.
+    tags TEXT NOT NULL,    -- JSON array of Paizo's own Society tags: Metaplot,
+                            -- Repeatable, Glyph, All ages, Exclusive, Special,
+                            -- Mass Combat. "Repeatable" is the one that changes
+                            -- what a player may legally record twice.
+    factions TEXT NOT NULL, -- JSON array; a Faction-tagged adventure awards
+                            -- bonus Reputation with the named faction(s) on top
+                            -- of the Reputation earned by the player's own.
+    metaplot TEXT NOT NULL, -- JSON array of metaplot arc names
+    location TEXT,
+    author TEXT,
+    sanctioned INTEGER NOT NULL, -- 0/1; PF2 material is essentially all
+                                  -- sanctioned, but the field is recorded rather
+                                  -- than assumed
+    pubcode TEXT,          -- Paizo product code, e.g. "PZO160802E"
+    release_date TEXT,     -- ISO 8601 date
+    wiki_page TEXT         -- PathfinderWiki article title, for provenance
+);
+
+CREATE INDEX idx_pfs_adventures_kind ON pfs_adventures(kind);
+CREATE INDEX idx_pfs_adventures_name ON pfs_adventures(name);
+CREATE INDEX idx_pfs_adventures_season ON pfs_adventures(season, number);

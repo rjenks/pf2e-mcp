@@ -14,12 +14,14 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
 from ..paths import cache_dir as default_cache_dir
 from ..paths import db_path as default_db_path
+from .pfs_adventures import fetch_adventures
 from .prerequisites import _KNOWN_SKILLS, PrerequisiteParser, build_name_index
 from .source import (
     download_and_extract,
@@ -1013,6 +1015,43 @@ def _insert_background_boosts(conn: sqlite3.Connection, packs: dict[str, list[di
         )
 
 
+def _insert_pfs_adventures(conn: sqlite3.Connection) -> None:
+    """Populate the Organized Play adventure index from PathfinderWiki.
+
+    This is the one ingestion step that reads from somewhere other than the
+    foundryvtt/pf2e release, so it is also the one step that can fail while the
+    rest of the data is perfectly good. A wiki outage should not cost the user a
+    full re-ingestion of 21,000 rules entries, so a failure here is reported and
+    skipped: the chronicle tools degrade to "unknown adventure code" rather than
+    the build aborting.
+    """
+    try:
+        adventures = fetch_adventures()
+    except Exception as exc:  # noqa: BLE001 -- an index outage must not fail the build
+        print(f"  WARNING: PFS adventure index unavailable, skipping: {exc}")
+        return
+
+    conn.executemany(
+        """INSERT OR REPLACE INTO pfs_adventures
+           (code, name, kind, full_title, season, number, tier_low, tier_high,
+            series, tags, factions, metaplot, location, author, sanctioned,
+            pubcode, release_date, wiki_page)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                a.code, a.name, a.kind, a.full_title, a.season, a.number,
+                a.tier_low, a.tier_high, a.series, json.dumps(a.tags),
+                json.dumps(a.factions), json.dumps(a.metaplot), a.location,
+                a.author, a.sanctioned, a.pubcode, a.release_date, a.wiki_page,
+            )
+            for a in adventures
+        ],
+    )
+    kinds = Counter(a.kind for a in adventures)
+    summary = ", ".join(f"{n} {k}s" for k, n in sorted(kinds.items()))
+    print(f"  PFS adventure index: {len(adventures)} adventures ({summary})")
+
+
 def _report_changes(old_db: Path, new_conn: sqlite3.Connection) -> None:
     """Lightweight changelog: entry-count deltas per pack, for user visibility
     into what a refresh actually changed. Not a full diff -- just enough to
@@ -1063,6 +1102,7 @@ def build_database(output_path: Path, cache_dir: Path) -> None:
     _insert_skill_actions(conn, data_dir)
     _insert_ancestry_boosts(conn, packs)
     _insert_background_boosts(conn, packs)
+    _insert_pfs_adventures(conn)
 
     conn.execute("INSERT OR REPLACE INTO meta VALUES ('data_version', ?)", (release.tag,))
     conn.execute(
