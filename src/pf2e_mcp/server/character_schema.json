@@ -1,0 +1,915 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rjenks/pf2e-mcp/character_schema.json",
+  "title": "PF2e Character",
+  "description": "A Pathfinder 2e Remastered character, whole: the level-by-level build plan from 1st to 20th, the level the character has actually reached, the gear they carry now, their Organized Play record, and the narrative material a player needs at the table. Stored as characters/<Name>.yaml -- one file per character, replacing the Pathbuilder JSON, the companion markdown design document, the per-level snapshot exports and the chronicle sidecar that used to be maintained separately and drift apart.\n\nThe plan is authoritative and the character's state is derived from it. Nothing here records what the character's proficiencies or Hit Points are at their current level; those are replayed from the plan on demand, so there is no second copy to contradict the first. Ask for the character at any level and the tools compute it.\n\nRules content is referenced by slug -- the `slug` column of the rules database, which is the entry name lowercased and hyphenated ('soul-warden-dedication'). Slugs are stable identifiers; names are not, and matching on them is what makes a build ambiguous when two different things share a name.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "identity",
+    "build",
+    "plan"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this schema the file was written against.",
+      "type": "integer",
+      "const": 1
+    },
+    "identity": {
+      "description": "Who the character is, out of character: the name on the file, the level they have actually reached, and the game they belong to.",
+      "type": "object",
+      "required": [
+        "name",
+        "currentLevel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The character's name, as it should appear on a sheet. Should match the filename so a person can find the file.",
+          "type": "string",
+          "minLength": 1
+        },
+        "pronouns": {
+          "description": "The character's pronouns, e.g. 'she/her'. Used verbatim wherever generated text refers to the character.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "player": {
+          "description": "The player's name. Optional; only needed on a sheet handed to someone else, such as an Organized Play GM.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "currentLevel": {
+          "description": "The level the character has actually reached. Everything in `plan` at or below this level has happened; everything above it is intent. This is the level used when a tool is asked for the character without naming one.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "campaign": {
+          "description": "The game this character is played in, e.g. 'Pathfinder Society' or an adventure path name. Free text. A character with an `organizedPlay` block is a Society character regardless of what this says.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "portrait": {
+          "description": "Filename of a portrait image, relative to the directory holding this file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "build": {
+      "description": "The choices made once at character creation that no later level changes: ancestry, heritage, background, class and its subclass selections, deity, and languages. A subclass belongs here even though it is chosen at 1st level, because it is a standing identity rather than a level's worth of picks.",
+      "type": "object",
+      "required": [
+        "ancestry",
+        "background",
+        "class"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ancestry": {
+          "$ref": "#/$defs/slug",
+          "description": "Ancestry slug, e.g. 'dwarf'."
+        },
+        "heritage": {
+          "description": "Heritage slug, e.g. 'death-warden-dwarf'. A versatile heritage such as 'nephilim' goes here too. Null only while a build is unfinished.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/slug"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "background": {
+          "$ref": "#/$defs/slug",
+          "description": "Background slug, e.g. 'field-medic'."
+        },
+        "class": {
+          "$ref": "#/$defs/slug",
+          "description": "Class slug, e.g. 'animist'."
+        },
+        "subclasses": {
+          "description": "Subclass-style choices, keyed by the rules database's choice-group tag: 'cleric-doctrine', 'druid-order', 'sorcerer-bloodline', 'animist-apparition', and so on. Call rules_list_subclass_option_groups for the valid tags. The value is one slug, or an ordered list where a class attunes to several at once -- an Animist's apparitions, for instance, where the first entry is the primary. Order is significant for exactly that reason.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/slug"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/slug"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/slug"
+                }
+              }
+            ]
+          },
+          "default": {}
+        },
+        "deity": {
+          "description": "Deity slug, e.g. 'pharasma'. Required for a cleric or champion, flavour for most others, and occasionally a prerequisite -- the Soul Warden archetype wants Pharasma or a psychopomp usher.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/slug"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "languages": {
+          "description": "Every language the character speaks, including those granted by ancestry and those bought with a positive Intelligence modifier. Lowercase names rather than rules slugs, since languages are not entries in the rules database. An uncommon language needs Access from somewhere; in Organized Play all common and uncommon languages are granted, plus one regional language.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "variantRules": {
+          "description": "Optional rules the table uses that change the build's budget. 'freeArchetype' grants an archetype feat at every even level; 'ancestryParagon' grants an ancestry feat at every odd level. Organized Play uses neither.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "freeArchetype",
+              "ancestryParagon",
+              "dualClass",
+              "automaticBonusProgression",
+              "gradualAbilityBoosts",
+              "proficiencyWithoutLevel"
+            ]
+          },
+          "default": []
+        }
+      }
+    },
+    "plan": {
+      "description": "The build from 1st to 20th level, one entry per level, in ascending order. This is the authoritative record: the character's abilities, proficiencies, feats and features at any level are replayed from it rather than stored anywhere.\n\nOnly levels the character has actually reached are commitments; the rest are intent, and a level may be omitted entirely if it has not been planned yet. Recording a level beyond `identity.currentLevel` is normal and is the point of the format -- it is how a 3rd-level character carries a plan through 20th.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/planLevel"
+      }
+    },
+    "proficiencyOverrides": {
+      "description": "Proficiency ranks stated outright because replaying the plan cannot derive them. This is an escape hatch, not the normal way to record a proficiency: class progression and skill increases are derived, and anything listed here is a claim that the derivation is incomplete.\n\nThe real case is training granted by a feat rather than by level -- a dedication that grants 'a skill of your choice', an archetype that trains a weapon group. Each entry must name the `source` that granted it, so that when the rules data learns to model that grant the override can be found and deleted. Validation reports an override that agrees with derivation as redundant.\n\nKeys are the proficiency's name: a skill ('religion'), a save ('fortitude'), 'perception', 'classDC', a weapon category ('martial'), or an armour category ('light').",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/proficiencyOverride"
+      },
+      "default": {}
+    },
+    "gear": {
+      "description": "What the character carries and owns right now, at `identity.currentLevel` -- not per level, and not a history. For an Organized Play character the history is the gold journal in `organizedPlay`, which is where purchases are itemised; this block is the resulting inventory.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "carried": {
+          "description": "Everything the character has: weapons, armour, worn items and mundane kit alike, one entry each. Whether something is a weapon or a shield is a fact about the item in the rules database, not something this file needs to declare, so there is one list rather than three.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gearItem"
+          },
+          "default": []
+        },
+        "wishlist": {
+          "description": "Items the character wants but does not have, in the order they should be bought. A plan for spending, not a claim to own anything -- nothing here reaches a character sheet.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/wishlistItem"
+          },
+          "default": []
+        }
+      }
+    },
+    "spellcasting": {
+      "description": "Spells the character has access to right now. Like gear this is current state rather than a per-level plan: a prepared caster's list changes daily and a spontaneous caster's repertoire is swapped on level-up, so recording either against a level would be recording a snapshot as though it were a decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "description": "One entry per spellcasting source. A character can easily have several -- a class's own prepared casting, a subclass's spontaneous list, and an archetype's innate spell are three distinct entries with different traditions and proficiencies.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/spellcastingEntry"
+          },
+          "default": []
+        },
+        "focusPoints": {
+          "description": "Size of the focus pool. One point per focus-spell-granting source, to a maximum of three.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "focusSpells": {
+          "description": "Focus spell slugs the character knows, from any source -- class feats, subclass grants, archetypes.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          },
+          "default": []
+        }
+      }
+    },
+    "story": {
+      "description": "Narrative material. None of this has any mechanical effect, and all of it is what a player actually needs at a table.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concept": {
+          "description": "The character in a sentence or two -- the pitch, not the biography.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backstory": {
+          "description": "Where the character came from, in prose. Markdown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "introduction": {
+          "description": "What the player says to introduce the character to a new party, written to be read aloud. Should explain who they are and why they are here in about a minute.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roleplaying": {
+          "description": "How to play them: voice, temperament, what they will and will not do, how they treat the rest of the party. Markdown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "appearance": {
+          "description": "What the character looks like.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hooks": {
+          "description": "Loose threads a GM can pull -- unfinished business, people owed, questions the character has not answered.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "organizedPlay": {
+      "description": "The character's Pathfinder Society record: who they are in Organized Play, how they were equipped at creation, and every Chronicle Sheet earned, in the order applied. Present only for Society characters.\n\nA chronicle is a ledger entry rather than a snapshot -- each one's starting XP and currency must equal the previous one's ending values -- so the whole history composes into a single gold journal running from starting funds through every purchase and award. The individual entries use the same definitions as the standalone chronicle log format, which pfs_chronicle_schema describes in full.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organizedPlayId": {
+          "description": "The player's Paizo Organized Play ID -- the number before the dash in a character number such as 123456-2001. Belongs to the player, so it is the same across all of their characters.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+$"
+        },
+        "characterNumber": {
+          "description": "This character's number within the player's account. Paizo numbers Pathfinder Society characters from 2001 upward. Combined with organizedPlayId this gives the full identifier printed on a chronicle sheet.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "faction": {
+          "description": "The faction this character represents, and so the faction that receives Reputation by default. A character that has chosen none earns Reputation with the Horizon Hunters.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Envoy's Alliance",
+            "Grand Archive",
+            "Horizon Hunters",
+            "Radiant Oath",
+            "Vigilant Seal",
+            "Verdant Wheel",
+            null
+          ]
+        },
+        "advancement": {
+          "description": "Slow advancement halves XP, Reputation, currency and downtime without rounding. Applies to the whole character, so it is recorded once here rather than per chronicle.",
+          "type": "string",
+          "enum": [
+            "standard",
+            "slow"
+          ],
+          "default": "standard"
+        },
+        "startingLevel": {
+          "description": "The level the character was created at. Pathfinder Society allows 1st, 3rd, 5th or 7th and nothing else, and a character's starting level cannot be changed, even by a rebuild. This matters for two reasons: it sets the starting funds, and it is what XP counts up from -- characters begin play with 0 XP regardless of starting level, so XP alone does not tell you the character's level.",
+          "type": "integer",
+          "enum": [
+            1,
+            3,
+            5,
+            7
+          ],
+          "default": 1
+        },
+        "startingCurrency": {
+          "description": "Starting funds in gold, before any equipment is bought. The credits-only option is 15 gp at 1st level, 75 gp at 3rd, 270 gp at 5th and 720 gp at 7th. A character taking the permanent-items option instead records the smaller remaining purse here (25 gp at 3rd, 50 gp at 5th, 125 gp at 7th) and lists the granted items in startingItems.",
+          "type": "number",
+          "minimum": 0
+        },
+        "startingPurchases": {
+          "description": "Equipment bought at character creation, one line per item, in the order you want them to appear in the gold journal. Subtracted from startingCurrency to give the balance the first chronicle starts from.",
+          "type": "array",
+          "items": {
+            "$ref": "https://github.com/rjenks/pf2e-mcp/chronicle_schema.json#/$defs/purchase"
+          },
+          "default": []
+        },
+        "startingItems": {
+          "description": "Permanent items granted at creation under the permanent-items option, which cost nothing and so never appear in the gold journal. Free text per item, e.g. '+1 weapon potency rune (2nd-level item)'.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "chronicles": {
+          "description": "Chronicle sheets in the order they were applied. Order is significant: the ledger chain is validated against it, and it need not match the order the sessions were played in if sheets were applied later.",
+          "type": "array",
+          "items": {
+            "$ref": "https://github.com/rjenks/pf2e-mcp/chronicle_schema.json#/$defs/chronicle"
+          },
+          "default": []
+        },
+        "boonWishlist": {
+          "description": "Achievement Point boons the player intends to buy for this character. Achievement Points are earned per account rather than per character, so this is a spending plan, not a record of anything owned.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/boonWish"
+          },
+          "default": []
+        },
+        "notes": {
+          "description": "Free-text notes about the Organized Play record as a whole -- boon slots in use, replay credit spent, anything not tied to one session.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "notes": {
+      "description": "Long-form material that belongs with the character but has no typed home: how the character's turn works, an evaluation of the build's damage against on-level benchmarks, why one option was taken over another at length. Ordered, and rendered in order.\n\nRationale for a single pick belongs on that pick's `note` in the plan instead, where it stays attached to the choice it explains. Notes about the *tools* -- a calculator that got something wrong, a gap in the rules data -- do not belong here at all; per AGENTS.md they go in the issue tracker, where they can be fixed and closed.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/note"
+      },
+      "default": []
+    },
+    "openItems": {
+      "description": "Decisions still outstanding on this character -- an unspent feat slot, a subclass not yet chosen, a question to settle with the GM.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "slug": {
+      "title": "Rules slug",
+      "description": "An identifier from the rules database's `slug` column: the entry's name lowercased with spaces replaced by hyphens, e.g. 'soul-warden-dedication'. Non-ASCII letters are kept as they are ('deja-vu' is stored as 'déjà-vu'). No uppercase and no whitespace -- a value containing either is almost always a display name pasted where a slug belongs.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^A-Z\\s]+$"
+    },
+    "planLevel": {
+      "title": "One level of the build",
+      "type": "object",
+      "required": [
+        "level"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "The level these choices are made at.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "attributeBoosts": {
+          "$ref": "#/$defs/attributeBoosts"
+        },
+        "choices": {
+          "description": "Everything the player picks at this level. Only choices: a feature the class grants automatically is not a choice and is derived from the class, not recorded here.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/choice"
+          },
+          "default": []
+        },
+        "automatic": {
+          "description": "Slugs of features the class or ancestry grants automatically at this level. Purely informational -- these are derived from the class progression when the plan is replayed, and listing them here neither adds nor removes anything. Worth recording anyway because a build written out level by level is easier to read when the automatic gains are visible beside the chosen ones, which is how the class chapters present them.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          },
+          "default": []
+        },
+        "note": {
+          "description": "What this level is about, if anything needs saying beyond the individual picks -- 'this is the level the build comes online', say. Markdown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "choice": {
+      "title": "A single choice",
+      "type": "object",
+      "required": [
+        "slot",
+        "pick"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slot": {
+          "description": "Which of the level's budgets this choice spends.\n\n'classFeat', 'ancestryFeat', 'generalFeat' and 'skillFeat' are the four feat budgets, each granted at its own levels by the class. 'archetypeFeat' is the extra feat granted by the Free Archetype variant, kept separate so the budget check can tell it from a class feat spent on an archetype. 'skillIncrease' raises one skill's rank by one step. 'skillTraining' is a grant of trained proficiency in a skill that is not an increase -- the free picks at 1st level, or a skill handed out by a background or a feat. 'subclass' records a subclass choice made after 1st level, such as an Animist attuning to a further apparition. 'spell' records a spell added to a repertoire at this level, for classes that learn spells as a level-up choice. 'other' is for anything the schema does not name; say what it is in `note`.",
+          "type": "string",
+          "enum": [
+            "classFeat",
+            "ancestryFeat",
+            "generalFeat",
+            "skillFeat",
+            "archetypeFeat",
+            "skillIncrease",
+            "skillTraining",
+            "subclass",
+            "spell",
+            "other"
+          ]
+        },
+        "pick": {
+          "description": "What was chosen. A feat, subclass or spell is a rules slug. A skill increase or skill training is the skill's lowercase name ('athletics'), or a Lore's, hyphenated and without the word Lore ('battlefield' for Battlefield Lore). A list where one slot grants several at once, such as the free skill picks at 1st level.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/slug"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/slug"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "label": {
+          "description": "The pick's display name, if it is worth writing down. Optional: the name is looked up from the slug, and this is only useful where the slug resolves to something whose printed name differs, or where a feat takes a parameter -- 'Assurance (Medicine)'.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameter": {
+          "description": "The option chosen inside a feat that takes one: the skill for Assurance, the craft for Specialty Crafting, the weapon group for a weapon-training feat. Recorded separately from the slug because it is a second choice, and because the rules database has no entry for 'Assurance (Medicine)' as such.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "Why this pick, in whatever detail it deserves. This is where a build's reasoning lives -- what the pick is for, what it combines with, what would break if it were swapped. Markdown.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "alternatives": {
+          "description": "Options considered for this slot and rejected. Worth keeping: the reason a build did not take the obvious feat is exactly what gets re-litigated when the build is picked up again months later.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alternative"
+          },
+          "default": []
+        },
+        "status": {
+          "description": "'planned' for a choice at a level the character has not reached; 'locked' for one that has actually been taken in play and, in Organized Play, cannot be changed without retraining; 'retrained' for a slot whose original pick was swapped, with the history kept in `alternatives`. Defaults to 'planned', which is what a level above `identity.currentLevel` always is.",
+          "type": "string",
+          "enum": [
+            "planned",
+            "locked",
+            "retrained"
+          ],
+          "default": "planned"
+        }
+      }
+    },
+    "alternative": {
+      "title": "A rejected option",
+      "type": "object",
+      "required": [
+        "pick"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pick": {
+          "$ref": "#/$defs/slug",
+          "description": "The option that was not taken."
+        },
+        "note": {
+          "description": "Why it was not taken -- or, for a retrained slot, why it was and then was not.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "attributeBoosts": {
+      "title": "Attribute boosts applied at this level",
+      "description": "Which attributes were boosted, by source, in the order the boosts are applied. Order matters: a boost adds 1 to an attribute modifier, except that it adds 2 to a score below 18, so the running total decides what a later boost in the same batch is worth.\n\nAt 1st level all four sources apply. At 5th, 10th, 15th and 20th only `free` does -- four boosts, no two to the same attribute.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ancestry": {
+          "description": "The ancestry's own boosts and flaw. Most ancestries grant two fixed boosts, one free boost and one flaw; some grant two free boosts instead. The two boosts from a single source can never both go to the same attribute.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "boosts": {
+              "description": "The ancestry's fixed boosts, e.g. ['con', 'wis'] for a dwarf.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attribute"
+              },
+              "default": []
+            },
+            "free": {
+              "description": "Where the ancestry's free boost or boosts were spent.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attribute"
+              },
+              "default": []
+            },
+            "flaw": {
+              "description": "The ancestry's flaw, if it has one. A voluntary flaw taken to buy an extra boost goes here too.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attribute"
+              },
+              "default": []
+            }
+          }
+        },
+        "background": {
+          "description": "The background's two boosts: one chosen from the two it names, one free. They can never both go to the same attribute.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attribute"
+          },
+          "default": []
+        },
+        "class": {
+          "description": "The class's key attribute boost -- one attribute, chosen from the class's list where it offers more than one.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attribute"
+          },
+          "default": []
+        },
+        "free": {
+          "description": "The four free boosts every character gets at 1st, 5th, 10th, 15th and 20th level. No two may go to the same attribute in one batch.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attribute"
+          },
+          "maxItems": 4,
+          "default": []
+        },
+        "note": {
+          "description": "Why the boosts went where they did, if it is not obvious.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "attribute": {
+      "title": "Attribute",
+      "description": "One of the six attributes, lowercase and abbreviated.",
+      "type": "string",
+      "enum": [
+        "str",
+        "dex",
+        "con",
+        "int",
+        "wis",
+        "cha"
+      ]
+    },
+    "proficiencyOverride": {
+      "title": "A stated proficiency rank",
+      "type": "object",
+      "required": [
+        "rank",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "description": "The rank this proficiency actually is.",
+          "type": "string",
+          "enum": [
+            "untrained",
+            "trained",
+            "expert",
+            "master",
+            "legendary"
+          ]
+        },
+        "source": {
+          "description": "What granted it -- normally a feat slug. Required: an override without a source is indistinguishable from a mistake, and this is the field that says which override to delete when derivation catches up.",
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "description": "Anything else worth saying about why this could not be derived.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "currency": {
+      "title": "Coins on hand",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Platinum pieces on hand."
+        },
+        "gp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Gold pieces on hand."
+        },
+        "sp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Silver pieces on hand."
+        },
+        "cp": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Copper pieces on hand."
+        }
+      }
+    },
+    "gearItem": {
+      "title": "An owned item",
+      "type": "object",
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/slug",
+          "description": "Equipment slug, e.g. 'studded-leather-armor'."
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "How many the character has. Stacks of ammunition, torches and the like are one entry with a quantity rather than repeated entries."
+        },
+        "worn": {
+          "description": "True for the armour actually being worn. At most one item should be marked worn; it is the one that sets Armor Class.",
+          "type": "boolean",
+          "default": false
+        },
+        "invested": {
+          "description": "True for a worn magic item the character has spent one of their ten daily investiture slots on.",
+          "type": "boolean",
+          "default": false
+        },
+        "container": {
+          "description": "Name of the container this item is inside, matching another entry's `item`. Affects Bulk, not function.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runes": {
+          "description": "Property and fundamental runes etched on this item, as slugs. Fundamental runes are recorded here like any other: 'weapon-potency', 'striking', 'armor-potency', 'resilient'.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          },
+          "default": []
+        },
+        "grade": {
+          "description": "For an item that comes in grades, which one: 'low', 'moderate', 'high'.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "Anything worth knowing about this item at the table.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "wishlistItem": {
+      "title": "An item the character wants",
+      "type": "object",
+      "required": [
+        "item"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "description": "Equipment slug, or free text where the want is not a single catalogue item ('potency and striking runes on both weapons').",
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "description": "Buying order, lowest first. Ties are fine.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "targetLevel": {
+          "description": "The level by which this should ideally be bought, where wealth-by-level or a prerequisite sets one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 20
+        },
+        "note": {
+          "description": "What it is for.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "spellcastingEntry": {
+      "title": "A spellcasting source",
+      "type": "object",
+      "required": [
+        "name",
+        "tradition",
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "What this casting source is called on a sheet, e.g. 'Animist Prepared' or 'Soul Warden Dedication'.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tradition": {
+          "type": "string",
+          "enum": [
+            "arcane",
+            "divine",
+            "occult",
+            "primal"
+          ],
+          "description": "The magical tradition this source draws on. It fixes which spells are available and which counteract checks apply, and is a property of the source rather than of the character -- one character can cast from two traditions through two entries."
+        },
+        "type": {
+          "description": "'prepared' fills slots each day from a list; 'spontaneous' casts freely from a fixed repertoire; 'innate' is a fixed number of castings granted by a feat or ancestry; 'focus' is a focus pool rather than slots.",
+          "type": "string",
+          "enum": [
+            "prepared",
+            "spontaneous",
+            "innate",
+            "focus"
+          ]
+        },
+        "ability": {
+          "$ref": "#/$defs/attribute",
+          "description": "The attribute this source casts with. Not always the class's key attribute -- a Magus keys Strength or Dexterity but casts with Intelligence."
+        },
+        "spells": {
+          "description": "Spells available through this source, keyed by rank as a string ('0' for cantrips through '10'). For a prepared caster this is a representative daily preparation and may be changed freely; for a spontaneous caster it is the repertoire, which may not.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(10|[0-9])$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/slug"
+            }
+          },
+          "default": {}
+        },
+        "note": {
+          "description": "Anything worth saying about this source's list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "boonWish": {
+      "title": "A boon the player intends to buy",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The boon's name as it appears in Paizo's Achievement Points store."
+        },
+        "cost": {
+          "description": "Price in Achievement Points.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "note": {
+          "description": "What it does and why this character wants it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "note": {
+      "title": "A free-form note",
+      "type": "object",
+      "required": [
+        "heading",
+        "body"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "heading": {
+          "description": "A short title, rendered as a heading.",
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "description": "The note itself. Markdown.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

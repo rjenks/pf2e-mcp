@@ -547,6 +547,34 @@ def validate_chronicle_log(
     """
     issues: list[dict[str, Any]] = []
 
+    # Structural pass first. Everything below assumes a well-formed log and
+    # absorbs shape errors with `.get(...) or {}`, which turns "chronicles is a
+    # string" into a silent zero-entry ledger that validates clean. Imported
+    # lazily: character.py imports this module for the schema its own
+    # organizedPlay block references.
+    from .character import check_chronicle_structure
+
+    structural = check_chronicle_structure(log)
+    if structural:
+        for issue in structural:
+            issues.append(_issue(
+                "error", "schema",
+                f"{issue['path']}: {issue['message']}",
+            ))
+        return {
+            "valid": False,
+            "errors": len(issues),
+            "warnings": 0,
+            "issues": issues,
+            "journal": [],
+            "derived": {},
+            "caveat": (
+                "The log does not match the chronicle schema, so no ledger "
+                "arithmetic was attempted. Call pfs_chronicle_schema for the "
+                "shape a log must have."
+            ),
+        }
+
     version = log.get("schemaVersion")
     if version != SCHEMA_VERSION:
         issues.append(_issue(
