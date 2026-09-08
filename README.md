@@ -287,13 +287,20 @@ other project's `.claude/skills/`, or your user-level `~/.claude/skills/`.
 | `build_get_level_up_choices`                       | What unlocks at a target level                                                                                                                        |
 | `build_to_pathbuilder_export`                      | Export the working character as Pathbuilder-compatible JSON                                                                                           |
 | `build_render_character_sheet`                     | Write a print-ready, single-file HTML character sheet with full rules text (see below)                                                                 |
+| `pfs_get_adventure`                                | Resolve an Organized Play adventure code (`8-02`, `Q2-26`, `B21`) to its title, tier, season and standard rewards                                     |
+| `pfs_find_adventures`                              | Search the adventure index by title, kind, season, or a character level that must fall inside the tier                                                |
+| `pfs_chronicle_schema`                             | The JSON Schema for a chronicle log — read this before authoring one by hand                                                                          |
+| `pfs_validate_chronicle`                           | Check a chronicle log's ledger chain and report the totals it implies                                                                                 |
+| `pfs_earn_income`                                  | DC and payout for one Earn Income check, on the Guide's PFS-modified table                                                                            |
+| `pfs_render_chronicle_sheet`                       | Write a print-ready, single-file HTML Organized Play record (see below)                                                                                |
 
 Every `build_*` tool but one is a pure function — the server holds no
 character state between calls. The calling agent passes the in-progress
 character JSON (shaped like a Pathbuilder 2e export) on every call and keeps
-it in conversation. The exception is `build_render_character_sheet`, which
-writes a file to the `output_path` it is given; it returns a summary rather
-than the HTML, because a real sheet runs to 120–170 KB.
+it in conversation. The exceptions are `build_render_character_sheet` and
+`pfs_render_chronicle_sheet`, which write a file to the `output_path` they
+are given; they return a summary rather than the HTML, because a real sheet
+runs to 120–220 KB.
 
 ### Character sheets
 
@@ -568,6 +575,143 @@ safe to assume either way.
   `src/pf2e_mcp/server/pfs.py`'s module docstring for the reasoning, and
   "Maintaining PFS overrides" below for how to add exceptions.
 
+### Pathfinder Society chronicle sheets
+
+Organized Play characters earn one **Chronicle Sheet** per session, and the
+thing worth understanding about them is that a chronicle is a *ledger entry,
+not a receipt*. Each sheet records starting XP and starting gold, adds what the
+session awarded, and prints the new totals — which the next sheet takes as its
+own starting values. A character's current level, wealth and Reputation are only
+correct if the whole chain is applied in order, so a single transcription slip
+halfway down a stack of a dozen PDFs quietly corrupts everything after it.
+
+A character's chronicles live in a `characters/<Name>.chronicles.json` sidecar,
+deliberately *not* inside the Pathbuilder JSON, so that export stays a clean,
+portable Pathbuilder file. Call `pfs_chronicle_schema` for the full JSON Schema
+before authoring one by hand.
+
+**Looking up an adventure.** Players speak in codes, so the tools do too:
+
+```
+pfs_get_adventure("8-02")
+  → The Fey Reclamation, scenario, tier 3–4, Year of Clockwork Mystery
+    standard award: 4 XP, 4 Reputation, 8 downtime days
+    treasure bundle: 3 gp 8 sp at level 3, 6 gp 4 sp at level 4
+```
+
+`#8-02`, `8-2` and `PFS 8-02` all resolve to the same thing. Scenarios use
+Paizo's Society code (including the evergreen intros `99-1` and `99-2`), quests
+use `Q<series>-<number>` and bounties `B<number>` — both restart their numbering,
+so the prefix is what keeps them apart. Use `pfs_find_adventures` when the code
+isn't known; `level=4` finds everything a 4th-level character is in tier for.
+
+**Where the index comes from.** Paizo publishes no usable feed: the store and
+`organizedplay.paizo.com` are a single-page app with no public API and reporting
+is behind a login, the Archives of Nethys Elasticsearch index carries only the
+~31 PFS products that introduce new *rules* content, and the `pathfinder-society`
+npm package that search results still recommend was last published in January
+2022 with its repository now gone. So ingestion reads PathfinderWiki's `Facts:`
+namespace — a structured data layer behind each adventure page — into the
+`pfs_adventures` table: 213 PF2 adventures across seasons 1–8, with every
+scenario carrying an explicit Society code. Only factual index data is stored;
+blurb text is Paizo marketing copy and is deliberately dropped. A wiki outage
+skips this one step with a warning rather than failing the whole ingestion run.
+
+**Validation.** `pfs_validate_chronicle` distinguishes two kinds of finding.
+*Errors* are internal contradictions the file cannot be right about — a ledger
+where start + gained ≠ end, a chronicle whose starting values don't match the
+previous one's ending values, an unrecognised code, a non-repeatable adventure
+recorded twice without a replay. *Warnings* are deviations from the Guide's
+standard awards — nonstandard XP, low Reputation, a treasure bundle total that
+doesn't match the character's level, playing out of tier — which individual
+adventures are entitled to make, so they're advisory. The `derived` block is
+usually the point: current XP and the level it implies, currency on hand,
+Reputation per faction, downtime banked, and how many credits were earned
+running rather than playing.
+
+Almost nothing about the rewards is looked up per-adventure. Adventure *type*
+fixes XP, Reputation and downtime (scenario 4/4/8, Series 2 quest 2/2/4, Series
+1 quest 1/1/2, bounty 1/1/—) and *character* level fixes what a Treasure Bundle
+is worth — note character level, not tier, so two characters at one table earn
+different gold from the same scenario. Slow advancement halves all of it without
+rounding. Money is stored as gold (fractional gold is normal — a 1st-level
+bundle is 1 gp 4 sp) but all arithmetic runs in integer copper, because
+validating a ledger means asserting exact equality across a dozen additions.
+
+Fame is deliberately absent: it was replaced by Achievement Points on
+31 July 2020, and AcP is account-level rather than character-level.
+
+**The gold journal.** Validation also returns a `journal`: every movement of
+money in order, with a running balance. A chronicle's currency block says what
+one session did, but a stack of chronicles hides every purchase inside a lump
+`spent` figure — so "where did my money go" has no answer until all of it is
+flattened into one column. Itemise `startingPurchases` and each chronicle's
+`purchases` and each becomes a line:
+
+```
+LVL  TRANSACTION                                        IN      OUT      BALANCE
+ 3   Character created at level 3 — PFS starting funds  75 gp            75 gp
+ 3   Sickle                                                     −2 sp    74 gp, 8 sp
+ 3   Weapon Potency (+1) rune                                   −35 gp   39 gp, 8 sp
+ …
+ 3   Soap                                                       −2 cp    31 gp
+ 3   7-02 Shipyard Sabotage                             38 gp            69 gp
+```
+
+`startingLevel` matters more than it looks. PFS characters begin play at 1st,
+3rd, 5th or 7th level — **always with 0 XP**, whichever they chose — so XP alone
+never tells you a character's level, and a level-3 character reaches 4th at 12
+XP exactly as a 1st-level one reaches 2nd. Starting funds follow the same table:
+15 gp at 1st, 75 gp at 3rd, 270 gp at 5th, 720 gp at 7th under the credits-only
+option, or a smaller purse plus permanent items of set levels. The journal and
+the chronicle ledger are computed independently and cross-checked, so if they
+disagree that is itself reported as an error.
+
+**Downtime and Earn Income.** `pfs_earn_income(level, proficiency,
+adventure_type)` returns the DC and the value of each degree of success. PFS
+downtime differs from a home game in ways that change both the arithmetic and
+the strategy, and all four are modelled:
+
+- Downtime is granted per Chronicle and **spent when that Chronicle is applied,
+  or lost** — it cannot be accrued, so there is no balance to plan against. The
+  validator reports days *granted* as history, never as a total on hand.
+- One adventure's downtime is one **Downtime Unit** and takes **one check for
+  the whole unit**, not one per day: 8 days for a Scenario, 4 for a Series 2
+  Quest, 2 for a Series 1 Quest, none for a Bounty. The payout scales with the
+  unit.
+- The skill must be **Crafting, Performance, or a Lore** — not whatever the
+  character is best at.
+- The default **Task Level is character level − 2**, already folded into the
+  table. A critical success treats the character as one level higher (minimum
+  3); a critical failure earns nothing.
+
+Income lands in a chronicle's `currency.incomeEarned`, so it flows into the gold
+journal like any other award.
+
+**The printable record.** `pfs_render_chronicle_sheet(chronicle_log,
+output_path, paper="letter", logo_path=None, blank_adventure_rows=6,
+blank_journal_rows=12)` writes a self-contained HTML
+document sharing the character sheet's stylesheet and fonts, so the two print as
+one family. It lays out a summary page (level, XP, currency, Reputation per
+faction, downtime, and every adventure played), a validation page when anything
+was flagged, one page per chronicle in the order applied — provenance, both
+ledgers, Reputation, summary checkboxes, boons, treasure access with purchased
+lines struck through, notes — a gold journal page, and a notices page.
+
+Adventures Played and the gold journal both end in **ruled blank rows**, sized
+for handwriting rather than for the sheet's 8pt type. A chronicle arrives by
+email a day after the session, so at a convention a player runs several games
+ahead of their records; the blanks are for writing those in by pen and
+transcribing them later. With blanks present the journal's total line reads
+*Balance carried forward* rather than *Balance on hand*, since anything written
+below supersedes it. Pass 0 to either for a records-only printout. Findings print alongside the
+entry that produced them, because the person who needs to see that chronicle 7
+doesn't follow from chronicle 6 is the person holding the paper.
+
+None of this is authoritative. Award rates and Treasure Bundle values are
+transcribed from the Guide to Organized Play; consult the current Guide and your
+actual chronicle sheets for a real game.
+
 ### Licensing of ingested content
 
 This project's own code is Apache 2.0 (`LICENSE`); the Pathfinder 2e data
@@ -672,6 +816,7 @@ src/pf2e_mcp/
     source.py          # GitHub release fetching
     prerequisites.py    # feat prerequisite parsing
     prerequisite_overrides.json
+    pfs_adventures.py   # Organized Play adventure index, from PathfinderWiki
     schema.sql
     build.py            # orchestrates a full ingestion run
   server/             # the MCP server
@@ -681,6 +826,10 @@ src/pf2e_mcp/
     pf2e_math.py          # PF2e arithmetic and prerequisite evaluation
     pfs.py                 # PFS-legality heuristic (rarity + override file)
     pfs_overrides.json      # hand-curated PFS legality exceptions (starts empty)
+    pfs_tools.py             # pfs_* tools: adventure lookup, chronicle validation
+    chronicle.py              # chronicle ledger math, awards, validation
+    chronicle_schema.json      # JSON Schema for a chronicle log sidecar
+    chronicle_sheet.py          # printable Organized Play record
     licensing.py             # OGL/ORC + Product Identity classification heuristic
     db.py                    # read-only SQLite connection helper
 scripts/

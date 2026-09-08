@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from mcp.server.mcpserver import MCPServer
 
-from . import build_tools, pfs_tools, rules_tools, sheet
+from . import build_tools, chronicle_sheet, pfs_tools, rules_tools, sheet
 
 mcp = MCPServer(
     name="pf2e-mcp",
@@ -47,9 +47,10 @@ mcp.add_tool(pfs_tools.chronicle_schema, name="pfs_chronicle_schema")
 mcp.add_tool(pfs_tools.validate_chronicle, name="pfs_validate_chronicle")
 mcp.add_tool(pfs_tools.earn_income, name="pfs_earn_income")
 
-# The one tool here that writes to disk rather than only reading the database:
+# The two tools here that write to disk rather than only reading the database:
 # a rendered sheet is far too large to return through a tool response.
 mcp.add_tool(sheet.render_character_sheet, name="build_render_character_sheet")
+mcp.add_tool(chronicle_sheet.render_chronicle_sheet, name="pfs_render_chronicle_sheet")
 
 
 def main() -> None:
