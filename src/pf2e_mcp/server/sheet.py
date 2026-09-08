@@ -48,7 +48,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from . import build_tools, pf2e_math as m
+from . import build_tools, character as _native, pf2e_math as m
 from .db import get_connection
 from .sheet_assets import FACES
 
@@ -4368,6 +4368,7 @@ def render_character_sheet(
     paper: str = "letter",
     logo_path: str | None = None,
     symbol_dir: str | None = None,
+    level: int | None = None,
 ) -> dict[str, Any]:
     """Write a print-ready, fully self-contained HTML character sheet and
     return a summary of what went onto it.
@@ -4477,10 +4478,20 @@ def render_character_sheet(
     "Repair Toolkit" is reported there rather than guessed at or dropped
     silently, so treat a non-empty `unresolved` as something to fix in the
     character data.
+
+    `level` applies only to a native character document, and replays its plan
+    to that level before rendering -- so one file produces the sheet the
+    character had at 1st, has now, or will have at 20th. It is ignored for a
+    Pathbuilder export, which describes exactly one level and cannot be
+    replayed to another.
     """
     if not isinstance(character, dict) or not character:
         raise ValueError("character must be a non-empty character dict")
-    character = character.get("build", character)
+    # Accepts a native character document, a Pathbuilder envelope, or a bare
+    # build. A native document is replayed to `level` first, which is what
+    # makes rendering an earlier or later level a parameter rather than a
+    # second file.
+    character = _native.as_legacy(character, level)
     if paper not in _PAPER:
         raise ValueError(f"paper must be one of {sorted(_PAPER)}, got {paper!r}")
 

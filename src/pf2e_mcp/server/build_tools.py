@@ -25,6 +25,7 @@ from typing import Any, Literal
 from . import licensing
 from . import pf2e_math as m
 from . import pfs
+from . import character as _native
 from .db import get_connection
 
 ABILITY_BOOST_LEVELS = (5, 10, 15, 20)
@@ -311,6 +312,7 @@ def list_available_feats(
     `include_legacy` (default False): excludes pre-Remaster/OGL-flagged
     feats unless set. See `_legacy_filter_sql`.
     """
+    character = _native.as_legacy(character, level)
     target_level = level if level is not None else character.get("level", 1)
     legacy_sql = licensing.legacy_filter_sql(include_legacy)
     if feat_category == "archetype":
@@ -412,6 +414,7 @@ def list_available_feats(
 def check_prerequisite(character: dict[str, Any], feat_id: str) -> dict[str, Any]:
     """Narrow single-feat eligibility check -- use when sanity-checking one
     user-proposed choice rather than re-running full discovery."""
+    character = _native.as_legacy(character)
     conn = get_connection()
     try:
         entry = conn.execute(
@@ -458,6 +461,7 @@ def list_ability_boost_options(
     *this* source; full multi-source interaction (e.g. voluntary ancestry
     flaws freeing up a boost) is left to validate_build.
     """
+    character = _native.as_legacy(character)
     breakdown = character.get("abilities", {}).get("breakdown", {})
     already_chosen = {
         "ancestry": breakdown.get("ancestryBoosts", []) + breakdown.get("ancestryFree", []),
@@ -516,6 +520,7 @@ def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
     independent of class). Does not consult skillIncreaseLevels itself --
     call build_get_level_up_choices to confirm a skill-increase choice is
     actually available at the target level before offering these."""
+    character = _native.as_legacy(character)
     level = character.get("level", 1)
     prof = character.get("proficiencies", {})
     options = []
@@ -617,6 +622,7 @@ def validate_build(
     found a level-10 animist missing both 10th-level feats and a rogue
     missing their 5th-level ancestry feat, both of which had been validating
     clean for months."""
+    character = _native.as_legacy(character)
     variant_rules = variant_rules or []
     errors: list[str] = []
     warnings: list[str] = []
@@ -1773,6 +1779,7 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
     system produces a *correct* 0 for these three fields either, so
     treating "key absent" as the signal to fall back is safe in practice).
     """
+    character = _native.as_legacy(character)
     level = character.get("level", 1)
     abilities = m.default_character_abilities(character)
     prof = character.get("proficiencies", {})
@@ -2019,6 +2026,7 @@ def list_available_spells(
 
     `include_legacy` (default False): excludes pre-Remaster/OGL-flagged
     spells unless set. See `_legacy_filter_sql`."""
+    character = _native.as_legacy(character)
     class_slots = _class_spell_slots(character)
     if max_rank is not None:
         cap = max_rank
@@ -2097,6 +2105,7 @@ def get_level_up_choices(
       slot specifically, in addition to whatever the normal class-feat slot
       allows this level.
     """
+    character = _native.as_legacy(character)
     variant_rules = variant_rules or []
     row = _fetchall(
         "SELECT class_feat_levels, ancestry_feat_levels, general_feat_levels, "
@@ -2164,6 +2173,7 @@ def to_pathbuilder_export(character: dict[str, Any]) -> dict[str, Any]:
     findings), so this is a normalize/strip pass rather than a full
     transform: drop any internal-only keys (none introduced in Phase 1) and
     wrap in the {success, build} envelope real exports use."""
+    character = _native.as_legacy(character)
     internal_only_prefix = "_"
     clean = {k: v for k, v in character.items() if not k.startswith(internal_only_prefix)}
     return {"success": True, "build": clean}

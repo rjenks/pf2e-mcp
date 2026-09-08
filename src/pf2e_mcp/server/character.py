@@ -515,3 +515,45 @@ def validate_document(
         "warnings": len(warnings),
         "issues": issues,
     }
+
+
+# --------------------------------------------------------------- front door
+
+
+def is_native(character: Any) -> bool:
+    """Whether a dict is a character document rather than a Pathbuilder build.
+
+    `schemaVersion` is the discriminator: it is required in the native format
+    and appears in no Pathbuilder export.
+    """
+    return isinstance(character, dict) and "schemaVersion" in character
+
+
+def as_legacy(
+    character: Any, level: int | None = None, conn: sqlite3.Connection | None = None
+) -> dict[str, Any]:
+    """Whatever a caller passed, as the Pathbuilder-shaped dict tools expect.
+
+    A native character document is replayed to `level`; a Pathbuilder envelope
+    is unwrapped; a bare build is returned as it came. This is the single
+    adaptation point that lets every existing tool accept the new format
+    without any of them being rewritten to read it.
+
+    Opens its own database connection when replaying and none is supplied,
+    matching how the rest of `build_tools` handles a lookup.
+    """
+    if is_native(character):
+        from . import character_replay
+
+        if conn is not None:
+            return character_replay.at_level(character, level, conn)
+        from .db import get_connection
+
+        owned = get_connection()
+        try:
+            return character_replay.at_level(character, level, owned)
+        finally:
+            owned.close()
+    if isinstance(character, dict):
+        return character.get("build", character)
+    return character
