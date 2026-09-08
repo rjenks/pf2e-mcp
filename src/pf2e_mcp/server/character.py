@@ -429,6 +429,47 @@ def _resolve_slugs(
     return issues
 
 
+def _check_dependencies(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """A choice's `dependsOn` must name picks the plan actually contains.
+
+    Two ways this goes wrong, both of which quietly invalidate the reason a
+    pick is in the build. The named pick may not be in the plan at all --
+    usually because it was retrained away and the choice that existed to serve
+    it was left behind. Or it may be taken *later* than the choice depending on
+    it, which is the ordering error a prose note can state without anyone
+    noticing it is impossible.
+    """
+    issues: list[dict[str, Any]] = []
+    at_level: dict[str, int] = {}
+    for entry in document.get("plan") or []:
+        level = entry.get("level")
+        for choice in entry.get("choices") or []:
+            picks = choice.get("pick")
+            for pick in (picks if isinstance(picks, list) else [picks]):
+                if isinstance(pick, str) and isinstance(level, int):
+                    at_level.setdefault(pick, level)
+
+    for index, entry in enumerate(document.get("plan") or []):
+        level = entry.get("level")
+        for c_index, choice in enumerate(entry.get("choices") or []):
+            for d_index, needed in enumerate(choice.get("dependsOn") or []):
+                path = f"/plan/{index}/choices/{c_index}/dependsOn/{d_index}"
+                if needed not in at_level:
+                    issues.append(_issue(
+                        "warning", "dangling_dependency", path,
+                        f"This choice depends on {needed!r}, which the plan does "
+                        f"not contain. If it was retrained away, this choice may "
+                        f"no longer have a reason to be here.",
+                    ))
+                elif isinstance(level, int) and at_level[needed] > level:
+                    issues.append(_issue(
+                        "error", "dependency_ordering", path,
+                        f"This choice at level {level} depends on {needed!r}, "
+                        f"which is not taken until level {at_level[needed]}.",
+                    ))
+    return issues
+
+
 def _check_overrides(document: dict[str, Any]) -> list[dict[str, Any]]:
     """A proficiency override must name a plausible proficiency."""
     issues: list[dict[str, Any]] = []
@@ -503,6 +544,7 @@ def validate_document(
         issues += _check_plan_shape(plain)
         issues += _check_boost_sources(plain)
         issues += _check_overrides(plain)
+        issues += _check_dependencies(plain)
         issues += _check_organized_play(plain)
         if conn is not None:
             issues += _resolve_slugs(plain, conn)

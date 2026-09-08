@@ -531,6 +531,26 @@
             "retrained"
           ],
           "default": "planned"
+        },
+        "dependsOn": {
+          "description": "Other picks in this plan that this one exists to serve or relies on. The single most common thing a build's prose says and the one thing it could not previously say as data: an archetype dedication taken purely to reach one feat two levels later, a skill increase that a feat's prerequisite needs, a stance that another action assumes.\n\nRecorded in one direction only -- what this pick depends on, never what it enables. The reverse is found by looking for choices that name this one, and storing both directions would guarantee they eventually disagree.\n\nThe point is retraining: a slot nothing depends on can be changed freely, and one that three later choices name cannot. Validation warns when a named pick is nowhere in the plan, or is taken at a later level than the choice that depends on it.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          },
+          "default": []
+        },
+        "role": {
+          "description": "What this pick is doing for the build, when that is worth saying.\n\n'keystone' is the pick the build is built around and cannot lose. 'core' does the build's main job. 'support' improves something else rather than standing alone. 'prerequisite' was taken only to reach something later -- it should say what in `dependsOn`. 'filler' is an empty slot spent on something reasonable, and is the first place to look when a build needs a feat for something new. 'flexible' is a slot deliberately left open to retrain as play demands.\n\nOmit it where the pick is unremarkable; a build where everything is a keystone has not said anything.",
+          "type": "string",
+          "enum": [
+            "keystone",
+            "core",
+            "support",
+            "prerequisite",
+            "filler",
+            "flexible"
+          ]
         }
       }
     },

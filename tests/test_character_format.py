@@ -346,3 +346,81 @@ def test_well_formed_chronicle_still_validates(conn):
     }
     assert not character.check_chronicle_structure(log)
     assert chronicle.validate_chronicle_log(log, conn)["errors"] == 0
+
+
+# ------------------------------------------------- reasoning as data
+
+
+def test_a_choice_can_record_why_it_exists(minimal):
+    """The four homes for reasoning, all on one choice."""
+    minimal["plan"] = [{
+        "level": 1,
+        "note": "The level the build comes online.",
+        "choices": [{
+            "slot": "ancestryFeat",
+            "pick": "stonemasons-eye",
+            "role": "support",
+            "note": "Reads a wall the way other people read a page.",
+            "alternatives": [
+                {"pick": "sheltering-slab", "note": "Not available in Pathbuilder."},
+            ],
+        }],
+    }]
+    assert character.validate_document(minimal)["valid"]
+
+
+def test_a_dependency_names_what_a_pick_exists_to_serve(minimal):
+    minimal["identity"]["currentLevel"] = 4
+    minimal["plan"] = [
+        {"level": 1},
+        {"level": 2, "choices": [{
+            "slot": "classFeat", "pick": "fighter-dedication",
+            "role": "prerequisite",
+        }]},
+        {"level": 3},
+        {"level": 4, "choices": [{
+            "slot": "classFeat", "pick": "basic-maneuver",
+            "role": "core", "dependsOn": ["fighter-dedication"],
+        }]},
+    ]
+    assert character.validate_document(minimal)["valid"]
+
+
+def test_a_dependency_on_a_pick_not_in_the_plan_warns(minimal):
+    """Usually means the depended-on pick was retrained away."""
+    minimal["plan"] = [{"level": 1, "choices": [{
+        "slot": "classFeat", "pick": "basic-maneuver",
+        "dependsOn": ["fighter-dedication"],
+    }]}]
+    result = character.validate_document(minimal)
+    assert result["valid"], "a dangling dependency is a warning, not an error"
+    assert any(i["code"] == "dangling_dependency" for i in result["issues"])
+
+
+def test_depending_on_a_later_pick_is_an_error(minimal):
+    """An ordering the prose could state without anyone noticing it is impossible."""
+    minimal["identity"]["currentLevel"] = 4
+    minimal["plan"] = [
+        {"level": 1}, {"level": 2, "choices": [{
+            "slot": "skillFeat", "pick": "titan-wrestler",
+            "dependsOn": ["basic-maneuver"],
+        }]},
+        {"level": 3},
+        {"level": 4, "choices": [{"slot": "classFeat", "pick": "basic-maneuver"}]},
+    ]
+    result = character.validate_document(minimal)
+    assert not result["valid"]
+    assert any(i["code"] == "dependency_ordering" for i in result["issues"])
+
+
+def test_only_the_forward_direction_is_stored(minimal):
+    """`enables` is deliberately absent: two directions would drift apart."""
+    assert "enables" not in character.load_schema()["$defs"]["choice"]["properties"]
+    assert "dependsOn" in character.load_schema()["$defs"]["choice"]["properties"]
+
+
+def test_role_is_constrained_to_the_vocabulary(minimal):
+    minimal["plan"] = [{"level": 1, "choices": [
+        {"slot": "classFeat", "pick": "power-attack", "role": "linchpin"},
+    ]}]
+    assert character.check_structure(minimal)
