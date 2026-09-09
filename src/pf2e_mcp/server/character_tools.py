@@ -260,10 +260,23 @@ def fetch_pathbuilder(character_id: int | str) -> dict[str, Any]:
     goes straight into `build_import_pathbuilder`.
 
     The id is the `?id=` in the URL Pathbuilder's **Export -> JSON** produces.
-    It identifies an *export*, not the character: re-exporting yields a new id,
-    and an old one goes stale. A stale or wrong id comes back as
-    `{"success": false}` from Pathbuilder itself, which this reports as an
-    error asking for a fresh export -- it does not mean the character is gone.
+
+    **What comes back is the character as it stood at the last export, not as
+    it stands now.** Editing in Pathbuilder does not update the payload; only
+    exporting again does. This is the trap worth knowing about, because a fetch
+    against an id whose owner has been editing returns *stale data with no
+    indication that it is stale* -- confirmed live, where three fetches of one
+    id returned the pre-edit build twice and the edited build only after the
+    player exported. Before treating a fetch as "what they have now", make sure
+    they have exported since their last change.
+
+    Re-exporting was observed to **reuse** the same id and refresh its contents,
+    rather than minting a new one -- so a stored id stays useful as a pointer.
+    That is one character over one re-export, though, so the safe habit is to
+    glance at the id in the link after exporting and say so if it differs. A
+    wrong or genuinely dead id comes back as `{"success": false}` from
+    Pathbuilder itself, which this reports as an error asking for a fresh
+    export -- it does not mean the character is gone.
 
     **Pathbuilder is not upstream of a character file.** This project's format
     records levels above the one reached, the reasoning behind each pick, and

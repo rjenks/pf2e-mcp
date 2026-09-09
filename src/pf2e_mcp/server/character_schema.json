@@ -59,7 +59,7 @@
           ]
         },
         "pathbuilderId": {
-          "description": "The `?id=` from Pathbuilder's Export -> JSON link, so `build_fetch_pathbuilder` can pull the build again without the player finding the URL. This identifies an *export*, not the character: re-exporting produces a new id and the old one goes stale. It is a convenience pointer only -- this file is the source of truth. Levels above the one reached, the reasoning behind each pick and the dependencies between picks have no Pathbuilder equivalent, so re-importing over a maintained file discards them; fetch to compare, not to overwrite.",
+          "description": "The `?id=` from Pathbuilder's Export -> JSON link, so `build_fetch_pathbuilder` can pull the build again without the player finding the URL. It points at an *export*, and the export is a snapshot: what the endpoint serves is the character as it stood when Export -> JSON was last used, not as it stands now, so a fetch can return stale data with nothing to say it is stale. Re-exporting was observed to reuse the same id and refresh its contents rather than mint a new one, so the pointer keeps working -- but check the id in the link after exporting, since that is one character over one re-export. It is a convenience pointer only -- this file is the source of truth. Levels above the one reached, the reasoning behind each pick and the dependencies between picks have no Pathbuilder equivalent, so re-importing over a maintained file discards them; fetch to compare, not to overwrite.",
           "type": [
             "integer",
             "null"
