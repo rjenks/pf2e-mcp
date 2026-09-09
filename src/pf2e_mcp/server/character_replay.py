@@ -65,6 +65,7 @@ import re
 import sqlite3
 from typing import Any
 
+from . import class_skills
 from . import character as ch
 
 #: The sixteen skills, which is a fixed list in the Remaster.
@@ -392,7 +393,11 @@ def _replay_skills(
     trace: list[str] = []
     lores: dict[str, int] = {}
 
-    for skill in json.loads(progression.get("trained_skills") or "{}").get("fixed") or []:
+    class_trained = class_skills.apply(
+        (document.get("build") or {}).get("class") or "",
+        json.loads(progression.get("trained_skills") or "{}"),
+    )
+    for skill in class_trained.get("fixed") or []:
         proficiencies[skill] = max(proficiencies.get(skill, 0), 2)
         trace.append(f"class grants {skill}")
 

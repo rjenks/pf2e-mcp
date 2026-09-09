@@ -22,6 +22,7 @@ import json
 import re
 from typing import Any, Literal
 
+from . import class_skills
 from . import licensing
 from . import pf2e_math as m
 from . import pfs
@@ -210,7 +211,9 @@ def list_classes(filter: str | None = None, include_legacy: bool = False) -> lis
         defenses = json.loads(r["defenses"])
         r["defenses"] = {k: _foundry_rank_to_project(v) for k, v in defenses.items()}
 
-        r["trained_skills"] = json.loads(r["trained_skills"])
+        r["trained_skills"] = class_skills.apply(
+            r["slug"], json.loads(r["trained_skills"])
+        )
 
         choice_rows = _fetchall(
             "SELECT flag, choices FROM item_choice_sets WHERE entry_id = ?", (r["id"],)
@@ -1292,6 +1295,10 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
         if not rows or not rows[0]["trained_skills"]:
             continue
         trained = json.loads(rows[0]["trained_skills"])
+        if label == "class":
+            trained = class_skills.apply(
+                _real_slug("classes", character.get("class", "")), trained
+            )
         for skill in trained.get("fixed", []):
             if prof.get(skill, 0) <= 0:
                 warnings.append(
