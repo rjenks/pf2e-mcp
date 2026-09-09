@@ -126,6 +126,18 @@ _FEAT_CATEGORIES = {
     "archetypeFeat": "Class Feat",
 }
 
+# Not feats, but carried in the same list because that is where the sheet's
+# Advancement page reads a level's mechanical gains from. A Pathbuilder import
+# produces exactly these two categories for the same reason, and the renderer
+# already knows to route them to the skill lines rather than making feat cards
+# of them; the native replay simply was not emitting them, so a plan that
+# records precisely which skill was trained or increased still rendered as a
+# bare "Skill increase" with no skill named.
+_SKILL_CATEGORIES = {
+    "skillIncrease": "Skill Increase",
+    "skillTraining": "Skill Training",
+}
+
 
 def _rank_to_project(rank: int | None) -> int:
     """Foundry's 0-4 into this project's 0/2/4/6/8 convention."""
@@ -569,6 +581,16 @@ def _replay_feats(
         if not isinstance(entry_level, int) or entry_level > level:
             continue
         for choice in entry.get("choices") or []:
+            skill_category = _SKILL_CATEGORIES.get(choice.get("slot"))
+            if skill_category:
+                picks = choice.get("pick")
+                picks = picks if isinstance(picks, list) else [picks]
+                for pick in picks:
+                    feats.append([
+                        _lore_key(str(pick)), choice.get("note"),
+                        skill_category, entry_level, skill_category,
+                    ])
+                continue
             category = _FEAT_CATEGORIES.get(choice.get("slot"))
             if not category:
                 continue

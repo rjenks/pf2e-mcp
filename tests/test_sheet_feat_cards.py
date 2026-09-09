@@ -118,3 +118,72 @@ def test_a_granted_feat_files_under_its_own_name(rendered):
     cards whose names the reader had to be told."""
     headings = [h for h, _ in _headings(rendered)]
     assert headings.index("Combat Grab") < headings.index("Dueling Parry")
+
+
+# ---------------------------------------------------------------- advancement
+
+@pytest.fixture
+def advancement(conn, tmp_path) -> str:
+    """A native-format character whose plan names every skill choice."""
+    from pf2e_mcp.server import character_replay
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Skill Namer", "currentLevel": 7},
+        "build": {"ancestry": "orc", "background": "acolyte", "class": "ranger",
+                  "heritage": None},
+        "plan": [
+            {"level": 1, "choices": [
+                {"slot": "skillTraining",
+                 "pick": ["athletics", "nature", "intimidation", "stealth"]},
+            ]},
+            {"level": 3, "choices": [{"slot": "skillIncrease", "pick": "athletics"}]},
+            {"level": 5, "choices": [{"slot": "skillIncrease", "pick": "intimidation"}]},
+            {"level": 7, "choices": [{"slot": "skillIncrease", "pick": "athletics"}]},
+        ],
+    }
+    state = character_replay.at_level(document, 7, conn)
+    out = tmp_path / "adv.html"
+    sheet.render_character_sheet(state, str(out), level=7)
+    return out.read_text(encoding="utf-8")
+
+
+def _advancement_lines(html: str) -> list[str]:
+    body = re.search(r'data-sec="advancement"(.*?)</section>', html, re.S)
+    return re.findall(r'<div class="adv-boost">([^<]*)</div>', body.group(1))
+
+
+def test_level_one_names_the_free_picks_instead_of_counting_them(advancement):
+    """The native format records exactly which skills were chosen; only a
+    Pathbuilder export, which stores ranks rather than choices, has to say
+    "+4 free"."""
+    line = next(l for l in _advancement_lines(advancement) if l.startswith("Skill training"))
+    for skill in ("Athletics", "Nature", "Intimidation", "Stealth"):
+        assert skill in line, line
+    assert "free" not in line, line
+
+
+def test_each_skill_increase_names_its_skill(advancement):
+    lines = _advancement_lines(advancement)
+    assert "Skill increase: Athletics" in lines
+    assert "Skill increase: Intimidation" in lines
+    # Bare, skill-less rows are the bug this replaced.
+    assert "Skill increase" not in lines
+
+
+def test_repeated_increases_on_one_skill_are_not_duplicate_feats(conn):
+    """Athletics goes trained -> expert -> master through separate increases
+    naming the same skill. That is the norm, not a duplicate feat."""
+    from pf2e_mcp.server import build_tools
+    character = {
+        "name": "Repeater", "class": "Ranger", "ancestry": "Orc", "level": 7,
+        "abilities": {"str": 18, "dex": 14, "con": 14, "int": 10, "wis": 14, "cha": 10},
+        "proficiencies": {},
+        "feats": [
+            ["Athletics", None, "Skill Increase", 3, "Skill Increase"],
+            ["Athletics", None, "Skill Increase", 7, "Skill Increase"],
+        ],
+    }
+    result = build_tools.validate_build(character)
+    assert not [e for e in result["errors"] if "Duplicate" in e], result["errors"]
+    assert not [w for w in result["warnings"] if "not found in rules database" in w], \
+        result["warnings"]

@@ -280,8 +280,19 @@ def test_every_real_character_survives_a_pathbuilder_round_trip(path, conn):
     after = {k: v for k, v in round_tripped["abilities"].items() if k != "breakdown"}
     assert before == after, f"{path.name}: attributes changed"
 
-    expected = {(f[0].lower(), f[3]) for f in direct["feats"]}
-    actual = {(f[0].lower(), f[3]) for f in round_tripped["feats"]}
+    # Skill Increases and feat-granted Skill Trainings ride in the same list
+    # but are not feats, and they genuinely do not survive the trip: a
+    # Pathbuilder export records proficiency *ranks*, not which skill a free
+    # pick chose or which level increased it. That loss is a property of
+    # Pathbuilder's format, is reported by import as `stated_proficiencies`,
+    # and is one of the reasons the native format exists -- so it is not what
+    # this test is guarding.
+    def real_feats(state):
+        return {(f[0].lower(), f[3]) for f in state["feats"]
+                if str(f[2] or "").strip().lower()
+                not in ("skill increase", "skill training")}
+
+    expected, actual = real_feats(direct), real_feats(round_tripped)
     assert not expected - actual, f"{path.name} lost feats: {sorted(expected - actual)}"
 
     assert sorted(direct["lores"]) == sorted(round_tripped["lores"]), (

@@ -3206,13 +3206,27 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
             boosted = _boost_abilities(ch, r["level"])
             extra.append(f"Attribute boosts ({', '.join(boosted)})"
                          if boosted else "Attribute boosts")
+        # Training recorded against this level by the character's own plan.
+        # The native format names every free pick; only a Pathbuilder export,
+        # which records ranks rather than choices, has to fall back to a count.
+        recorded = [si for si in r["skill_increases"] if not si["is_increase"]]
         if r["level"] == 1:
             named, free = _level1_skill_training(ch, training_safe)
+            # Each named pick displaces one of the counted free slots, so the
+            # line reads "Athletics, Nature" rather than "Athletics, Nature,
+            # +2 free" for the same two choices.
+            named = named + [si["skill"] for si in recorded]
+            free = max(0, free - len(recorded))
             parts = [_esc(n) for n in named] + ([f"+{free} free"] if free else [])
             if parts:
                 extra.append(f"Skill training ({', '.join(parts)})")
         for si in r["skill_increases"]:
-            note = f" ({_esc(si['note'])})" if si["note"] else ""
+            if r["level"] == 1 and si in recorded:
+                continue  # already named on the level-1 training line above
+            # Clipped like the feat lines: a recorded note is often a
+            # paragraph of build rationale, and the whole of it in a table cell
+            # pushes the row off the page.
+            note = f" ({_esc(_clip(si['note'], 52))})" if si["note"] else ""
             extra.append(f"{si['label']}: {_esc(si['skill'])}{note}")
         if (r["level"] in skill_inc_levels
                 and not any(si["is_increase"] for si in r["skill_increases"])):

@@ -534,6 +534,16 @@ def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
     return {"options": options}
 
 
+def _is_skill_row(feat: Any) -> bool:
+    """True for a Skill Increase / Skill Training entry in a character's feat
+    list. These are mechanical gains recorded alongside feats so the sheet can
+    place them on the right level, not feats in their own right -- they have no
+    rules entry, no prerequisites, and may legitimately repeat."""
+    if not (isinstance(feat, (list, tuple)) and len(feat) > 2):
+        return False
+    return str(feat[2] or "").strip().lower() in ("skill increase", "skill training")
+
+
 def validate_build(
     character: dict[str, Any],
     variant_rules: list[str] | None = None,
@@ -645,6 +655,15 @@ def validate_build(
         name = f[0] if f else None
         if not name:
             continue
+        # Skill Increases and feat-granted Skill Trainings ride in the feat
+        # list because that is where the sheet's Advancement page reads a
+        # level's gains from, but they are not feats and repeating one is not
+        # only legal, it is the norm: Athletics goes trained -> expert ->
+        # master -> legendary through four separate increases naming the same
+        # skill. Counting those as duplicate feats reported hard errors on a
+        # correct build.
+        if _is_skill_row(f):
+            continue
         key = name.strip().lower()
         if key in seen:
             errors.append(f"Duplicate feat: {name}")
@@ -659,6 +678,10 @@ def validate_build(
         for f in feats:
             name = f[0] if f else None
             if not name:
+                continue
+            if _is_skill_row(f):
+                # A skill name, not a feat name. Looking it up would report
+                # every skill increase on the sheet as an unverifiable feat.
                 continue
             entry = conn.execute(
                 "SELECT id, category, rarity, traits FROM entries "
