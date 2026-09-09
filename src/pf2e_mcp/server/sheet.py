@@ -107,15 +107,40 @@ _RANK_ABBR = {0: "U", 2: "T", 4: "E", 6: "M", 8: "L"}
 _RANK_NAME = {0: "Untrained", 2: "Trained", 4: "Expert", 6: "Master",
               8: "Legendary"}
 
-# Pathbuilder records striking runes by name; each step adds a damage die.
+# A striking rune reaches this renderer under two spellings, and a weapon can
+# carry either. Named in the freeform `runes` list is how a *graded* rune
+# travels ("greater striking"); plain striking instead sets a boolean field of
+# its own, `increasedDice`, in a Pathbuilder export and in this project's
+# replay alike. Reading only the list dropped a whole damage die -- and 65 gp
+# of fundamental rune off the equipment list -- from every plainly striking
+# weapon, so both spellings are read and the higher tier wins.
 _STRIKING_DICE = {
     "striking": 2, "greater striking": 3, "major striking": 4,
 }
+
+# The rules-database slug for each striking tier, for looking a rune's real
+# name and price up. Index 0 is unreachable and only keeps the list aligned
+# with the tier it is indexed by.
+_STRIKING_SLUGS = ("", "striking", "striking-greater", "striking-major")
+
+
+def _striking_dice(weapon: dict[str, Any]) -> int:
+    """Damage dice a weapon rolls: 1, plus one per step of striking."""
+    runes = [str(r).strip().lower() for r in (weapon.get("runes") or [])]
+    named = max((_STRIKING_DICE[r] for r in runes if r in _STRIKING_DICE),
+                default=1)
+    return max(named, 2 if weapon.get("increasedDice") else 1)
+
 
 # Resilient's rune tier is recorded as this project's own 0/1/2/3 armor.res
 # convention (parallel to a weapon's pot field), not by name -- these are
 # the display labels for each tier.
 _RESILIENT_NAMES = {1: "resilient", 2: "greater resilient", 3: "major resilient"}
+
+# The same tiers as rules-database slugs, for pricing and naming them on the
+# inventory. Index 0 is unreachable, and only keeps the list aligned with the
+# tier it is indexed by.
+_RESILIENT_SLUGS = ("", "resilient", "resilient-greater", "resilient-major")
 
 # A fixed rune -- potency (weapon or armor) or resilient -- is always read
 # from this project's own dedicated numeric field (pot/res), never from the
@@ -482,6 +507,29 @@ class _Library:
                 if row["name"].lower() == wanted:
                     return self._hydrate(row)
         return None
+
+    def by_slug(self, slug: str, pack: str) -> dict[str, Any] | None:
+        """Resolve by slug rather than name, quietly.
+
+        Runes are the case this exists for. A native character file records
+        them as slugs, and half of them do not resemble the name they resolve
+        to -- `striking-greater` is "Striking (Greater)", `weapon-potency-2` is
+        "Weapon Potency (+2)" -- so a name lookup finds nothing and, worse,
+        files each miss as unresolved. Nothing is aliased or reported here:
+        a slug either names an entry or it does not.
+        """
+        if not slug:
+            return None
+        key = (f"slug:{slug.lower()}", pack)
+        if key in self._cache:
+            return self._cache[key]
+        row = self._conn.execute(
+            "SELECT * FROM entries WHERE slug = ? AND pack = ? LIMIT 1",
+            (slug.lower(), pack),
+        ).fetchone()
+        entry = self._hydrate(row)
+        self._cache[key] = entry
+        return entry
 
     def by_id(self, entry_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
@@ -1303,10 +1351,13 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         attack = atk_mod + bonus
 
         raw_runes = [str(r) for r in (weapon.get("runes") or [])]
-        runes = [r.lower() for r in raw_runes]
-        dice = max((_STRIKING_DICE[r] for r in runes if r in _STRIKING_DICE),
-                   default=1)
-        rune_labels = _rune_labels([f"+{potency} potency"] if potency else [], raw_runes)
+        dice = _striking_dice(weapon)
+        fixed = [f"+{potency} potency"] if potency else []
+        # Named in the list already, or held in `increasedDice` and printed
+        # here so the player can see the die they are rolling paid for.
+        if dice > 1 and not any(r.lower() in _STRIKING_DICE for r in raw_runes):
+            fixed.append("striking")
+        rune_labels = _rune_labels(fixed, raw_runes)
         die = weapon.get("die") or "d4"
         base_die = ((entry or {}).get("system", {}).get("damage") or {}).get("die")
         slug = ((entry or {}).get("system", {}).get("slug")
@@ -3859,6 +3910,74 @@ def _page_features(ctx: dict[str, Any]) -> str:
 </section>"""
 
 
+#: Coin values in copper, for adding an item's price to its runes' and
+#: writing the total back out. Platinum is accepted on the way in because a
+#: handful of entries are priced in it, but never written on the way out --
+#: a rune-inclusive total is compared against other gear and a purse, both of
+#: which are counted in gold.
+_COIN_CP = {"pp": 1000, "gp": 100, "sp": 10, "cp": 1}
+
+
+def _price_cp(entry: dict[str, Any] | None) -> int:
+    """One rules entry's price in copper pieces."""
+    price = ((entry or {}).get("system", {}).get("price") or {}).get("value") or {}
+    total = 0
+    for coin, factor in _COIN_CP.items():
+        try:
+            total += int(price.get(coin) or 0) * factor
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _price_text(cp: int) -> str:
+    """Copper back into the way a price is written: high denomination first,
+    and only the denominations that are actually non-zero."""
+    gold, rest = divmod(max(cp, 0), 100)
+    silver, copper = divmod(rest, 10)
+    parts = [f"{value} {coin}" for value, coin
+             in ((gold, "gp"), (silver, "sp"), (copper, "cp")) if value]
+    return " ".join(parts) or "—"
+
+
+def _weapon_rune_slugs(weapon: dict[str, Any]) -> list[str]:
+    """Every rune etched on a weapon, as slugs, fundamentals included.
+
+    The fundamentals are the reason this exists: potency lives in `pot` and
+    striking in `increasedDice` or a name in the list, so the list alone
+    describes only the property runes -- which for most characters means the
+    cheap rune is on the sheet and the thousand-gold one is not.
+    """
+    slugs = []
+    potency = weapon.get("pot") or 0
+    if 1 <= potency <= 3:
+        slugs.append(f"weapon-potency-{potency}")
+    dice = _striking_dice(weapon)
+    if dice > 1:
+        slugs.append(_STRIKING_SLUGS[dice - 1])
+    for rune in weapon.get("runes") or []:
+        text = str(rune).strip()
+        if text and text.lower() not in _STRIKING_DICE:
+            slugs.append(text.lower().replace(" ", "-"))
+    return slugs
+
+
+def _armor_rune_slugs(armor: dict[str, Any]) -> list[str]:
+    """The same for a suit of armor: potency, resilient, then property runes."""
+    slugs = []
+    potency = armor.get("pot") or 0
+    if 1 <= potency <= 3:
+        slugs.append(f"armor-potency-{potency}")
+    tier = m.resilient_tier(armor.get("res"))
+    if tier:
+        slugs.append(_RESILIENT_SLUGS[tier])
+    for rune in armor.get("runes") or []:
+        text = str(rune).strip()
+        if text and not _FIXED_RUNE_RE.match(text):
+            slugs.append(text.lower().replace(" ", "-"))
+    return slugs
+
+
 def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
     """The inventory table's rows, plus the resolved item names in the order
     they were carried in -- the item-rules section prints its cards in that
@@ -3866,7 +3985,8 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
     than two independently sorted ones."""
     rows, seen = "", []
 
-    def add(name: str, qty: Any, note: str = "") -> None:
+    def add(name: str, qty: Any, note: str = "",
+            runes: list[str] | None = None, runes_from: str = "") -> None:
         nonlocal rows
         entry = lib.get(name, "item")
         if entry and entry["name"] not in seen:
@@ -3888,26 +4008,45 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
             bulk_s = "—"
         else:
             bulk_s = str(int(bulk) if float(bulk).is_integer() else bulk)
-        price = system.get("price", {}).get("value") or {}
-        price_s = " ".join(f"{price[k]} {k}" for k in ("pp", "gp", "sp", "cp")
-                           if price.get(k)) or "—"
+
+        # A rune is a priced item in its own right and every one of them is
+        # Bulk 0, so an etched weapon weighs what it always did and costs what
+        # it and its runes cost together. Printing the bare item price instead
+        # answered "what is this worth" with the wrong order of magnitude.
+        price_cp, labels = _price_cp(entry), []
+        for slug in runes or []:
+            rune = lib.by_slug(slug, "equipment")
+            labels.append(rune["name"] if rune else slug.replace("-", " "))
+            # Runes copied by doubling rings apply but were never bought, so
+            # they are named without being charged for -- the price of the
+            # rings is already on their own row.
+            if not runes_from:
+                price_cp += _price_cp(rune)
+        if labels:
+            note = f"{note}; {', '.join(labels)}" if note else ", ".join(labels)
+        if labels and runes_from:
+            source = lib.by_slug(runes_from, "equipment")
+            note += f" (from {source['name'] if source else runes_from})"
+
         rows += (f'<tr><td class="nm">{_esc(display)}</td>'
                  f'<td class="r">{_esc(qty)}</td>'
                  f'<td class="r">{bulk_s}</td>'
-                 f'<td class="r">{price_s}</td>'
+                 f'<td class="r">{_price_text(price_cp)}</td>'
                  f'<td class="dsc last">{_esc(note)}</td></tr>')
 
     for w in ch.get("weapons", []) or []:
         if isinstance(w, dict) and w.get("name"):
-            runes = ", ".join(str(r) for r in (w.get("runes") or []))
-            add(w["name"], w.get("qty") or 1, runes)
+            add(w["name"], w.get("qty") or 1, runes=_weapon_rune_slugs(w),
+                runes_from=str(w.get("runesFrom") or ""))
     for a in ch.get("armor", []) or []:
         if isinstance(a, dict) and a.get("name"):
             add(a["name"], a.get("qty") or 1,
-                "Worn" if a.get("worn") else "")
+                "Worn" if a.get("worn") else "", runes=_armor_rune_slugs(a),
+                runes_from=str(a.get("runesFrom") or ""))
     for item in ch.get("equipment", []) or []:
         if isinstance(item, (list, tuple)) and item:
-            add(str(item[0]), item[1] if len(item) > 1 else 1)
+            add(str(item[0]), item[1] if len(item) > 1 else 1,
+                " ".join(str(x) for x in item[2:]))
         elif isinstance(item, dict) and item.get("name"):
             add(item["name"], item.get("qty") or 1)
     return rows, seen

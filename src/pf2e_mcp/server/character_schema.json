@@ -776,6 +776,13 @@
           },
           "default": []
         },
+        "runesFrom": {
+          "description": "Slug of an item that copies its runes onto this one -- doubling rings, and nothing else in the Remaster. The runes still belong in `runes` and still apply; this says they were not bought for this item, so the inventory prices them at nothing rather than charging for the same runes twice.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "grade": {
           "description": "For an item that comes in grades, which one: 'low', 'moderate', 'high'.",
           "type": [

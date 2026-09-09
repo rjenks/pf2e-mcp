@@ -93,6 +93,22 @@ _POTENCY = {
     "armor-potency-1": 1, "armor-potency-2": 2, "armor-potency-3": 3,
 }
 _STRIKING = {"striking": 1, "striking-greater": 2, "striking-major": 3}
+
+#: A graded striking rune's tier has nowhere to live in Pathbuilder's shape:
+#: `increasedDice` is a boolean, so collapsing every tier into it made greater
+#: and major striking come back out as plain striking -- a die or two of damage
+#: lost on the way to the sheet. Pathbuilder itself carries a graded rune by
+#: name in the `runes` list alongside the boolean, and so does this.
+_STRIKING_NAMES = {"striking-greater": "greater striking",
+                   "striking-major": "major striking"}
+
+
+def _graded_striking(runes: list[str]) -> list[str]:
+    """The name of the highest striking rune above plain striking, if any."""
+    graded = [r for r in runes if r in _STRIKING_NAMES]
+    if not graded:
+        return []
+    return [_STRIKING_NAMES[max(graded, key=lambda r: _STRIKING[r])]]
 _RESILIENT = {
     "resilient": "resilient",
     "resilient-greater": "greater resilient",
@@ -658,13 +674,20 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "str": "",
                 "mat": None,
                 "display": name,
-                "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING],
+                "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING]
+                         + _graded_striking(runes),
                 "increasedDice": any(r in _STRIKING for r in runes),
                 "damageType": ((system.get("damage") or {}).get("damageType") or "B")[:1].upper(),
                 "damageBonus": 0,
                 "extraDamage": [],
                 "isInventor": False,
                 "grade": item.get("grade") or "",
+                # Not a Pathbuilder field. Doubling rings copy runes onto the
+                # off-hand weapon, and the sheet has to know the difference
+                # between a rune this weapon carries and one it borrows -- the
+                # first was paid for and the second was not. Pathbuilder
+                # ignores keys it does not know.
+                "runesFrom": item.get("runesFrom") or None,
             })
         elif item_type == "armor":
             system = json.loads(entry["raw_json"])["system"] if entry else {}
@@ -681,6 +704,7 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                     r for r in runes if r not in _POTENCY and r not in _RESILIENT
                 ],
                 "grade": item.get("grade") or "",
+                "runesFrom": item.get("runesFrom") or None,
             })
         else:
             row: list[Any] = [name, quantity]

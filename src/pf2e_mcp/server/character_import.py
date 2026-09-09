@@ -110,6 +110,11 @@ def _describe_unresolved(conn: sqlite3.Connection, name: str) -> str:
     return f"{name!r} (exists as {row['pack']})" if row else repr(name)
 
 
+#: Every striking tier's slug, for noticing that one already resolved out of a
+#: weapon's named rune list.
+_STRIKING_SLUGS = frozenset({"striking", "striking-greater", "striking-major"})
+
+
 def _rune_slugs(
     conn: sqlite3.Connection, runes: list[Any], unresolved: list[str], where: str
 ) -> list[str]:
@@ -209,7 +214,8 @@ def _boosts_from_breakdown(breakdown: dict[str, Any]) -> dict[int, dict[str, Any
 
 
 def _fundamental_runes(
-    potency: Any, potency_prefix: str, striking: Any = None, resilient: Any = None
+    potency: Any, potency_prefix: str, striking: Any = None,
+    resilient: Any = None, already_striking: bool = False,
 ) -> list[str]:
     """Pathbuilder's `pot`, `res` and `increasedDice` fields as rune slugs.
 
@@ -218,6 +224,11 @@ def _fundamental_runes(
     number. The native format has one list, so they are folded in here. Missing
     this is why an imported character's Armor Class came out up to three points
     low.
+
+    Striking is the exception that needs `already_striking`: a *graded*
+    striking rune travels by name in the `runes` list and sets the boolean
+    too, so a weapon carrying "greater striking" would otherwise import as
+    both `striking-greater` and a redundant `striking`.
     """
     out: list[str] = []
     try:
@@ -227,7 +238,7 @@ def _fundamental_runes(
     if 1 <= tier <= 3:
         out.append(f"{potency_prefix}-{tier}")
 
-    if striking:
+    if striking and not already_striking:
         out.append("striking")
 
     if resilient:
@@ -263,6 +274,7 @@ def _gear_from_export(
         runes += _fundamental_runes(
             weapon.get("pot"), "weapon-potency",
             striking=weapon.get("increasedDice"),
+            already_striking=any(r in _STRIKING_SLUGS for r in runes),
         )
         if runes:
             item["runes"] = runes

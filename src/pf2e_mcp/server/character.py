@@ -482,6 +482,9 @@ def _resolve_slugs(
         for r_index, rune in enumerate(item.get("runes") or []):
             check(rune, f"/gear/carried/{index}/runes/{r_index}", ("equipment",),
                   level="warning")
+        if item.get("runesFrom"):
+            check(item["runesFrom"], f"/gear/carried/{index}/runesFrom",
+                  ("equipment",), level="warning")
 
     spellcasting = document.get("spellcasting") or {}
     for e_index, entry in enumerate(spellcasting.get("entries") or []):
