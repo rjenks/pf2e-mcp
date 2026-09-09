@@ -671,7 +671,11 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "prof": (system.get("category") or "simple"),
                 "die": (system.get("damage") or {}).get("die") or "d4",
                 "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
-                "str": "",
+                # Pathbuilder's own home for the striking tier: the rune's
+                # name, not the `increasedDice` boolean beside it.
+                "str": next((_STRIKING_NAMES.get(r, "striking")
+                             for r in sorted(runes, key=lambda x: -_STRIKING.get(x, 0))
+                             if r in _STRIKING), ""),
                 "mat": None,
                 "display": name,
                 "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING]

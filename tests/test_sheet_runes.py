@@ -202,3 +202,88 @@ def test_borrowed_runes_survive_the_replay(conn):
     weapon = character_replay.at_level(document, 11, conn)["weapons"][0]
     assert weapon["runesFrom"] == "doubling-rings"
     assert weapon["pot"] == 2 and weapon["increasedDice"] is True
+
+
+# ------------------------------------------- Pathbuilder's real field (#85)
+
+@pytest.mark.parametrize("name,dice,label", [
+    ("striking", 2, "striking"),
+    ("greater striking", 3, "greater striking"),
+    ("major striking", 4, "major striking"),
+])
+def test_striking_is_read_from_pathbuilders_str_field(conn, tmp_path,
+                                                      name, dice, label):
+    """A live export writes the tier's *name* into `str` and leaves
+    `increasedDice` false. Reading only the boolean lost the die entirely."""
+    character = {
+        "name": "Exported", "class": "Fighter", "ancestry": "Orc", "level": 11,
+        "abilities": {"str": 20, "dex": 14, "con": 14, "int": 10, "wis": 12,
+                      "cha": 10},
+        "proficiencies": {"martial": 6}, "feats": [],
+        "weapons": [{"name": "Longsword", "qty": 1, "prof": "martial",
+                     "die": "d8", "pot": 2, "str": name, "runes": [],
+                     "increasedDice": False, "damageType": "S"}],
+    }
+    out = tmp_path / f"{dice}.html"
+    sheet.render_character_sheet(character, str(out), level=11)
+    rendered = out.read_text(encoding="utf-8")
+    assert f"{dice}d8+5" in _strike_rows(rendered)
+    assert label in re.search(r'<div class="tr rune">([^<]*)</div>',
+                              rendered).group(1)
+
+
+def test_the_str_field_is_priced_and_named_on_the_inventory(conn, tmp_path):
+    character = {
+        "name": "Exported", "class": "Fighter", "ancestry": "Orc", "level": 11,
+        "abilities": {"str": 20, "dex": 14, "con": 14, "int": 10, "wis": 12,
+                      "cha": 10},
+        "proficiencies": {"martial": 6}, "feats": [],
+        "weapons": [{"name": "Longsword", "qty": 1, "prof": "martial",
+                     "die": "d8", "pot": 1, "str": "striking", "runes": [],
+                     "increasedDice": False, "damageType": "S"}],
+    }
+    out = tmp_path / "inv.html"
+    sheet.render_character_sheet(character, str(out), level=11)
+    qty, bulk, price, notes = _inventory_rows(out.read_text(encoding="utf-8"))["Longsword"]
+    assert "Striking" in notes and "Weapon Potency (+1)" in notes
+    assert price == "101 gp"  # 1 gp sword + 35 potency + 65 striking
+
+
+@pytest.mark.parametrize("name,slug", [
+    ("striking", "striking"),
+    ("greater striking", "striking-greater"),
+    ("major striking", "striking-major"),
+])
+def test_importing_an_export_keeps_the_striking_tier(conn, name, slug):
+    """The import read `increasedDice`, which a real export leaves false, so
+    every striking rune was dropped on the way into a character file."""
+    export = {"build": {
+        "name": "Exported", "class": "Fighter", "level": 11, "ancestry": "Orc",
+        "background": "Acolyte", "heritage": "Battle Ready",
+        "abilities": {"str": 20, "dex": 14, "con": 14, "int": 10, "wis": 12,
+                      "cha": 10, "breakdown": {}},
+        "feats": [], "weapons": [
+            {"name": "Longsword", "qty": 1, "prof": "martial", "die": "d8",
+             "pot": 2, "str": name, "runes": [], "increasedDice": False},
+        ],
+    }}
+    document = character_import.from_pathbuilder(export, conn)
+    runes = document["gear"]["carried"][0]["runes"]
+    assert slug in runes, runes
+    assert sorted(runes) == sorted([slug, "weapon-potency-2"]), runes
+
+
+def test_replay_writes_the_tier_back_into_str(conn):
+    """So the field Pathbuilder reads is the field this project fills."""
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Roundtrip", "currentLevel": 11},
+        "build": {"ancestry": "orc", "background": "acolyte", "class": "fighter",
+                  "heritage": None},
+        "plan": [{"level": 1}],
+        "gear": {"carried": [
+            {"item": "longsword", "runes": ["weapon-potency-2", "striking-greater"]},
+        ]},
+    }
+    weapon = character_replay.at_level(document, 11, conn)["weapons"][0]
+    assert weapon["str"] == "greater striking"

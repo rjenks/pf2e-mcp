@@ -239,7 +239,11 @@ def _fundamental_runes(
         out.append(f"{potency_prefix}-{tier}")
 
     if striking and not already_striking:
-        out.append("striking")
+        # Pathbuilder writes the tier's name into `str`; the boolean
+        # `increasedDice` says only that *some* striking rune is present.
+        text = str(striking).strip().lower() if isinstance(striking, str) else ""
+        out.append({"greater striking": "striking-greater",
+                    "major striking": "striking-major"}.get(text, "striking"))
 
     if resilient:
         text = str(resilient).strip().lower()
@@ -273,7 +277,7 @@ def _gear_from_export(
         runes = _rune_slugs(conn, weapon.get("runes"), unresolved, str(weapon.get("name")))
         runes += _fundamental_runes(
             weapon.get("pot"), "weapon-potency",
-            striking=weapon.get("increasedDice"),
+            striking=weapon.get("str") or weapon.get("increasedDice"),
             already_striking=any(r in _STRIKING_SLUGS for r in runes),
         )
         if runes:

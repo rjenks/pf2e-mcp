@@ -107,13 +107,19 @@ _RANK_ABBR = {0: "U", 2: "T", 4: "E", 6: "M", 8: "L"}
 _RANK_NAME = {0: "Untrained", 2: "Trained", 4: "Expert", 6: "Master",
               8: "Legendary"}
 
-# A striking rune reaches this renderer under two spellings, and a weapon can
-# carry either. Named in the freeform `runes` list is how a *graded* rune
-# travels ("greater striking"); plain striking instead sets a boolean field of
-# its own, `increasedDice`, in a Pathbuilder export and in this project's
-# replay alike. Reading only the list dropped a whole damage die -- and 65 gp
-# of fundamental rune off the equipment list -- from every plainly striking
-# weapon, so both spellings are read and the higher tier wins.
+# A striking rune reaches this renderer under three spellings, and a weapon
+# can carry any of them:
+#
+#   * `str`, holding the rune's name -- what a live Pathbuilder export
+#     actually writes, confirmed against one ("str": "striking" alongside
+#     "increasedDice": false);
+#   * a name in the freeform `runes` list, which is how a graded rune travels;
+#   * `increasedDice`, a boolean, which the format defines and older exports
+#     do use.
+#
+# Reading fewer than all three drops a whole damage die -- and 65 gp or more of
+# fundamental rune off the equipment list -- so the tier is the highest any of
+# them claims.
 _STRIKING_DICE = {
     "striking": 2, "greater striking": 3, "major striking": 4,
 }
@@ -123,13 +129,19 @@ _STRIKING_DICE = {
 # with the tier it is indexed by.
 _STRIKING_SLUGS = ("", "striking", "striking-greater", "striking-major")
 
+# The same tiers as the rune line prints them, matching the keys above so a
+# tier read out of `str` or `increasedDice` reads like one named in `runes`.
+_STRIKING_LABELS = ("", "striking", "greater striking", "major striking")
+
 
 def _striking_dice(weapon: dict[str, Any]) -> int:
     """Damage dice a weapon rolls: 1, plus one per step of striking."""
-    runes = [str(r).strip().lower() for r in (weapon.get("runes") or [])]
-    named = max((_STRIKING_DICE[r] for r in runes if r in _STRIKING_DICE),
-                default=1)
-    return max(named, 2 if weapon.get("increasedDice") else 1)
+    named = [str(r).strip().lower() for r in (weapon.get("runes") or [])]
+    named.append(str(weapon.get("str") or "").strip().lower())
+    return max(
+        [_STRIKING_DICE[n] for n in named if n in _STRIKING_DICE]
+        + [2 if weapon.get("increasedDice") else 1]
+    )
 
 
 # Resilient's rune tier is recorded as this project's own 0/1/2/3 armor.res
@@ -1356,7 +1368,7 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         # Named in the list already, or held in `increasedDice` and printed
         # here so the player can see the die they are rolling paid for.
         if dice > 1 and not any(r.lower() in _STRIKING_DICE for r in raw_runes):
-            fixed.append("striking")
+            fixed.append(_STRIKING_LABELS[dice - 1])
         rune_labels = _rune_labels(fixed, raw_runes)
         die = weapon.get("die") or "d4"
         base_die = ((entry or {}).get("system", {}).get("damage") or {}).get("die")
