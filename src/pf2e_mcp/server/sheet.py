@@ -2278,7 +2278,13 @@ def _foot(name: str, label: str) -> str:
 
 def _card(entry: dict[str, Any], kicker: str = "", chosen: str = "",
           cost: Any = None, plain: bool = False,
-          spell_rank: int | None = None, meta: str = "") -> str:
+          spell_rank: int | None = None, meta: str = "",
+          title: str = "") -> str:
+    """`title` overrides the heading. Used where the character's own spelling
+    carries information the resolved entry's name does not -- "Advanced
+    Maneuver (Combat Grab)" resolves to the Advanced Maneuver entry, and a
+    repeatable feat taken three times would otherwise print three identical
+    headings."""
     system = entry.get("system", {})
     if cost is None:
         actions = (system.get("actions") or {}).get("value")
@@ -2291,7 +2297,7 @@ def _card(entry: dict[str, Any], kicker: str = "", chosen: str = "",
     heightened_html = _heightened_note(entry) if spell_rank is not None else ""
     return f"""
 <article class="card{' plain' if plain else ''}">
-  <div class="card-hd"><h3>{_esc(entry['name'])}</h3>{kick}{cost_html}</div>
+  <div class="card-hd"><h3>{_esc(title or entry['name'])}</h3>{kick}{cost_html}</div>
   <div class="card-traits">{_traits(entry.get('traits'), entry.get('rarity'))}</div>
   {meta}
   <div class="rules">{_rules_html(entry.get('desc_html', ''), spell_rank)}</div>
@@ -3696,8 +3702,13 @@ def _page_skill_actions(ctx: dict[str, Any]) -> str:
         return ""
     # The kicker names the skill (or skills) that unlocked the action, which
     # is also what makes the page scannable: the reader arrives from the
-    # skills table on page 1 knowing the skill, not the action.
-    cards = "".join(_card(a, kicker=", ".join(a["skills"])) for a in actions)
+    # skills table on page 1 knowing the skill, not the action. Alphabetical
+    # by action name, because this is a reference page -- you come to it
+    # already knowing what you want to look up.
+    cards = "".join(
+        _card(a, kicker=", ".join(a["skills"]))
+        for a in sorted(actions, key=lambda a: a["name"].casefold())
+    )
     return f"""
 <section class="page" data-sec="skill-actions">
   {_section("Skill Actions",
@@ -3736,9 +3747,12 @@ def _page_features(ctx: dict[str, Any]) -> str:
     if background:
         cards += _card(background, kicker="Background")
 
-    for feature in ctx["class_features"]:
+    # Alphabetical from here on. The level a feature arrived at is still on
+    # its kicker, and the advancement table already tells the story in level
+    # order; this page is the one you search by name mid-encounter.
+    for feature in sorted(ctx["class_features"], key=lambda f: f["name"].casefold()):
         cards += _card(feature, kicker=f"Class, level {feature['granted_level']}")
-    for feature in ctx["subclasses"]:
+    for feature in sorted(ctx["subclasses"], key=lambda f: f["name"].casefold()):
         cards += _card(feature, kicker="Chosen")
 
     feats = []
@@ -3752,7 +3766,16 @@ def _page_features(ctx: dict[str, Any]) -> str:
         feats.append((name, note, cat, lvl))
     feats.sort(key=lambda f: (f[3] or 0, f[0]))
 
-    feat_cards = ""
+    # Collected as (heading, html) and sorted at the end rather than
+    # concatenated in order, so that a feat handed over by a wrapper files
+    # under its own name -- Combat Grab under C -- instead of trailing the
+    # Advanced Maneuver that granted it. Its kicker still says where it came
+    # from.
+    feat_entries: list[tuple[str, str]] = []
+    # Names the character records for themselves, so a feat handed over by a
+    # wrapper is not printed twice when it was also taken in its own right.
+    recorded_names = {n.strip().lower() for n, _, _, _ in feats}
+    granted_shown: set[str] = set()
     for name, note, cat, lvl in feats:
         if cat.strip().lower() in ("skill increase", "skill training"):
             # Not a feat at all -- a proficiency-rank bump or a feat-granted
@@ -3768,7 +3791,33 @@ def _page_features(ctx: dict[str, Any]) -> str:
         if entry is None:
             continue
         kicker = f"{cat}{f', level {lvl}' if lvl else ''}"
-        feat_cards += _card(entry, kicker=kicker, chosen=_esc(note) if note else "")
+        # A feat recorded with a trailing parenthetical -- "Advanced Maneuver
+        # (Combat Grab)", "Assurance (Athletics)" -- resolves to the entry for
+        # the *wrapper*, whose own name and rules text may say nothing about
+        # the choice made inside it. Two things follow, and the sheet was
+        # getting both wrong: the heading has to keep the recorded spelling,
+        # or a repeatable wrapper taken three times prints three
+        # indistinguishable cards; and where the parenthetical names another
+        # feat, that feat's card has to be printed too, because "you gain a
+        # fighter feat" is not something anyone can play from.
+        qualifier = _strip_to_qualifier(name, entry["name"])
+        feat_entries.append((name, _card(entry, kicker=kicker, title=name,
+                                         chosen=_esc(note) if note else "")))
+        if not qualifier:
+            continue
+        granted = lib.get(qualifier, "feat", quiet=True)
+        if granted is None:
+            continue  # a skill or tradition, not a feat -- nothing to print
+        key = granted["name"].strip().lower()
+        if key in recorded_names or key in granted_shown:
+            continue
+        granted_shown.add(key)
+        feat_entries.append((granted["name"],
+                             _card(granted, kicker=f"Granted by {entry['name']}")))
+
+    feat_cards = "".join(
+        html for _, html in sorted(feat_entries, key=lambda p: p[0].casefold())
+    )
 
     specials = [s for s in (ch.get("specials", []) or []) if str(s).strip()]
     special_html = ""
@@ -3891,7 +3940,9 @@ def _page_equipment(ctx: dict[str, Any]) -> str:
         return ""
     item_cards = "".join(
         _card(entry, kicker=entry["type"].title(), plain=True)
-        for entry in ctx["item_rules"]
+        # Alphabetical, not inventory order: the inventory table is the list
+        # you read down, and this is the reference you look things up in.
+        for entry in sorted(ctx["item_rules"], key=lambda e: e["name"].casefold())
     )
     return f"""
 <section class="page" data-sec="item-rules">
