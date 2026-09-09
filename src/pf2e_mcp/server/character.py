@@ -584,6 +584,30 @@ def _check_organized_play(document: dict[str, Any]) -> list[dict[str, Any]]:
                 f"A chronicle records play at level {highest}, above the "
                 f"character's recorded level of {current}.",
             ))
+
+        # The ledger is the authority on money: every chronicle's award and
+        # every purchase runs through it, and the running balance is derived
+        # from it rather than from the coins written on a sheet. `gear.currency`
+        # is a convenience copy of that balance and has no independent source,
+        # so the two silently drifting apart is the only way it can be wrong.
+        ledger = (entries[-1].get("currency") or {}).get("end")
+        coins = (document.get("gear") or {}).get("currency")
+        if ledger is not None and coins is not None:
+            purse_cp = (
+                chronicle.to_cp(coins.get("pp", 0) * 10)
+                + chronicle.to_cp(coins.get("gp", 0))
+                + round(coins.get("sp", 0) * 10)
+                + coins.get("cp", 0)
+            )
+            ledger_cp = chronicle.to_cp(ledger)
+            if purse_cp != ledger_cp:
+                issues.append(_issue(
+                    "warning", "currency_disagrees_with_ledger", "/gear/currency",
+                    f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
+                    f"but the chronicle ledger ends at "
+                    f"{chronicle.format_currency(ledger_cp)}. The ledger is the "
+                    f"authority; update the purse to match it.",
+                ))
     return issues
 
 
