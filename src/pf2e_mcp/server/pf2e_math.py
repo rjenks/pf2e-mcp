@@ -270,7 +270,16 @@ def check_single_prerequisite(
             class_hp = (derived or {}).get("class_hp")
             if class_hp is None:
                 return None
-            return class_hp <= structured["max_hp"]
+            # The prerequisite reads "no more Hit Points per level than
+            # 8 + your Constitution modifier" -- `max_hp` is only the constant
+            # half of that, and the Constitution term is not decoration. A
+            # Ranger grants 10 HP per level, so at Con +0 the threshold is 8 and
+            # they are excluded, but from Con +2 onward it is 10 or more and
+            # they qualify. Dropping the modifier made every one of the seven
+            # <Class> Resiliency feats permanently unavailable to exactly the
+            # d10 classes they are written for.
+            con = ability_mod(default_character_abilities(character).get("con", 10))
+            return class_hp <= structured["max_hp"] + con
         if inner_kind == "class_feature_reference":
             # For a prerequisite that names an automatic, unconditionally-
             # granted class feature (e.g. Magus's "Spellstrike" or "Arcane
