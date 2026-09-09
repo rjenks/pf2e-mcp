@@ -48,6 +48,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
+from . import class_skills
 from . import build_tools, character as _native, pf2e_math as m
 from .db import get_connection
 from .sheet_assets import FACES
@@ -2981,12 +2982,17 @@ def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], i
         seen.add(skill.lower())
         named.append(skill)
 
+    class_slug = build_tools._real_slug("classes", ch.get("class") or "")
     class_rows = build_tools._fetchall(
         "SELECT trained_skills FROM class_progression WHERE class_slug = ?",
-        (build_tools._real_slug("classes", ch.get("class") or ""),),
+        (class_slug,),
     )
     if class_rows and class_rows[0]["trained_skills"]:
-        class_trained = json.loads(class_rows[0]["trained_skills"])
+        # Through the corrections, like every other reader -- the upstream row
+        # omits the Ranger's Nature outright. See server/class_skills.py.
+        class_trained = class_skills.apply(
+            class_slug, json.loads(class_rows[0]["trained_skills"])
+        )
         for skill in class_trained.get("fixed", []) or []:
             if skill:
                 add_named(skill.capitalize())
