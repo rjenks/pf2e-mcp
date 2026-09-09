@@ -5,6 +5,7 @@ or requiring the model to hold rules text in context."""
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Any
 
 import httpx
@@ -478,3 +479,186 @@ def rules_search_aon(query: str, limit: int = 5, max_chars: int = 4000) -> list[
             "content": content[:max_chars] + ("... [truncated]" if truncated else ""),
         })
     return results
+
+
+# ---------------------------------------------------------------------------
+# Escape hatch
+#
+# Every other tool in this module answers one shaped question. This one
+# answers whatever is left, because the alternative -- observed repeatedly --
+# is a caller with shell access opening .data/pf2e.sqlite directly, which
+# answers the question for that caller and for nobody else: the gap never gets
+# recorded, and an MCP client with no shell still cannot ask it. See AGENTS.md,
+# "Never query the SQLite database directly".
+# ---------------------------------------------------------------------------
+
+_SQL_LEADING = ("select", "with")
+
+# Aborts a runaway query (an accidental cartesian join over `entries`) instead
+# of hanging the server. Tuned high enough that a legitimate multi-table join
+# over the whole catalogue completes comfortably.
+_SQL_VM_STEPS = 50_000_000
+
+
+def _sql_reject(sql: str) -> str | None:
+    """Return why `sql` is not an acceptable read-only statement, or None.
+
+    The connection is already opened read-only and `query_only` is set below,
+    so this is not the security boundary -- it is the layer that produces a
+    useful message instead of a bare `sqlite3.OperationalError`, and that stops
+    a caller from silently getting only the first of several statements.
+    """
+    stripped = _strip_sql_noise(sql)
+    if not stripped:
+        return "Empty query. Pass schema=True to see the available tables."
+    lowered = stripped.lower()
+    if not lowered.startswith(_SQL_LEADING):
+        verb = lowered.split(None, 1)[0][:24]
+        return f"Only SELECT/WITH queries are allowed; got {verb!r}."
+    # A trailing semicolon is fine; one in the middle means a second statement.
+    if ";" in stripped.rstrip().rstrip(";"):
+        return "Pass a single statement; ';' separates statements."
+    return None
+
+
+def _strip_sql_noise(sql: str) -> str:
+    """Drop comments and outer whitespace so the leading keyword is visible.
+
+    Without this, `-- harmless\\nDELETE ...` reads as starting with a comment
+    rather than with DELETE.
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    while i < n:
+        if sql.startswith("--", i):
+            i = sql.find("\n", i)
+            if i == -1:
+                break
+        elif sql.startswith("/*", i):
+            end = sql.find("*/", i + 2)
+            i = n if end == -1 else end + 2
+        else:
+            out.append(sql[i])
+            i += 1
+    return "".join(out).strip()
+
+
+def _sql_schema(conn) -> list[dict[str, Any]]:
+    tables = [
+        row["name"]
+        for row in conn.execute(
+            "select name from sqlite_master where type in ('table','view') "
+            "and name not like 'sqlite_%' order by name"
+        )
+    ]
+    schema = []
+    for table in tables:
+        columns = [
+            {"name": row["name"], "type": row["type"]}
+            for row in conn.execute(f'pragma table_info("{table}")')
+        ]
+        count = conn.execute(f'select count(*) as n from "{table}"').fetchone()["n"]
+        schema.append({"table": table, "rows": count, "columns": columns})
+    return schema
+
+
+def rules_sql(
+    sql: str = "",
+    params: list[Any] | None = None,
+    limit: int = 100,
+    max_cell: int = 2000,
+    schema: bool = False,
+) -> dict[str, Any]:
+    """Read-only SQL against the rules database -- the fallback for questions
+    no other tool can express.
+
+    **Try the purpose-built tools first.** `rules_search` and
+    `rules_get_entry` cover lookup, `rules_related` and `rules_explain` cover
+    cross-references, and `build_list_available_feats` answers "what may this
+    character take" far better than a hand-written join will. Reach for this
+    when the question is structural rather than textual -- a catalogue of every
+    feat carrying a trait ordered by level, a comparison of two classes'
+    proficiency progressions, an audit of how many entries a transform
+    dropped.
+
+    **A query worth running twice is a tool worth adding.** If you find
+    yourself rebuilding the same shape, promote it into a real tool and file
+    the gap as an issue rather than pasting SQL again.
+
+    Start with `schema=True` (no `sql` needed) to see tables, row counts and
+    columns. Note that `entries.raw_json` holds the whole upstream Foundry
+    document: it is the reason `max_cell` exists, and selecting it across many
+    rows will hit that cap rather than return useful text.
+
+    Args:
+        sql: A single SELECT (or WITH ... SELECT) statement. Anything else is
+            refused; the connection is read-only regardless.
+        params: Values for `?` placeholders. Use these rather than formatting
+            values into the string -- a name containing an apostrophe is the
+            common case, not an attack.
+        limit: Maximum rows returned. The result reports whether more matched.
+        max_cell: Longest string returned per cell before truncation, which is
+            flagged per row in `truncated_cells`.
+        schema: Return the database shape instead of running a query.
+
+    Returns:
+        `{"schema": [...]}` when `schema` is set, otherwise
+        `{"columns": [...], "rows": [...], "row_count": n, "truncated": bool,
+        "truncated_cells": [...]}`.
+    """
+    conn = get_connection()
+    try:
+        if schema:
+            return {"schema": _sql_schema(conn)}
+
+        problem = _sql_reject(sql)
+        if problem:
+            return {"error": problem}
+
+        conn.execute("pragma query_only = on")
+        steps = {"n": 0}
+
+        def _guard() -> int:
+            steps["n"] += 1
+            return 1 if steps["n"] > _SQL_VM_STEPS else 0
+
+        conn.set_progress_handler(_guard, 10_000)
+        try:
+            cursor = conn.execute(sql, tuple(params or ()))
+            # One extra row distinguishes "exactly at the limit" from "more".
+            fetched = cursor.fetchmany(max(1, limit) + 1)
+        except sqlite3.OperationalError as exc:
+            if steps["n"] > _SQL_VM_STEPS:
+                return {
+                    "error": "Query aborted: too much work. "
+                             "Add a WHERE clause or a join condition."
+                }
+            return {"error": f"SQL error: {exc}"}
+        finally:
+            conn.set_progress_handler(None, 0)
+
+        truncated = len(fetched) > limit
+        fetched = fetched[:limit]
+        columns = [d[0] for d in cursor.description] if cursor.description else []
+
+        rows: list[dict[str, Any]] = []
+        clipped: set[str] = set()
+        for row in fetched:
+            record: dict[str, Any] = {}
+            for column in columns:
+                value = row[column]
+                if isinstance(value, str) and len(value) > max_cell:
+                    value = value[:max_cell] + "... [truncated]"
+                    clipped.add(column)
+                record[column] = value
+            rows.append(record)
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "row_count": len(rows),
+            "truncated": truncated,
+            "truncated_cells": sorted(clipped),
+        }
+    finally:
+        conn.close()

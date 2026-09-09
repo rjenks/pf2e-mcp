@@ -51,6 +51,43 @@ free skill-proficiency grant") rather than by which of the user's
 characters exhibited it. This keeps the issue useful to any user hitting
 the same gap, not just legible to this one.
 
+# Never query the SQLite database directly; go through the MCP
+
+**Unless you are working on the MCP itself, do not open `.data/pf2e.sqlite`.**
+No `sqlite3` on the command line, no `import sqlite3` in a throwaway script, no
+reading `raw_json` out of `entries` to answer a rules question. Use the
+`rules_*`, `build_*` and `pfs_*` tools.
+
+The reason is not tidiness. A direct query answers the question for *you* and
+for nobody else:
+
+- **It hides gaps.** Every question answered by reaching around the server is a
+  missing tool that never gets recorded, because the workaround is faster than
+  filing the issue. The tool surface then looks complete while the real
+  coverage quietly rots.
+- **Real clients have no shell.** An MCP client gets the tools and nothing
+  else. A rules answer reachable only via sqlite is an answer this project
+  cannot actually give.
+- **Query shapes never harden.** The same awkward join gets re-derived, subtly
+  differently, every session, instead of becoming a tested function.
+
+So when no existing tool can express what you need:
+
+1. **Add a tool**, or extend one, so the capability exists for every caller.
+   File an issue for the gap first, per the section above.
+2. **Or use `rules_sql`**, the deliberate read-only escape hatch — `SELECT`
+   only, with row, cell-size and VM-step caps, and `schema=True` to discover
+   the tables. It exists so that hitting an unforeseen gap does not push you
+   outside the MCP entirely.
+
+`rules_sql` is a fallback, not a destination. **A query worth running twice is
+a tool worth adding** — when you find yourself reaching for the same shape
+again, that is the signal to promote it and file the issue.
+
+The exception is building or debugging the MCP itself: ingestion, schema work,
+and writing a tool all legitimately touch the database directly, as does
+`tests/conftest.py`'s read-only fixture.
+
 # Talk in attribute modifiers, not attribute scores
 
 **Always say `+4`, never `18`.** The Remaster works in modifiers throughout:
