@@ -270,16 +270,22 @@ def check_single_prerequisite(
             class_hp = (derived or {}).get("class_hp")
             if class_hp is None:
                 return None
-            # The prerequisite reads "no more Hit Points per level than
-            # 8 + your Constitution modifier" -- `max_hp` is only the constant
-            # half of that, and the Constitution term is not decoration. A
-            # Ranger grants 10 HP per level, so at Con +0 the threshold is 8 and
-            # they are excluded, but from Con +2 onward it is 10 or more and
-            # they qualify. Dropping the modifier made every one of the seven
-            # <Class> Resiliency feats permanently unavailable to exactly the
-            # d10 classes they are written for.
-            con = ability_mod(default_character_abilities(character).get("con", 10))
-            return class_hp <= structured["max_hp"] + con
+            # "No more Hit Points per level than 8 + your Constitution
+            # modifier" compares against what the class *grants* per level,
+            # which is itself "N + your Constitution modifier" -- so the
+            # Constitution term appears on both sides and cancels, leaving a
+            # comparison of the two constants. `class_hp` is that constant, and
+            # `max_hp` is the threshold's.
+            #
+            # This is deliberately not "8 + the character's Con modifier".
+            # Reading it that way would let a d10 class in from Con +2 onward,
+            # which inverts the feat: these are multiclass concessions for d6
+            # and d8 classes. The sibling feats confirm it -- Barbarian and
+            # Guardian Resiliency use a threshold of 10, which is exactly what
+            # admits the d10 classes and still excludes the d12 barbarian. If
+            # the modifier really were added, that variant would admit d12 at
+            # Con +2 and the two thresholds would collapse into each other.
+            return class_hp <= structured["max_hp"]
         if inner_kind == "class_feature_reference":
             # For a prerequisite that names an automatic, unconditionally-
             # granted class feature (e.g. Magus's "Spellstrike" or "Arcane
