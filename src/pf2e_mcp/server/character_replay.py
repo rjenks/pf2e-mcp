@@ -564,6 +564,49 @@ def _language_taken_at(plan: list[dict], level: int) -> bool:
 # ------------------------------------------------------------------ feats
 
 
+def _background_feats(
+    conn: sqlite3.Connection, background_slug: str
+) -> list[list[Any]]:
+    """The feat a background hands over at 1st level, as a legacy tuple.
+
+    Nearly every background grants one -- Student of the Canon, Alchemical
+    Crafting, Battle Medicine -- and it is a real feat with real prerequisites
+    downstream, not flavour. `background_boosts.granted_items` has carried it
+    since ingestion and nothing read it, so a replayed character was quietly a
+    feat short of the same character exported from Pathbuilder.
+
+    Resolved by the uuid's Foundry id rather than by the recorded name, for the
+    same reason class features are: a grant's name can be the bare form of an
+    entry the compendium qualifies.
+    """
+    row = _one(
+        conn,
+        "SELECT granted_items FROM background_boosts WHERE background_slug = ?",
+        (background_slug,),
+    )
+    if not row:
+        return []
+    out: list[list[Any]] = []
+    for grant in json.loads(row.get("granted_items") or "[]"):
+        entry = None
+        uuid = str(grant.get("uuid") or "")
+        if uuid:
+            entry = _one(
+                conn, "SELECT name FROM entries WHERE id = ?",
+                (uuid.rsplit(".", 1)[-1],),
+            )
+        name = (entry or {}).get("name") or grant.get("name")
+        if not name:
+            continue
+        # "Awarded Feat" is both what Pathbuilder writes for these and what
+        # `build_tools._feat_slot_bucket` already knows to exclude from the
+        # feat-slot schedule -- a background's feat is a gift, not a slot the
+        # character spent.
+        out.append([name, None, "Awarded Feat", grant.get("level") or 1,
+                    "Background Feat"])
+    return out
+
+
 def _replay_feats(
     conn: sqlite3.Connection, document: dict, plan: list[dict], level: int
 ) -> tuple[list[list[Any]], list[str]]:
@@ -584,6 +627,8 @@ def _replay_feats(
         name = _name_of(conn, heritage, "heritages")
         feats.append([name, None, "Heritage", 1, "Heritage Feat"])
         specials.append(name)
+
+    feats.extend(_background_feats(conn, build.get("background") or ""))
 
     for tag, value in (build.get("subclasses") or {}).items():
         picks = value if isinstance(value, list) else [value]

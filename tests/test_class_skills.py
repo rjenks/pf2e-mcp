@@ -65,3 +65,43 @@ def test_an_unknown_class_passes_through_unharmed():
     out = class_skills.apply("", {"fixed": ["athletics"]})
     assert out["fixed"] == ["athletics"]
     assert out["audited"] is False
+
+
+# ------------------------------------------ background-granted feats (#86)
+
+def test_a_backgrounds_granted_feat_is_replayed(conn):
+    """Nearly every background hands over a 1st-level skill feat, ingestion
+    captures it in `background_boosts.granted_items`, and nothing read that
+    column -- so a replayed character was a real feat short of the same
+    character exported from Pathbuilder."""
+    from pf2e_mcp.server import character_replay
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Granted", "currentLevel": 1},
+        "build": {"ancestry": "orc", "background": "acolyte", "class": "ranger",
+                  "heritage": None},
+        "plan": [{"level": 1}],
+    }
+    feats = character_replay.at_level(document, 1, conn)["feats"]
+    assert ["Student of the Canon", None, "Awarded Feat", 1,
+            "Background Feat"] in feats, feats
+
+
+def test_the_granted_feat_does_not_spend_a_skill_feat_slot(conn):
+    """It is a gift, not a slot. Categorising it as a plain Skill Feat would
+    let a character look like they had filled a scheduled slot they hadn't."""
+    from pf2e_mcp.server import build_tools
+    assert build_tools._feat_slot_bucket("Awarded Feat", False) is None
+
+
+def test_a_background_that_grants_nothing_adds_nothing(conn):
+    from pf2e_mcp.server import character_replay
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Bare", "currentLevel": 1},
+        "build": {"ancestry": "orc", "background": "abadars-avenger",
+                  "class": "ranger", "heritage": None},
+        "plan": [{"level": 1}],
+    }
+    feats = character_replay.at_level(document, 1, conn)["feats"]
+    assert not [f for f in feats if f[4] == "Background Feat"], feats
