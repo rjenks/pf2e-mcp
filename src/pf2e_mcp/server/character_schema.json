@@ -141,7 +141,7 @@
           ]
         },
         "languages": {
-          "description": "Every language the character speaks, including those granted by ancestry and those bought with a positive Intelligence modifier. Lowercase names rather than rules slugs, since languages are not entries in the rules database. An uncommon language needs Access from somewhere; in Organized Play all common and uncommon languages are granted, plus one regional language.",
+          "description": "The languages the character starts with at 1st level: the ancestry's own, plus any bought by a positive starting Intelligence modifier. Languages gained later belong in `plan` as a 'language' choice at the level they were learned, so that replaying the character to an earlier level does not hand them languages they have not earned yet. Lowercase names rather than rules slugs, since languages are not entries in the rules database. An uncommon language needs Access from somewhere; in Organized Play all common and uncommon languages are granted, plus one regional language.",
           "type": "array",
           "items": {
             "type": "string",
@@ -471,7 +471,7 @@
       "additionalProperties": false,
       "properties": {
         "slot": {
-          "description": "Which of the level's budgets this choice spends.\n\n'classFeat', 'ancestryFeat', 'generalFeat' and 'skillFeat' are the four feat budgets, each granted at its own levels by the class. 'archetypeFeat' is the extra feat granted by the Free Archetype variant, kept separate so the budget check can tell it from a class feat spent on an archetype. 'skillIncrease' raises one skill's rank by one step. 'skillTraining' is a grant of trained proficiency in a skill that is not an increase -- the free picks at 1st level, or a skill handed out by a background or a feat. 'subclass' records a subclass choice made after 1st level, such as an Animist attuning to a further apparition. 'spell' records a spell added to a repertoire at this level, for classes that learn spells as a level-up choice. 'other' is for anything the schema does not name; say what it is in `note`.",
+          "description": "Which of the level's budgets this choice spends.\n\n'classFeat', 'ancestryFeat', 'generalFeat' and 'skillFeat' are the four feat budgets, each granted at its own levels by the class. 'archetypeFeat' is the extra feat granted by the Free Archetype variant, kept separate so the budget check can tell it from a class feat spent on an archetype. 'skillIncrease' raises one skill's rank by one step. 'skillTraining' is a grant of trained proficiency in a skill that is not an increase -- the free picks at 1st level, or a skill handed out by a background or a feat. 'language' records a language learned after 1st level -- in practice one per increase to the Intelligence modifier, which grants \"an additional skill and language\"; the skill half of that same grant is a 'skillTraining'. 'subclass' records a subclass choice made after 1st level, such as an Animist attuning to a further apparition. 'spell' records a spell added to a repertoire at this level, for classes that learn spells as a level-up choice. 'other' is for anything the schema does not name; say what it is in `note`.",
           "type": "string",
           "enum": [
             "classFeat",
@@ -481,6 +481,7 @@
             "archetypeFeat",
             "skillIncrease",
             "skillTraining",
+            "language",
             "subclass",
             "spell",
             "other"

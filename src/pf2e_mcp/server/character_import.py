@@ -516,6 +516,28 @@ def from_pathbuilder(
     }
     if unexplained:
         document["_import"]["derived_higher_than_export"] = unexplained
+
+    # An export lists languages as a flat set with no levels, exactly as this
+    # format used to. Which one arrived with which Intelligence increase is not
+    # recoverable, so say how many look like later gains and let a human place
+    # them, rather than inventing a level and writing it into the plan as
+    # though it were known.
+    gains = replay.int_gain_levels(document.get("plan") or [], level)
+    if gains and languages:
+        levels = ", ".join(str(g) for g in gains)
+        document["_import"]["languages_needing_levels"] = {
+            "intelligence_increases_at": gains,
+            "languages_in_export": len(languages),
+            "note": (
+                f"The Intelligence modifier rises at level {levels}, and each "
+                f"increase grants a language. The export lists {len(languages)} "
+                f"language(s) as a flat set and does not say which came from "
+                f"where. Leave the 1st-level ones in build.languages and record "
+                f"the rest as 'language' choices at those levels -- and note that "
+                f"an export short of the full count means the player never chose "
+                f"them, not that the import lost them."
+            ),
+        }
     return document
 
 

@@ -431,6 +431,103 @@ def _replay_skills(
     return [[name, rank] for name, rank in sorted(lores.items())], trace
 
 
+# -------------------------------------------------------------- languages
+
+
+def int_gain_levels(plan: list[dict], through: int = 20) -> list[int]:
+    """Levels at or below `through` where the Intelligence *modifier* rose.
+
+    Player Core p. 29: an attribute boost that increases the Intelligence
+    modifier grants "an additional skill and language". The modifier is what
+    counts, not the score, so a boost from 18 to 19 grants nothing and the one
+    from 19 to 20 grants both -- which is why this replays the score rather
+    than counting boosts spent on Intelligence.
+    """
+    score = 10
+    levels: list[int] = []
+    for entry in sorted(plan, key=lambda e: e.get("level") or 0):
+        entry_level = entry.get("level")
+        if not isinstance(entry_level, int) or entry_level > through:
+            continue
+        boosts = entry.get("attributeBoosts") or {}
+        if not boosts:
+            continue
+        ancestry = boosts.get("ancestry") or {}
+        groups = (
+            ("flaw", ancestry.get("flaw")),
+            ("boost", ancestry.get("boosts")),
+            ("boost", ancestry.get("free")),
+            ("boost", boosts.get("background")),
+            ("boost", boosts.get("class")),
+            ("boost", boosts.get("free")),
+        )
+        for kind, values in groups:
+            for attribute in values or []:
+                if attribute != "int":
+                    continue
+                before = _ability_mod(score)
+                score = score - 2 if kind == "flaw" else _apply_boost(score)
+                # Creation-time boosts all land at 1st level and buy the
+                # starting modifier rather than a mid-career grant; only a
+                # levelled increase earns the extra skill and language.
+                if entry_level > 1 and _ability_mod(score) > before:
+                    levels.append(entry_level)
+    return levels
+
+
+def _replay_languages(
+    document: dict, plan: list[dict], level: int
+) -> tuple[list[str], list[str]]:
+    """Languages known at `level`, in the order they were learned.
+
+    `build.languages` is the 1st-level set; everything after it is a
+    `language` choice in the plan at the level it was learned. Replaying to an
+    earlier level therefore stops handing the character languages they have
+    not earned yet, which a flat list could never do.
+    """
+    known: list[str] = []
+    trace: list[str] = []
+    for language in (document.get("build") or {}).get("languages") or []:
+        if isinstance(language, str) and language.lower() not in known:
+            known.append(language.lower())
+    if known:
+        trace.append(f"1st level: {', '.join(known)}")
+
+    for entry in sorted(plan, key=lambda e: e.get("level") or 0):
+        entry_level = entry.get("level")
+        if not isinstance(entry_level, int) or entry_level > level:
+            continue
+        for choice in entry.get("choices") or []:
+            if choice.get("slot") != "language":
+                continue
+            picks = choice.get("pick")
+            for pick in picks if isinstance(picks, list) else [picks]:
+                if isinstance(pick, str) and pick.lower() not in known:
+                    known.append(pick.lower())
+                    trace.append(f"L{entry_level} language: {pick.lower()}")
+
+    owed = len(int_gain_levels(plan, level))
+    unspent = [lv for lv in int_gain_levels(plan, level)
+               if not _language_taken_at(plan, lv)]
+    if unspent:
+        trace.append(
+            f"Intelligence rose at {', '.join(str(lv) for lv in unspent)} without a "
+            f"language recorded there; {owed} increase(s) through level {level} each "
+            f"grant one."
+        )
+    return known, trace
+
+
+def _language_taken_at(plan: list[dict], level: int) -> bool:
+    for entry in plan:
+        if entry.get("level") != level:
+            continue
+        for choice in entry.get("choices") or []:
+            if choice.get("slot") == "language" and choice.get("pick"):
+                return True
+    return False
+
+
 # ------------------------------------------------------------------ feats
 
 
@@ -712,6 +809,7 @@ def at_level(
     prof_trace = _apply_feature_proficiencies(
         conn, proficiencies, features, class_slug, tradition
     )
+    languages, language_trace = _replay_languages(document, plan, level)
     lores, skill_trace = _replay_skills(
         conn, document, progression, plan, level, proficiencies
     )
@@ -772,7 +870,7 @@ def at_level(
         "size": _SIZES.get(ancestry_row.get("size") or "med", (2, "Medium"))[0],
         "sizeName": _SIZES.get(ancestry_row.get("size") or "med", (2, "Medium"))[1],
         "keyability": key_ability,
-        "languages": [str(lang).capitalize() for lang in build.get("languages") or []],
+        "languages": [lang.capitalize() for lang in languages],
         "rituals": [],
         "resistances": [],
         "inventorMods": [],
@@ -809,6 +907,7 @@ def at_level(
             "source": "plan",
             "proficiency_grants": prof_trace,
             "skill_grants": skill_trace,
+            "language_grants": language_trace,
             "automatic_features": [
                 f"L{f['level']} {f['name']}" for f in features
             ],

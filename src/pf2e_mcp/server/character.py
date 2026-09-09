@@ -343,6 +343,70 @@ def _check_boost_sources(document: dict[str, Any]) -> list[dict[str, Any]]:
     return issues
 
 
+def _check_languages(
+    document: dict[str, Any], conn: sqlite3.Connection
+) -> list[dict[str, Any]]:
+    """Every Intelligence increase owes a language, and they are easy to miss.
+
+    Player Core p. 29 grants "an additional skill and language" whenever a
+    boost raises the Intelligence modifier. The skill half is visible -- it is
+    a `skillTraining` in the plan -- while the language half has historically
+    been invisible, which is exactly why a character ends up short. Counted,
+    not judged: which language is a player's choice, and an ancestry's own
+    grants are checked only for how many, since heritages and feats can add to
+    them.
+    """
+    from . import character_replay
+
+    plan = document.get("plan") or []
+    current = (document.get("identity") or {}).get("currentLevel") or 1
+    issues: list[dict[str, Any]] = []
+
+    gains = character_replay.int_gain_levels(plan, current)
+    for level in gains:
+        index = next(
+            (i for i, e in enumerate(plan) if e.get("level") == level), None
+        )
+        if index is None:
+            continue
+        taken = any(
+            c.get("slot") == "language" and c.get("pick")
+            for c in plan[index].get("choices") or []
+        )
+        if not taken:
+            issues.append(_issue(
+                "warning", "unspent_language", f"/plan/{index}/choices",
+                f"The Intelligence modifier rises at level {level}, which grants "
+                f"a skill and a language. No 'language' choice is recorded here.",
+            ))
+
+    ancestry = (document.get("build") or {}).get("ancestry")
+    if not ancestry:
+        return issues
+    row = conn.execute(
+        "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'ancestries'",
+        (ancestry,),
+    ).fetchone()
+    if not row:
+        return issues
+    system = json.loads(row["raw_json"]).get("system") or {}
+    expected = len((system.get("languages") or {}).get("value") or [])
+    expected += int((system.get("additionalLanguages") or {}).get("count") or 0)
+    # A positive Intelligence modifier at 1st level buys languages too, and
+    # those belong in `build.languages` with the ancestry's own.
+    scores = character_replay._replay_attributes(plan, 1)[0]
+    expected += max(0, character_replay._ability_mod(scores.get("int", 10)))
+
+    recorded = len((document.get("build") or {}).get("languages") or [])
+    if recorded < expected:
+        issues.append(_issue(
+            "warning", "missing_starting_languages", "/build/languages",
+            f"{recorded} language(s) recorded, but the ancestry and a starting "
+            f"Intelligence modifier grant {expected} at 1st level.",
+        ))
+    return issues
+
+
 def _resolve_slugs(
     document: dict[str, Any], conn: sqlite3.Connection
 ) -> list[dict[str, Any]]:
@@ -550,6 +614,7 @@ def validate_document(
         issues += _check_organized_play(plain)
         if conn is not None:
             issues += _resolve_slugs(plain, conn)
+            issues += _check_languages(plain, conn)
 
     errors = [i for i in issues if i["level"] == "error"]
     warnings = [i for i in issues if i["level"] == "warning"]
