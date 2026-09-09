@@ -58,6 +58,14 @@
             "null"
           ]
         },
+        "pathbuilderId": {
+          "description": "The `?id=` from Pathbuilder's Export -> JSON link, so `build_fetch_pathbuilder` can pull the build again without the player finding the URL. This identifies an *export*, not the character: re-exporting produces a new id and the old one goes stale. It is a convenience pointer only -- this file is the source of truth. Levels above the one reached, the reasoning behind each pick and the dependencies between picks have no Pathbuilder equivalent, so re-importing over a maintained file discards them; fetch to compare, not to overwrite.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
         "portrait": {
           "description": "Filename of a portrait image, relative to the directory holding this file.",
           "type": [
@@ -406,7 +414,7 @@
   "$defs": {
     "slug": {
       "title": "Rules slug",
-      "description": "An identifier from the rules database's `slug` column: the entry's name lowercased with spaces replaced by hyphens, e.g. 'soul-warden-dedication'. Non-ASCII letters are kept as they are ('deja-vu' is stored as 'déjà-vu'). No uppercase and no whitespace -- a value containing either is almost always a display name pasted where a slug belongs.",
+      "description": "An identifier from the rules database's `slug` column: the entry's name lowercased with spaces replaced by hyphens, e.g. 'soul-warden-dedication'. Non-ASCII letters are kept as they are ('deja-vu' is stored as 'd\u00e9j\u00e0-vu'). No uppercase and no whitespace -- a value containing either is almost always a display name pasted where a slug belongs.",
       "type": "string",
       "minLength": 1,
       "pattern": "^[^A-Z\\s]+$"

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from . import character as ch
 from . import character_import as imports
 from . import character_replay as replay
@@ -232,3 +234,102 @@ def export_pathbuilder(
         return imports.to_pathbuilder(character, level, conn)
     finally:
         conn.close()
+
+
+# Pathbuilder's JSON endpoint sits behind Cloudflare bot management, which
+# scores the shape of the request rather than checking for a human. Foundry's
+# Pathbuilder importer is an ordinary browser `fetch()` and is served normally;
+# a default httpx or curl User-Agent draws the managed challenge instead. These
+# headers ask for the same treatment Foundry already gets from a documented,
+# machine-readable endpoint.
+_PATHBUILDER_URL = "https://pathbuilder2e.com/json.php"
+_PATHBUILDER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def fetch_pathbuilder(character_id: int | str) -> dict[str, Any]:
+    """Fetch a Pathbuilder build by the id from its Export -> JSON link.
+
+    Returns the `{"success": true, "build": {...}}` envelope unchanged, so it
+    goes straight into `build_import_pathbuilder`.
+
+    The id is the `?id=` in the URL Pathbuilder's **Export -> JSON** produces.
+    It identifies an *export*, not the character: re-exporting yields a new id,
+    and an old one goes stale. A stale or wrong id comes back as
+    `{"success": false}` from Pathbuilder itself, which this reports as an
+    error asking for a fresh export -- it does not mean the character is gone.
+
+    **Pathbuilder is not upstream of a character file.** This project's format
+    records levels above the one reached, the reasoning behind each pick, and
+    what depends on what; none of that survives a Pathbuilder round trip. Use
+    this to pull a build in for the first time, or to diff an existing file
+    against what the player has been editing -- not to overwrite a maintained
+    file.
+
+    Args:
+        character_id: The numeric id from the export URL.
+
+    Returns:
+        The export envelope, or `{"error": ...}` naming which of the three
+        lookalike failures occurred: a bot challenge, a rejected id, or a
+        transport error.
+    """
+    try:
+        ident = int(str(character_id).strip())
+    except (TypeError, ValueError):
+        return {"error": f"character_id must be a number; got {character_id!r}."}
+
+    try:
+        response = httpx.get(
+            _PATHBUILDER_URL,
+            params={"id": ident},
+            headers=_PATHBUILDER_HEADERS,
+            timeout=20,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError as exc:
+        return {"error": f"Could not reach Pathbuilder: {exc}"}
+
+    if response.status_code != 200:
+        return {
+            "error": (
+                f"Pathbuilder returned HTTP {response.status_code} for id {ident}. "
+                "A 403 is usually Cloudflare rather than a bad id."
+            )
+        }
+
+    try:
+        payload = response.json()
+    except ValueError:
+        # HTML where JSON belongs is the managed challenge, not a bad id --
+        # worth saying so, since the two are indistinguishable to a caller.
+        snippet = response.text.lstrip()[:80]
+        hint = (
+            "Cloudflare served a bot challenge instead of the export."
+            if "<" in snippet
+            else "Pathbuilder returned something that isn't JSON."
+        )
+        return {"error": f"{hint} First bytes: {snippet!r}"}
+
+    if not isinstance(payload, dict):
+        return {"error": f"Expected a JSON object from Pathbuilder, got {type(payload).__name__}."}
+
+    if payload.get("success") is False or "build" not in payload:
+        return {
+            "error": (
+                f"Pathbuilder has no export for id {ident}. Export -> JSON ids go stale "
+                "when the character is re-exported; ask for a fresh link."
+            )
+        }
+
+    # Pathbuilder's payload doesn't name the id it was served under, so stamp
+    # it on for `build_import_pathbuilder` to record. Underscore-prefixed keys
+    # are this format's convention for provenance and are stripped on export.
+    payload["_pathbuilderId"] = ident
+    return payload

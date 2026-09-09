@@ -388,6 +388,15 @@ def from_pathbuilder(
             "name": build.get("name") or "Unnamed",
             "currentLevel": level,
         },
+    }
+    # `build_fetch_pathbuilder` stamps the export id onto the envelope, since
+    # Pathbuilder's own payload doesn't carry it. Kept so the build can be
+    # pulled again without hunting for the URL -- see the schema field for why
+    # it is a pointer and not an identity.
+    pathbuilder_id = export.get("_pathbuilderId") if isinstance(export, dict) else None
+    if isinstance(pathbuilder_id, int):
+        document["identity"]["pathbuilderId"] = pathbuilder_id
+    document |= {
         "build": {
             "ancestry": slug(build.get("ancestry"), ("ancestries",), "ancestry"),
             "heritage": slug(build.get("heritage"), ("heritages",), "heritage"),
