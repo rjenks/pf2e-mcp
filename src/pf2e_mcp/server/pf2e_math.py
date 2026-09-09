@@ -14,6 +14,7 @@ validate_build does not attempt it.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 ABILITY_KEYS = {
@@ -75,9 +76,33 @@ def default_character_abilities(character: dict) -> dict:
     return character.get("abilities", {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10})
 
 
+_TRAILING_PARENTHETICAL = re.compile(r"^(?P<base>.+?)\s*\([^)]*\)\s*$")
+
+
 def has_feat(character: dict, name: str) -> bool:
-    feats = character.get("feats", [])
-    return any(f and f[0] and f[0].strip().lower() == name.strip().lower() for f in feats)
+    """True if the character holds the named feat.
+
+    A recorded feat may carry the choice made inside it -- "Advanced Maneuver
+    (Combat Grab)", "Orc Warmask (The Unknown)", "Assurance (Athletics)" -- and
+    a prerequisite naming that feat names it bare. So an exact match is tried
+    first, and only then the recorded name with a trailing parenthetical
+    stripped.
+
+    The order matters: a parenthetical is only *sometimes* a parameter.
+    "Tusks (Orc)", "Irrepressible (Nephilim)" and "Animal Companion (Ranger)"
+    are printed names, and stripping them first would let a prerequisite for
+    "Tusks" be satisfied by any feat whose name happens to start that way.
+    Matching the whole string first keeps those exact.
+    """
+    target = name.strip().lower()
+    recorded = [f[0].strip().lower() for f in character.get("feats", []) if f and f[0]]
+    if any(r == target for r in recorded):
+        return True
+    for r in recorded:
+        match = _TRAILING_PARENTHETICAL.match(r)
+        if match and match.group("base").strip() == target:
+            return True
+    return False
 
 
 def has_lore(character: dict, name: str) -> bool:

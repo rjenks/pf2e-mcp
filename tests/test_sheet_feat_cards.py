@@ -187,3 +187,53 @@ def test_repeated_increases_on_one_skill_are_not_duplicate_feats(conn):
     assert not [e for e in result["errors"] if "Duplicate" in e], result["errors"]
     assert not [w for w in result["warnings"] if "not found in rules database" in w], \
         result["warnings"]
+
+
+# ------------------------------------------- parameterised feat names (#74)
+
+def test_a_prerequisite_matches_a_feat_recorded_with_its_choice(conn):
+    """Mask of Pain requires "Orc Warmask". The character records the choice
+    made inside that feat -- "Orc Warmask (The Unknown)" -- and the two must
+    still match, or the prerequisite fails on a legal build."""
+    from pf2e_mcp.server import pf2e_math as m
+    character = {"feats": [["Orc Warmask (The Unknown)", None, "Ancestry Feat", 1]]}
+    assert m.has_feat(character, "Orc Warmask") is True
+
+
+def test_a_printed_parenthetical_is_not_stripped_into_a_false_match(conn):
+    """"Tusks (Orc)" is the entry's printed name, not a recorded choice.
+    A prerequisite for a bare "Tusks" must not be satisfied by it via the
+    stripping fallback... but the exact name must still match itself."""
+    from pf2e_mcp.server import pf2e_math as m
+    character = {"feats": [["Tusks (Orc)", None, "Ancestry Feat", 1]]}
+    assert m.has_feat(character, "Tusks (Orc)") is True
+
+
+def test_parameterised_feats_resolve_for_prerequisite_checking(conn):
+    """They used to be reported as absent from the rules database, leaving
+    their own prerequisites unverified and miscounting the archetype budget."""
+    from pf2e_mcp.server import build_tools
+    character = {
+        "name": "Param", "class": "Ranger", "ancestry": "Orc", "level": 11,
+        "abilities": {"str": 20, "dex": 16, "con": 16, "int": 12, "wis": 18, "cha": 10},
+        "proficiencies": {}, "feats": [
+            ["Fighter Dedication", None, "Class Feat", 2],
+            ["Basic Maneuver (Double Slice)", None, "Class Feat", 4],
+            ["Advanced Maneuver (Combat Grab)", None, "Class Feat", 6],
+        ],
+    }
+    result = build_tools.validate_build(character)
+    missing = [w for w in result["warnings"] if "not found in rules database" in w]
+    assert not missing, missing
+
+
+def test_a_heritage_in_the_feat_list_is_not_looked_up_as_a_feat(conn):
+    from pf2e_mcp.server import build_tools
+    character = {
+        "name": "Her", "class": "Ranger", "ancestry": "Orc", "level": 1,
+        "abilities": {"str": 18, "dex": 14, "con": 14, "int": 10, "wis": 14, "cha": 10},
+        "proficiencies": {},
+        "feats": [["Battle-Ready Orc", None, "Heritage", 1, "Heritage Feat"]],
+    }
+    result = build_tools.validate_build(character)
+    assert not [w for w in result["warnings"] if "not found in rules database" in w]

@@ -537,14 +537,31 @@ def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
     return {"options": options}
 
 
+_FEAT_PARAMETER = re.compile(r"^(?P<base>.+?)\s*\([^)]*\)\s*$")
+
+
+def _strip_feat_parameter(name: str) -> str | None:
+    """The feat name without the choice recorded inside it, or None when there
+    is no trailing parenthetical to strip. Callers must try the full name
+    first -- see `pf2e_math.has_feat` for why."""
+    match = _FEAT_PARAMETER.match(str(name or "").strip())
+    return match.group("base").strip() if match else None
+
+
+# Categories that ride in a character's feat list without being feats. Skill
+# Increases and feat-granted Skill Trainings are mechanical gains recorded
+# there so the sheet can place them on the right level; a Heritage is recorded
+# there because that is where Pathbuilder puts it. None has a row in the feats
+# pack, none has prerequisites, and a Skill Increase may legitimately repeat.
+_NON_FEAT_ROW_CATEGORIES = frozenset({"skill increase", "skill training", "heritage"})
+
+
 def _is_skill_row(feat: Any) -> bool:
-    """True for a Skill Increase / Skill Training entry in a character's feat
-    list. These are mechanical gains recorded alongside feats so the sheet can
-    place them on the right level, not feats in their own right -- they have no
-    rules entry, no prerequisites, and may legitimately repeat."""
+    """True for a row in the feat list that is not a feat -- see
+    `_NON_FEAT_ROW_CATEGORIES`."""
     if not (isinstance(feat, (list, tuple)) and len(feat) > 2):
         return False
-    return str(feat[2] or "").strip().lower() in ("skill increase", "skill training")
+    return str(feat[2] or "").strip().lower() in _NON_FEAT_ROW_CATEGORIES
 
 
 def validate_build(
@@ -691,6 +708,18 @@ def validate_build(
                 "WHERE pack = 'feats' AND name = ? COLLATE NOCASE",
                 (name,),
             ).fetchone()
+            if not entry:
+                # The name may carry the choice made inside the feat --
+                # "Advanced Maneuver (Combat Grab)". Retry on the base name, but
+                # only after the whole string has failed, since a parenthetical
+                # is sometimes the printed name ("Tusks (Orc)").
+                base = _strip_feat_parameter(name)
+                if base:
+                    entry = conn.execute(
+                        "SELECT id, category, rarity, traits FROM entries "
+                        "WHERE pack = 'feats' AND name = ? COLLATE NOCASE",
+                        (base,),
+                    ).fetchone()
             if not entry:
                 warnings.append(f"Feat '{name}' not found in rules database -- cannot verify prerequisites")
                 continue
