@@ -108,6 +108,18 @@
           "$ref": "#/$defs/slug",
           "description": "Class slug, e.g. 'animist'."
         },
+        "keyAttribute": {
+          "description": "Which attribute the class is keyed on, for a class that offers a choice -- a Ranger, Fighter, Monk or Champion may key Strength or Dexterity. Omit for a class with only one option, or to accept the first the rules data lists. Getting this wrong is worth two points of class DC and everything that reads from it.",
+          "enum": [
+            "str",
+            "dex",
+            "con",
+            "int",
+            "wis",
+            "cha",
+            null
+          ]
+        },
         "subclasses": {
           "description": "Subclass-style choices, keyed by the rules database's choice-group tag: 'cleric-doctrine', 'druid-order', 'sorcerer-bloodline', 'animist-apparition', and so on. Call rules_list_subclass_option_groups for the valid tags. The value is one slug, or an ordered list where a class attunes to several at once -- an Animist's apparitions, for instance, where the first entry is the primary. Order is significant for exactly that reason.",
           "type": "object",

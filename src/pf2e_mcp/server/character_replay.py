@@ -950,7 +950,14 @@ def at_level(
         conn, document, proficiencies
     )
 
-    key_ability = (json.loads(progression.get("key_ability") or '["str"]') or ["str"])[0]
+    # A class offering a choice -- Ranger, Fighter, Monk and Champion all key
+    # Strength *or* Dexterity -- has no single right answer in the rules data,
+    # and taking the first listed silently made every Strength Ranger a
+    # Dexterity one: two points of class DC, and with it the save DC of every
+    # critical specialization effect the character lands.
+    options = json.loads(progression.get("key_ability") or '["str"]') or ["str"]
+    chosen = str(((document.get("build") or {}).get("keyAttribute") or "")).lower()
+    key_ability = chosen if chosen in options else options[0]
 
     return {
         "name": identity.get("name"),

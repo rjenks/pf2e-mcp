@@ -105,3 +105,49 @@ def test_a_background_that_grants_nothing_adds_nothing(conn):
     }
     feats = character_replay.at_level(document, 1, conn)["feats"]
     assert not [f for f in feats if f[4] == "Background Feat"], feats
+
+
+# ------------------------------------------- key attribute choice (#67)
+
+def _ranger(key_attribute=None):
+    build = {"ancestry": "orc", "background": "acolyte", "class": "ranger",
+             "heritage": None}
+    if key_attribute:
+        build["keyAttribute"] = key_attribute
+    return {
+        "schemaVersion": 1,
+        "identity": {"name": "Keyed", "currentLevel": 1},
+        "build": build,
+        "plan": [{"level": 1, "attributeBoosts": {
+            "ancestry": {"free": ["str", "dex"]},
+            "background": ["wis", "str"],
+            "class": ["str"],
+            "free": ["wis", "con", "dex", "str"],
+        }}],
+    }
+
+
+def test_a_strength_ranger_is_not_replayed_as_a_dexterity_one(conn):
+    """Ranger's key_ability is ["dex", "str"]; taking the first listed made
+    every Strength Ranger Dexterity-keyed, costing two points of class DC and
+    with them the save DC of every critical specialization effect landed."""
+    from pf2e_mcp.server import character_replay
+    assert character_replay.at_level(_ranger("str"), 1, conn)["keyability"] == "str"
+
+
+def test_omitting_the_choice_still_falls_back_to_the_first_option(conn):
+    from pf2e_mcp.server import character_replay
+    assert character_replay.at_level(_ranger(), 1, conn)["keyability"] == "dex"
+
+
+def test_an_attribute_the_class_does_not_offer_is_ignored(conn):
+    """A Ranger cannot key Charisma. Honouring it would invent a class."""
+    from pf2e_mcp.server import character_replay
+    assert character_replay.at_level(_ranger("cha"), 1, conn)["keyability"] == "dex"
+
+
+def test_a_single_option_class_ignores_the_field(conn):
+    from pf2e_mcp.server import character_replay
+    document = _ranger("str")
+    document["build"]["class"] = "cleric"
+    assert character_replay.at_level(document, 1, conn)["keyability"] == "wis"
