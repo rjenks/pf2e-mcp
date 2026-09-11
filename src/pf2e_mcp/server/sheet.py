@@ -165,6 +165,29 @@ _FIXED_RUNE_RE = re.compile(
     re.IGNORECASE)
 
 
+def _resolve_rune_name(lib: "_Library", text: str) -> str:
+    """A property rune as recorded on a character -- a slug ('crushing-greater')
+    or already a display name ('Returning', 'greater striking') -- resolved to
+    its real rules-database name for printing.
+
+    The Inventory table already resolves every rune slug through `lib.by_slug`
+    (see `_inventory`'s `add`); the Strikes table and the page-1 armor block
+    did not, so a graded or multi-word property rune -- anything whose slug
+    isn't just its lowercased name with spaces swapped for dashes -- printed
+    as a raw slug ('crushing-greater') rather than its name ('Crushing
+    (Greater)'). A single-word rune like Fearsome or Returning happens to
+    slugify to itself, which is why this went unnoticed until a build carried
+    one that doesn't.
+
+    Falls back to the text unchanged when nothing resolves -- 'greater
+    striking' (the display form `_graded_striking` already produces, not a
+    real slug) is exactly that case, and must stay readable rather than
+    disappear.
+    """
+    candidate = lib.by_slug(text.strip().lower().replace(" ", "-"), "equipment")
+    return candidate["name"] if candidate else text
+
+
 def _rune_labels(fixed: list[str], other_runes: list[str]) -> list[str]:
     """Human-readable rune labels for a weapon or suit of armor: `fixed`
     (potency/resilient tiers, already formatted by the caller from this
@@ -1362,7 +1385,7 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         bonus = (level + rank if rank else 0) + potency
         attack = atk_mod + bonus
 
-        raw_runes = [str(r) for r in (weapon.get("runes") or [])]
+        raw_runes = [_resolve_rune_name(lib, str(r)) for r in (weapon.get("runes") or [])]
         dice = _striking_dice(weapon)
         fixed = [f"+{potency} potency"] if potency else []
         # Named in the list already, or held in `increasedDice` and printed
@@ -4466,7 +4489,7 @@ def _armor_stats(character: dict[str, Any], lib: _Library,
                 ([f"+{item.get('pot')} potency"] if item.get("pot") else [])
                 + ([_RESILIENT_NAMES[tier]]
                    if (tier := m.resilient_tier(item.get("res"))) else []),
-                item.get("runes") or [],
+                [_resolve_rune_name(lib, str(r)) for r in item.get("runes") or []],
             ),
         }, note
     return None, ""
