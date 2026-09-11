@@ -4249,12 +4249,12 @@ def _page_notes(ctx: dict[str, Any]) -> str:
         or Dexterity for finesse, Strength otherwise.</li>
     </ul>
     <p><strong>Speed</strong> is the ancestry&rsquo;s base plus any flat item
-    bonus from worn or invested gear (Boots of Bounding&rsquo;s +5, say),
-    read the same way. A feat-granted flat Speed bonus is not yet modelled
-    this way &mdash; Fleet&rsquo;s own +5 has to be added by hand.</p>
+    bonus from worn or invested gear (Boots of Bounding&rsquo;s +5, say) and
+    any flat Speed bonus a taken feat grants outright (Fleet&rsquo;s own
+    +5), both read from that source&rsquo;s own rules rather than hand-added.</p>
     <p>Not modelled: temporary bonuses, an item bonus of any kind other than
     a flat one to a skill, HP or Speed, a feat-granted bonus to anything
-    other than Hit Points per level, focus points, and anything a
+    other than Hit Points per level or Speed, focus points, and anything a
     rules-glossary entry adds that is not recorded in the character data.</p>
   </div>
   {_foot(ctx['name'], "Sheet Notes")}

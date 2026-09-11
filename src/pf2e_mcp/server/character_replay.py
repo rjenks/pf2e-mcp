@@ -42,10 +42,18 @@ granted it. `at_level` applies them last and reports any that derivation has
 since caught up with, so the overrides shrink as the data improves.
 
 **Hit Points per level from a feat.** Toughness and Mountain's Stoutness each
-add 1 HP per level through a Foundry rule element that this project's ingestion
-does not capture -- `item_stat_modifiers` records only their effect on the
-dying recovery DC. `HP_PER_LEVEL_FEATS` below is a curated list, which is
-honest about being one (#61).
+carry a `FlatModifier`/`hp` rule element whose `value` is a Foundry roll
+formula (`"@actor.level"`), not a plain number -- ingestion captures the
+rule, but nothing here evaluates a formula against a specific character's
+level. `HP_PER_LEVEL_FEATS` below is a curated list standing in for that
+evaluation, and is honest about being one (#61).
+
+A feat whose own rule element carries a plain integer instead of a formula
+needs no such list -- `_feat_flat_bonus` reads it directly the same way
+`_item_flat_bonus` already does for gear. Fleet's own `land-speed` rule
+(`"value": 5`) is exactly this case, which is what tells the two apart: not
+every feat-granted number needs curating, only the ones spelled as a
+formula this project does not evaluate.
 
 A third gap needs no machinery here but is worth knowing about: a subclass
 option that grants skills in prose rather than in a rule element -- an Animist
@@ -205,6 +213,47 @@ def _item_flat_bonus(system: dict[str, Any], selector: str, active: bool) -> int
         except (TypeError, ValueError):
             continue
     return best
+
+
+def _feat_flat_bonus(conn: sqlite3.Connection, feat_slugs: set, selector: str) -> int:
+    """The sum of every taken feat's own untyped `FlatModifier` to `selector`.
+
+    Fleet's own entry carries `{"key": "FlatModifier", "selector": "land-
+    speed", "value": 5}` -- a plain integer, structurally identical to a worn
+    item's bonus (see `_item_flat_bonus`) and just as derivable. This is not
+    the same situation `HP_PER_LEVEL_FEATS` exists for: Toughness's own `hp`
+    rule carries `"value": "@actor.level"`, a Foundry roll-formula string this
+    project does not evaluate, which is genuinely not derivable without a
+    formula engine -- that's the curated list's reason to exist, not a gap
+    this function also has. A rule whose value is not a plain number is
+    silently skipped rather than guessed at, which is exactly what leaves
+    Toughness to `HP_PER_LEVEL_FEATS` without a special case here.
+
+    Unlike an item bonus (same type does not stack; `_item_flat_bonus` takes
+    the higher), an untyped bonus stacks with everything, including another
+    untyped bonus -- so this sums across every matching feat rather than
+    taking the higher.
+    """
+    total = 0
+    for slug in feat_slugs:
+        entry = _one(
+            conn, "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'feats'",
+            (slug,),
+        )
+        if not entry:
+            continue
+        system = json.loads(entry["raw_json"]).get("system", {})
+        for rule in system.get("rules") or []:
+            if (rule.get("key") != "FlatModifier"
+                    or str(rule.get("selector") or "").lower() != selector
+                    or rule.get("predicate")
+                    or rule.get("type") not in (None, "")):
+                continue
+            try:
+                total += int(rule.get("value") or 0)
+            except (TypeError, ValueError):
+                continue
+    return total
 
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
 _SIZES = {
@@ -1096,6 +1145,7 @@ def at_level(
     hp_per_level = sum(
         bonus for slug, bonus in HP_PER_LEVEL_FEATS.items() if slug in feat_slugs
     )
+    speed_feat_bonus = _feat_flat_bonus(conn, feat_slugs, "land-speed")
 
     gear = _replay_gear(conn, document)
     casters, focus, focus_points = _replay_spellcasting(
@@ -1147,13 +1197,11 @@ def at_level(
             # Folded directly into `speed` rather than the sibling
             # `speedBonus` field below: nothing in this project reads
             # `speedBonus` at all (Pathbuilder computes it Pathbuilder-side,
-            # this project does not), so a worn item's flat Speed bonus
-            # (Boots of Bounding) would otherwise never reach the printed
-            # total. Feat-granted Speed (Fleet's own +5) is not folded in
-            # here -- that is a different, still-open gap; see #61's sibling
-            # for Hit Points, which this does not yet have an HP-style
-            # curated list to match.
-            "speed": (ancestry_system.get("speed") or 25) + gear["speedItemBonus"],
+            # this project does not), so neither a worn item's flat Speed
+            # bonus (Boots of Bounding) nor a feat's (Fleet, via
+            # `_feat_flat_bonus`) would otherwise reach the printed total.
+            "speed": (ancestry_system.get("speed") or 25)
+                     + gear["speedItemBonus"] + speed_feat_bonus,
             "speedBonus": 0,
         },
         "proficiencies": proficiencies,
