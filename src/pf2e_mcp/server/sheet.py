@@ -3960,9 +3960,15 @@ def _weapon_rune_slugs(weapon: dict[str, Any]) -> list[str]:
     striking in `increasedDice` or a name in the list, so the list alone
     describes only the property runes -- which for most characters means the
     cheap rune is on the sheet and the thousand-gold one is not.
+
+    `ownPotency`, when set, prints in place of `pot` here -- the Inventory
+    table's business is what was actually bought and etched, where a doubling
+    ring has raised this weapon's *effective* potency (still `pot`, still
+    what the Strikes table uses) above what it genuinely owns.
     """
     slugs = []
-    potency = weapon.get("pot") or 0
+    own_potency = weapon.get("ownPotency")
+    potency = own_potency if own_potency is not None else (weapon.get("pot") or 0)
     if 1 <= potency <= 3:
         slugs.append(f"weapon-potency-{potency}")
     dice = _striking_dice(weapon)
@@ -4000,7 +4006,8 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
 
     def add(name: str, qty: Any, note: str = "",
             runes: list[str] | None = None, runes_from: str = "",
-            own_runes: list[str] | None = None) -> None:
+            own_runes: list[str] | None = None,
+            price_override_gp: float | None = None) -> None:
         nonlocal rows
         entry = lib.get(name, "item")
         if entry and entry["name"] not in seen:
@@ -4035,7 +4042,14 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         # free. Omitted (the common case: nothing on this item is owned, or
         # `runes_from` isn't set at all) keeps the old all-or-nothing split.
         owned = set(own_runes or [])
-        price_cp, labels = _price_cp(entry), []
+        # A manual override stands in for the ingested entry's own price --
+        # for a cost that is real RAW but written into another item's or
+        # feat's prose rather than priced as an equipment-table row of its
+        # own (the Orc Warmask's 50 gp attunement ceremony, described inside
+        # the *feat*'s text rather than the *item*'s).
+        base_cp = (round(price_override_gp * 100) if price_override_gp is not None
+                   else _price_cp(entry))
+        price_cp, labels = base_cp, []
         source = lib.by_slug(runes_from, "equipment") if runes_from else None
         for slug in runes or []:
             rune = lib.by_slug(slug, "equipment")
@@ -4061,19 +4075,23 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         if isinstance(w, dict) and w.get("name"):
             add(w["name"], w.get("qty") or 1, runes=_weapon_rune_slugs(w),
                 runes_from=str(w.get("runesFrom") or ""),
-                own_runes=w.get("ownRunes"))
+                own_runes=w.get("ownRunes"),
+                price_override_gp=w.get("priceOverride"))
     for a in ch.get("armor", []) or []:
         if isinstance(a, dict) and a.get("name"):
             add(a["name"], a.get("qty") or 1,
                 "Worn" if a.get("worn") else "", runes=_armor_rune_slugs(a),
                 runes_from=str(a.get("runesFrom") or ""),
-                own_runes=a.get("ownRunes"))
+                own_runes=a.get("ownRunes"),
+                price_override_gp=a.get("priceOverride"))
     for item in ch.get("equipment", []) or []:
         if isinstance(item, (list, tuple)) and item:
             add(str(item[0]), item[1] if len(item) > 1 else 1,
                 " ".join(str(x) for x in item[2:]))
         elif isinstance(item, dict) and item.get("name"):
-            add(item["name"], item.get("qty") or 1)
+            add(item["name"], item.get("qty") or 1,
+                "Invested" if item.get("invested") else "",
+                price_override_gp=item.get("priceOverride"))
     return rows, seen
 
 

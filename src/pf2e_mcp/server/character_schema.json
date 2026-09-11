@@ -803,6 +803,23 @@
           },
           "default": []
         },
+        "ownPotency": {
+          "description": "Weapon only. This weapon's own etched potency tier (1-3), when it differs from the higher tier a doubling ring is copying onto it for combat purposes. `runes`/the effective potency still drive the Strikes table's attack bonus and damage dice -- correct, since that is what it actually hits with while both rings are worn -- but the Inventory table shows this lower, genuinely-owned tier instead, since that is what was actually bought and etched. Needs a matching slug ('weapon-potency-1', say) in `ownRunes` so that tier prices normally rather than reading as borrowed. Omit when the item's own potency equals its effective potency (the ordinary case, no doubling ring involved) or when nothing about this item's own fundamentals is worth distinguishing from the copy.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 3
+        },
+        "priceOverride": {
+          "description": "Manual price in gp, used instead of this item's own ingested equipment-table price. For a cost that is real RAW but lives only in another feat's or item's prose rather than as a priced equipment-table row of its own -- the Orc Warmask's 50 gp attunement ceremony is described inside the Orc Warmask *feat*'s text, not the warmask *item*'s, so ingestion has nothing to price it from. Not for correcting a genuinely wrong ingested price -- that belongs in the rules data itself, not a per-character override.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
         "grade": {
           "description": "For an item that comes in grades, which one: 'low', 'moderate', 'high'.",
           "type": [

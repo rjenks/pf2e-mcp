@@ -792,6 +792,13 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 # says which ones so the inventory doesn't price them at zero
                 # along with the borrowed fundamentals.
                 "ownRunes": item.get("ownRunes") or None,
+                # Also not a Pathbuilder field. `pot` above is the *effective*
+                # potency -- correct for the Strikes table, which is what a
+                # doubling ring actually hits with -- but the Inventory table
+                # needs the weapon's own, genuinely-etched tier when the two
+                # differ, or it prints a rune that was never bought.
+                "ownPotency": item.get("ownPotency"),
+                "priceOverride": item.get("priceOverride"),
             })
         elif item_type == "armor":
             worn = bool(item.get("worn"))
@@ -812,11 +819,21 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "grade": item.get("grade") or "",
                 "runesFrom": item.get("runesFrom") or None,
                 "ownRunes": item.get("ownRunes") or None,
+                "priceOverride": item.get("priceOverride"),
             })
         else:
             invested = bool(item.get("invested"))
             for selector, value in _item_skill_bonuses(system, active=invested).items():
                 skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
+            price_override = item.get("priceOverride")
+            if price_override is not None:
+                # A dict row, not the bare Pathbuilder-shaped list -- the only
+                # way to carry a manual price alongside the invested flag.
+                # `_inventory` already accepts either shape for `equipment`.
+                equipment.append({"name": name, "qty": quantity,
+                                   "invested": invested,
+                                   "priceOverride": price_override})
+                continue
             row: list[Any] = [name, quantity]
             if invested:
                 row.append("Invested")
