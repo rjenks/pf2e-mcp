@@ -4601,6 +4601,7 @@ _OPTIONAL_SECTIONS = [
     ("spells", "Spells"),
     ("features", "Features"),
     ("item-rules", "Item rules"),
+    ("quick-reference", "Quick reference"),
     ("notes", "Sheet notes"),
     ("attribution", "Notices"),
 ]
@@ -4657,9 +4658,23 @@ def render_character_sheet(
     logo_path: str | None = None,
     symbol_dir: str | None = None,
     level: int | None = None,
+    extra_pages: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write a print-ready, fully self-contained HTML character sheet and
     return a summary of what went onto it.
+
+    `extra_pages` appends caller-supplied HTML after the rest of the sheet
+    (still ahead of the licence page, which stays last) -- each string is
+    inserted verbatim, so a full `<section class="page" data-sec="...">
+    ...</section>` block is expected, not a bare fragment; anything not
+    scoped under its own class risks colliding with this file's own
+    stylesheet, since one `<style>` block governs the whole document
+    regardless of where in the DOM it sits. This is the hook for merging
+    something bespoke -- a player-authored quick-reference card, say -- into
+    the same file as the sheet rather than keeping it a separate document,
+    without this renderer needing to know anything about what that content
+    is. Every such page is grouped under one shared toolbar toggle,
+    `"quick-reference"`.
 
     The rendered file has no external dependencies of any kind -- fonts are
     inlined as base64 WOFF2, all ornament is generated inline SVG, and nothing
@@ -4838,6 +4853,8 @@ def render_character_sheet(
                  + _page_spell_slots(ctx) + _page_inventory(ctx)
                  + _page_skill_actions(ctx) + _page_spells(ctx)
                  + _page_features(ctx) + _page_equipment(ctx) + _page_notes(ctx))
+        if extra_pages:
+            pages += "".join(extra_pages)
         orc_books, ogl_books = _license_split(lib)
         ctx["orc_books"], ctx["ogl_books"] = orc_books, ogl_books
         pages += _page_legal(ctx)
@@ -4858,6 +4875,8 @@ def render_character_sheet(
         sections.append("features")
         if ctx["item_rules"]:
             sections.append("item-rules")
+        if extra_pages:
+            sections.append("quick-reference")
         sections += ["notes", "attribution"]
 
         doc = (
