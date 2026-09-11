@@ -795,6 +795,14 @@
             "null"
           ]
         },
+        "ownRunes": {
+          "description": "Only meaningful alongside `runesFrom`. Plain doubling rings copy fundamental runes (weapon potency, striking) only -- a property rune etched directly on the item is untouched, still genuinely bought, and still owed its price. List those genuinely-owned slugs here; every other slug in `runes` is treated as borrowed and priced at nothing, same as when this is omitted. Omit entirely when `runesFrom` means everything on the item is borrowed (greater doubling rings, which copy fundamentals and property runes alike) -- that is the default and needs no field.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          },
+          "default": []
+        },
         "grade": {
           "description": "For an item that comes in grades, which one: 'low', 'moderate', 'high'.",
           "type": [

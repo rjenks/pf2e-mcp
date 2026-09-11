@@ -785,6 +785,13 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 # first was paid for and the second was not. Pathbuilder
                 # ignores keys it does not know.
                 "runesFrom": item.get("runesFrom") or None,
+                # Also not a Pathbuilder field -- see the schema's own
+                # `ownRunes` description. Plain doubling rings copy fundamental
+                # runes only; a property rune etched directly on this weapon
+                # is genuinely bought even while `runesFrom` is set, and this
+                # says which ones so the inventory doesn't price them at zero
+                # along with the borrowed fundamentals.
+                "ownRunes": item.get("ownRunes") or None,
             })
         elif item_type == "armor":
             worn = bool(item.get("worn"))
@@ -804,6 +811,7 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 ],
                 "grade": item.get("grade") or "",
                 "runesFrom": item.get("runesFrom") or None,
+                "ownRunes": item.get("ownRunes") or None,
             })
         else:
             invested = bool(item.get("invested"))

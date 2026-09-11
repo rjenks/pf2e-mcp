@@ -3999,7 +3999,8 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
     rows, seen = "", []
 
     def add(name: str, qty: Any, note: str = "",
-            runes: list[str] | None = None, runes_from: str = "") -> None:
+            runes: list[str] | None = None, runes_from: str = "",
+            own_runes: list[str] | None = None) -> None:
         nonlocal rows
         entry = lib.get(name, "item")
         if entry and entry["name"] not in seen:
@@ -4026,20 +4027,29 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         # Bulk 0, so an etched weapon weighs what it always did and costs what
         # it and its runes cost together. Printing the bare item price instead
         # answered "what is this worth" with the wrong order of magnitude.
+        #
+        # `own_runes` narrows which of `runes_from`'s borrowed runes were
+        # actually bought -- plain doubling rings copy fundamentals only, so
+        # a property rune etched directly on this item is real and priced
+        # even while the item also carries someone else's fundamentals for
+        # free. Omitted (the common case: nothing on this item is owned, or
+        # `runes_from` isn't set at all) keeps the old all-or-nothing split.
+        owned = set(own_runes or [])
         price_cp, labels = _price_cp(entry), []
+        source = lib.by_slug(runes_from, "equipment") if runes_from else None
         for slug in runes or []:
             rune = lib.by_slug(slug, "equipment")
-            labels.append(rune["name"] if rune else slug.replace("-", " "))
+            label = rune["name"] if rune else slug.replace("-", " ")
             # Runes copied by doubling rings apply but were never bought, so
             # they are named without being charged for -- the price of the
             # rings is already on their own row.
-            if not runes_from:
+            if runes_from and slug not in owned:
+                label += f" (from {source['name'] if source else runes_from})"
+            else:
                 price_cp += _price_cp(rune)
+            labels.append(label)
         if labels:
             note = f"{note}; {', '.join(labels)}" if note else ", ".join(labels)
-        if labels and runes_from:
-            source = lib.by_slug(runes_from, "equipment")
-            note += f" (from {source['name'] if source else runes_from})"
 
         rows += (f'<tr><td class="nm">{_esc(display)}</td>'
                  f'<td class="r">{_esc(qty)}</td>'
@@ -4050,12 +4060,14 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
     for w in ch.get("weapons", []) or []:
         if isinstance(w, dict) and w.get("name"):
             add(w["name"], w.get("qty") or 1, runes=_weapon_rune_slugs(w),
-                runes_from=str(w.get("runesFrom") or ""))
+                runes_from=str(w.get("runesFrom") or ""),
+                own_runes=w.get("ownRunes"))
     for a in ch.get("armor", []) or []:
         if isinstance(a, dict) and a.get("name"):
             add(a["name"], a.get("qty") or 1,
                 "Worn" if a.get("worn") else "", runes=_armor_rune_slugs(a),
-                runes_from=str(a.get("runesFrom") or ""))
+                runes_from=str(a.get("runesFrom") or ""),
+                own_runes=a.get("ownRunes"))
     for item in ch.get("equipment", []) or []:
         if isinstance(item, (list, tuple)) and item:
             add(str(item[0]), item[1] if len(item) > 1 else 1,
