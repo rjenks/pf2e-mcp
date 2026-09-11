@@ -4221,7 +4221,10 @@ def _page_notes(ctx: dict[str, Any]) -> str:
         proficiency. A raised shield is added separately where one is carried;
         <code>calculate_derived_stats</code> does not include it.</li>
       <li><strong>HP {d['hp']}</strong> &mdash; ancestry HP, plus level &times;
-        (class HP + Constitution modifier), plus any recorded bonus HP.</li>
+        (class HP + Constitution modifier), plus any recorded bonus HP,
+        including a flat HP bonus from worn or invested gear (Belt of Good
+        Health&rsquo;s +4, say), read the same way a skill&rsquo;s item
+        bonus is.</li>
       <li><strong>Saves</strong> Fortitude {_mod(d['saves']['fortitude'])},
         Reflex {_mod(d['saves']['reflex'])}, Will {_mod(d['saves']['will'])}
         &mdash; ability modifier + level + proficiency.</li>
@@ -4245,10 +4248,14 @@ def _page_notes(ctx: dict[str, Any]) -> str:
         choice: Dexterity for non-thrown ranged weapons, the better of Strength
         or Dexterity for finesse, Strength otherwise.</li>
     </ul>
-    <p>Not modelled: temporary bonuses, an item bonus granted by anything
-    other than worn armor, a weapon&rsquo;s potency rune or a skill-boosting
-    piece of gear, focus points, and anything a rules-glossary entry adds
-    that is not recorded in the character data.</p>
+    <p><strong>Speed</strong> is the ancestry&rsquo;s base plus any flat item
+    bonus from worn or invested gear (Boots of Bounding&rsquo;s +5, say),
+    read the same way. A feat-granted flat Speed bonus is not yet modelled
+    this way &mdash; Fleet&rsquo;s own +5 has to be added by hand.</p>
+    <p>Not modelled: temporary bonuses, an item bonus of any kind other than
+    a flat one to a skill, HP or Speed, a feat-granted bonus to anything
+    other than Hit Points per level, focus points, and anything a
+    rules-glossary entry adds that is not recorded in the character data.</p>
   </div>
   {_foot(ctx['name'], "Sheet Notes")}
 </section>"""

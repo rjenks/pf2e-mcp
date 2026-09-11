@@ -126,6 +126,42 @@ _SKILL_SELECTORS = frozenset({
 })
 
 
+def _active_item_flat_modifiers(system: dict[str, Any], active: bool) -> list[dict[str, Any]]:
+    """This item's own always-on `FlatModifier`/`item` rule elements, while
+    the item is active.
+
+    "Always-on" excludes anything carrying a `predicate` -- Boots of
+    Bounding's entry, for instance, carries an *unconditional* +5 to
+    `land-speed` alongside a *second*, separate +2 to `athletics` gated
+    `predicate: [{"or": ["action:high-jump", "action:long-jump"]}]`. Folding
+    that second one into a flat, always-printed total would overstate what
+    the character actually rolls on an ordinary Trip or Escape -- it only
+    ever applies to two specific actions, and belongs in the item's own note
+    for the player to remember, not in a number the sheet asserts is always
+    true. A conditional rule with no way to evaluate its predicate outside a
+    live encounter has no honest way to reach a static character sheet at
+    all, so it is left out entirely rather than guessed at.
+
+    A modifier's `type` is usually `"item"`, but Belt of Good Health's own
+    `hp` rule carries no `type` at all -- Hit Points aren't typically typed
+    the way an Athletics or attack bonus is, so an absent type is accepted
+    alongside an explicit `"item"` rather than treated as some other,
+    unrecognised bonus kind.
+
+    `active` gates whether the item is presently doing anything: worn armor
+    always is, and everything else in the catch-all equipment bucket only is
+    while `invested`. An item lacking either flag still prices and displays
+    normally; it just contributes no bonus.
+    """
+    if not active:
+        return []
+    return [
+        rule for rule in (system.get("rules") or [])
+        if rule.get("key") == "FlatModifier" and rule.get("type") in (None, "", "item")
+        and not rule.get("predicate")
+    ]
+
+
 def _item_skill_bonuses(system: dict[str, Any], active: bool) -> dict[str, int]:
     """Flat item bonuses to skills a piece of gear's own rule elements grant.
 
@@ -138,18 +174,9 @@ def _item_skill_bonuses(system: dict[str, Any], active: bool) -> dict[str, int]:
     never appeared in the printed total at all -- a real player had to
     remember to add it by hand every time, which is exactly the number a
     printed sheet exists to not require.
-
-    `active` gates whether the item is presently doing anything: worn armor
-    always is, and everything else in the catch-all equipment bucket only
-    is while `invested`. An item lacking either flag still prices and
-    displays normally; it just contributes no bonus.
     """
-    if not active:
-        return {}
     out: dict[str, int] = {}
-    for rule in system.get("rules") or []:
-        if rule.get("key") != "FlatModifier" or rule.get("type") != "item":
-            continue
+    for rule in _active_item_flat_modifiers(system, active):
         selector = str(rule.get("selector") or "").lower()
         if selector not in _SKILL_SELECTORS:
             continue
@@ -161,6 +188,23 @@ def _item_skill_bonuses(system: dict[str, Any], active: bool) -> dict[str, int]:
         # higher, not the sum.
         out[selector] = max(out.get(selector, 0), value)
     return out
+
+
+def _item_flat_bonus(system: dict[str, Any], selector: str, active: bool) -> int:
+    """The highest always-on item bonus this item's own rules grant to a
+    single, character-wide selector -- `hp` (Belt of Good Health) or
+    `land-speed` (Boots of Bounding's unconditional +5, as distinct from its
+    predicated Athletics bonus -- see `_active_item_flat_modifiers`).
+    """
+    best = 0
+    for rule in _active_item_flat_modifiers(system, active):
+        if str(rule.get("selector") or "").lower() != selector:
+            continue
+        try:
+            best = max(best, int(rule.get("value") or 0))
+        except (TypeError, ValueError):
+            continue
+    return best
 
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
 _SIZES = {
@@ -738,6 +782,8 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
     armor: list[dict[str, Any]] = []
     equipment: list[list[Any]] = []
     skill_item_bonuses: dict[str, int] = {}
+    hp_item_bonus = 0
+    speed_item_bonus = 0
 
     for item in gear.get("carried") or []:
         slug = item.get("item")
@@ -804,6 +850,9 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
             worn = bool(item.get("worn"))
             for selector, value in _item_skill_bonuses(system, active=worn).items():
                 skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
+            hp_item_bonus = max(hp_item_bonus, _item_flat_bonus(system, "hp", worn))
+            speed_item_bonus = max(speed_item_bonus,
+                                    _item_flat_bonus(system, "land-speed", worn))
             armor.append({
                 "name": name,
                 "qty": quantity,
@@ -823,8 +872,21 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
             })
         else:
             invested = bool(item.get("invested"))
-            for selector, value in _item_skill_bonuses(system, active=invested).items():
+            # Not every worn magic item needs a daily investiture slot to
+            # work -- Belt of Good Health's own entry carries no `invested`
+            # trait at all, unlike Boots of Bounding, which does. Gating both
+            # alike on `invested` would silently drop the belt's +4 HP for
+            # any character who (correctly) never marks a non-investable
+            # item invested.
+            needs_investiture = "invested" in (
+                (system.get("traits") or {}).get("value") or []
+            )
+            active = invested if needs_investiture else True
+            for selector, value in _item_skill_bonuses(system, active=active).items():
                 skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
+            hp_item_bonus = max(hp_item_bonus, _item_flat_bonus(system, "hp", active))
+            speed_item_bonus = max(speed_item_bonus,
+                                    _item_flat_bonus(system, "land-speed", active))
             price_override = item.get("priceOverride")
             if price_override is not None:
                 # A dict row, not the bare Pathbuilder-shaped list -- the only
@@ -851,6 +913,12 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
         # to come from; `calculate_derived_stats` and the sheet's skill table
         # both add it in rather than repeat the lookup.
         "skillItemBonuses": skill_item_bonuses,
+        # Also not a Pathbuilder field -- see `_item_flat_bonus`. Belt of
+        # Good Health's flat +4 max HP and Boots of Bounding's flat +5 Speed
+        # are the same shape of gap `skillItemBonuses` closed for skills, for
+        # the two other totals a worn item commonly adjusts.
+        "hpItemBonus": hp_item_bonus,
+        "speedItemBonus": speed_item_bonus,
     }
 
 
@@ -1069,9 +1137,23 @@ def at_level(
         "attributes": {
             "ancestryhp": ancestry_hp,
             "classhp": progression.get("hp") or 8,
-            "bonushp": 0,
+            # Not itself a Pathbuilder field's usual source -- see
+            # `_item_flat_bonus` -- but `bonushp` is exactly the field
+            # `calculate_derived_stats`'s HP formula already reads, so a
+            # worn item's flat HP bonus (Belt of Good Health) belongs here
+            # rather than behind a new key nothing downstream consumes.
+            "bonushp": gear["hpItemBonus"],
             "bonushpPerLevel": hp_per_level,
-            "speed": ancestry_system.get("speed") or 25,
+            # Folded directly into `speed` rather than the sibling
+            # `speedBonus` field below: nothing in this project reads
+            # `speedBonus` at all (Pathbuilder computes it Pathbuilder-side,
+            # this project does not), so a worn item's flat Speed bonus
+            # (Boots of Bounding) would otherwise never reach the printed
+            # total. Feat-granted Speed (Fleet's own +5) is not folded in
+            # here -- that is a different, still-open gap; see #61's sibling
+            # for Hit Points, which this does not yet have an HP-style
+            # curated list to match.
+            "speed": (ancestry_system.get("speed") or 25) + gear["speedItemBonus"],
             "speedBonus": 0,
         },
         "proficiencies": proficiencies,
