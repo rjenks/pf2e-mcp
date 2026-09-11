@@ -1510,6 +1510,7 @@ def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
     training the character always has.
     """
     prof = character.get("proficiencies", {}) or {}
+    item_bonuses = character.get("skillItemBonuses") or {}
     assurance = _assurance_skills(character)
 
     def _assurance_value(name: str, rank: int) -> int | None:
@@ -1529,7 +1530,7 @@ def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
             "name": skill.title(),
             "key": _ABILITY_NAMES[key][1],
             "rank": rank,
-            "total": m.total_bonus(abilities[key], rank, level),
+            "total": m.total_bonus(abilities[key], rank, level) + item_bonuses.get(skill, 0),
         }
         assurance_val = _assurance_value(row["name"], rank)
         if assurance_val is not None:
@@ -4176,7 +4177,11 @@ def _page_notes(ctx: dict[str, Any]) -> str:
         Class DC on the key attribute
         ({_esc(ctx['character'].get('keyability', '')).upper()}).</li>
       <li><strong>Untrained skills</strong> are the ability modifier alone.
-        Level is added only at trained rank or better.</li>
+        Level is added only at trained rank or better. A skill&rsquo;s total
+        also includes any flat item bonus from gear this character has worn
+        or invested &mdash; Armbands of Athleticism&rsquo;s +2 to Athletics,
+        say &mdash; read from that item&rsquo;s own rules rather than
+        hand-added, for a native character document.</li>
       <li><strong>Shield</strong> Hardness, HP and Broken Threshold are the
         item&rsquo;s own values plus any etched rune. Bonuses from spells,
         feats and other effects are left out on purpose &mdash; a status bonus
@@ -4187,9 +4192,10 @@ def _page_notes(ctx: dict[str, Any]) -> str:
         choice: Dexterity for non-thrown ranged weapons, the better of Strength
         or Dexterity for finesse, Strength otherwise.</li>
     </ul>
-    <p>Not modelled: temporary bonuses, item bonuses beyond armor and weapon
-    potency runes, focus points, and anything a rules-glossary entry adds that
-    is not recorded in the character data.</p>
+    <p>Not modelled: temporary bonuses, an item bonus granted by anything
+    other than worn armor, a weapon&rsquo;s potency rune or a skill-boosting
+    piece of gear, focus points, and anything a rules-glossary entry adds
+    that is not recorded in the character data.</p>
   </div>
   {_foot(ctx['name'], "Sheet Notes")}
 </section>"""

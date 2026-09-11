@@ -1823,6 +1823,17 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
     a character wearing resilient armor had their printed saves understate
     what they actually have.
 
+    Skill totals likewise include `skillItemBonuses`, if the caller supplies
+    it -- a flat `{skill: value}` map of item bonuses from worn or invested
+    gear (Armbands of Athleticism's +2 to Athletics, say). This is not a
+    Pathbuilder field: a native character document's `character_replay`
+    computes it from each carried item's own rule elements, since the skill
+    total previously read only ability, proficiency and level, and a
+    player had to remember and add a worn item's bonus by hand every time --
+    exactly the number a calculated total exists to not require. Absent
+    entirely for a bare Pathbuilder export, which carries no item slugs to
+    look the bonus up from; pass it explicitly if you have it.
+
     HP's `attributes.ancestryhp`/`attributes.classhp` and AC's
     `proficiencies.unarmored` fall back to a lookup against this project's
     own ingested `ancestry_boosts`/`class_progression` data (via the
@@ -1884,8 +1895,10 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
         "nature": "wis", "occultism": "int", "performance": "cha", "religion": "wis",
         "society": "int", "stealth": "dex", "survival": "wis", "thievery": "dex",
     }
+    skill_item_bonuses = character.get("skillItemBonuses") or {}
     skills = {
         s: m.total_bonus(abilities[key_ability_by_skill[s]], prof.get(s, 0), level)
+        + skill_item_bonuses.get(s, 0)
         for s in skill_keys
     }
 

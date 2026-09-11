@@ -115,6 +115,53 @@ _RESILIENT = {
     "resilient-major": "major resilient",
 }
 
+#: The 16 core skills, as Foundry's own rule-element `selector` spells them --
+#: lowercase, no spaces. Used only to recognise a worn item's `FlatModifier`
+#: rule as a skill bonus rather than one of the many other things a selector
+#: can name (a save, a weapon category, a resistance).
+_SKILL_SELECTORS = frozenset({
+    "acrobatics", "arcana", "athletics", "crafting", "deception", "diplomacy",
+    "intimidation", "medicine", "nature", "occultism", "performance",
+    "religion", "society", "stealth", "survival", "thievery",
+})
+
+
+def _item_skill_bonuses(system: dict[str, Any], active: bool) -> dict[str, int]:
+    """Flat item bonuses to skills a piece of gear's own rule elements grant.
+
+    Armbands of Athleticism's entry carries
+    `{"key": "FlatModifier", "selector": "athletics", "type": "item", "value": 2}`
+    in `system.rules` -- the same rule-element shape Foundry uses for every
+    item that grants this kind of bonus, not something special-cased per
+    item. `calculate_derived_stats` and the sheet's skill table previously
+    read only ability, proficiency and level, so a worn item's skill bonus
+    never appeared in the printed total at all -- a real player had to
+    remember to add it by hand every time, which is exactly the number a
+    printed sheet exists to not require.
+
+    `active` gates whether the item is presently doing anything: worn armor
+    always is, and everything else in the catch-all equipment bucket only
+    is while `invested`. An item lacking either flag still prices and
+    displays normally; it just contributes no bonus.
+    """
+    if not active:
+        return {}
+    out: dict[str, int] = {}
+    for rule in system.get("rules") or []:
+        if rule.get("key") != "FlatModifier" or rule.get("type") != "item":
+            continue
+        selector = str(rule.get("selector") or "").lower()
+        if selector not in _SKILL_SELECTORS:
+            continue
+        try:
+            value = int(rule.get("value") or 0)
+        except (TypeError, ValueError):
+            continue
+        # Item bonuses don't stack; two such items on one skill keep the
+        # higher, not the sum.
+        out[selector] = max(out.get(selector, 0), value)
+    return out
+
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
 _SIZES = {
     "tiny": (1, "Tiny"),
@@ -690,6 +737,7 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
     weapons: list[dict[str, Any]] = []
     armor: list[dict[str, Any]] = []
     equipment: list[list[Any]] = []
+    skill_item_bonuses: dict[str, int] = {}
 
     for item in gear.get("carried") or []:
         slug = item.get("item")
@@ -701,6 +749,7 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
         name = entry["name"] if entry else _name_of(conn, slug)
         quantity = item.get("quantity", 1)
         runes = list(item.get("runes") or [])
+        system = json.loads(entry["raw_json"])["system"] if entry else {}
         kind = _one(
             conn,
             "SELECT type FROM entries WHERE slug = ? AND pack = 'equipment'",
@@ -709,7 +758,6 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
         item_type = (kind or {}).get("type")
 
         if item_type == "weapon":
-            system = json.loads(entry["raw_json"])["system"] if entry else {}
             weapons.append({
                 "name": name,
                 "qty": quantity,
@@ -739,7 +787,9 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "runesFrom": item.get("runesFrom") or None,
             })
         elif item_type == "armor":
-            system = json.loads(entry["raw_json"])["system"] if entry else {}
+            worn = bool(item.get("worn"))
+            for selector, value in _item_skill_bonuses(system, active=worn).items():
+                skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
             armor.append({
                 "name": name,
                 "qty": quantity,
@@ -748,7 +798,7 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "res": next((_RESILIENT[r] for r in runes if r in _RESILIENT), ""),
                 "mat": None,
                 "display": name,
-                "worn": bool(item.get("worn")),
+                "worn": worn,
                 "runes": [
                     r for r in runes if r not in _POTENCY and r not in _RESILIENT
                 ],
@@ -756,8 +806,11 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
                 "runesFrom": item.get("runesFrom") or None,
             })
         else:
+            invested = bool(item.get("invested"))
+            for selector, value in _item_skill_bonuses(system, active=invested).items():
+                skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
             row: list[Any] = [name, quantity]
-            if item.get("invested"):
+            if invested:
                 row.append("Invested")
             equipment.append(row)
 
@@ -767,6 +820,12 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
         "armor": armor,
         "equipment": equipment,
         "money": {coin: currency.get(coin, 0) for coin in ("cp", "sp", "gp", "pp")},
+        # Not a Pathbuilder field -- see `_item_skill_bonuses`. Pathbuilder
+        # itself folds a worn item's skill bonus into the total it prints and
+        # exports no separate line for it, so there is nowhere else for this
+        # to come from; `calculate_derived_stats` and the sheet's skill table
+        # both add it in rather than repeat the lookup.
+        "skillItemBonuses": skill_item_bonuses,
     }
 
 
@@ -1003,6 +1062,7 @@ def at_level(
         "weapons": gear["weapons"],
         "money": gear["money"],
         "armor": gear["armor"],
+        "skillItemBonuses": gear["skillItemBonuses"],
         "spellCasters": casters,
         "focusPoints": focus_points,
         "focus": focus,
