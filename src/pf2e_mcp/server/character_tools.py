@@ -91,8 +91,9 @@ def validate_character(character: dict[str, Any]) -> dict[str, Any]:
     The **semantic** layer checks what a schema cannot express -- plan levels
     in ascending order and not repeated, the current level actually covered by
     the plan, attribute boosts from a single source not doubling up on one
-    attribute, every slug resolving to a real rules entry, and an Organized
-    Play record that agrees with the build it now sits beside.
+    attribute, every slug resolving to a real rules entry, an Organized
+    Play record that agrees with the build it now sits beside, and a gold
+    journal (`ledger`) that sums to the currency actually on hand.
 
     Structural failure stops the run. Telling someone a feat does not exist is
     noise when the real problem is that `plan` is a string.

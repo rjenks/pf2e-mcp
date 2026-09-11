@@ -224,6 +224,14 @@
         }
       }
     },
+    "ledger": {
+      "description": "The gold journal: starting funds and every buy, sell, treasure, gift or other change in currency since, in the order they happened. `gear.currency` -- what the character currently has -- is what this whole list sums to; validation checks the two agree rather than letting `currency` be hand-edited out of step with the history that is supposed to explain it. Not level-gated the way `plan` is, but a rendered sheet for an earlier level shows only the entries up to that level, the same as replaying the plan would.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ledgerEntry"
+      },
+      "default": []
+    },
     "spellcasting": {
       "description": "Spells the character has access to right now. Like gear this is current state rather than a per-level plan: a prepared caster's list changes daily and a spontaneous caster's repertoire is swapped on level-up, so recording either against a level would be recording a snapshot as though it were a decision.",
       "type": "object",
@@ -869,6 +877,60 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "ledgerEntry": {
+      "title": "One movement of money",
+      "description": "A home-campaign equivalent of a PFS chronicle's gold journal (see `pfs_chronicle_schema`), flattened for a game with no session-by-session XP/Reputation chain to validate against: one line per event that changed how much gold the character has, in the order they happened. `gp` is signed -- positive for anything gained (the starting purse, treasure, a gift, a sale), negative for anything spent (a purchase) -- so one shape covers every kind of movement rather than splitting gained/spent the way a chronicle does. The running total this produces is checked against `gear.currency`; a mismatch is reported, which is the entire reason to keep this ledger rather than only ever editing the currency total by hand.",
+      "type": "object",
+      "required": [
+        "level",
+        "kind",
+        "gp",
+        "note"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "The character's level when this happened. Entries should be in non-decreasing level order, the same convention `plan` uses -- several entries can share a level (a single re-equip is usually many lines at once).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "kind": {
+          "description": "'starting' is the character's initial purse and should appear exactly once, first. 'purchase' and 'sale' are for gear -- buying and selling something, including a full-credit return before anything has been played. 'treasure' is an adventure award; 'gift' is anything handed over rather than found or bought (an NPC's payment, a party split); 'income' covers everything else that adds or removes gold without being one of the above (Earn Income, a fine, a tax).",
+          "type": "string",
+          "enum": [
+            "starting",
+            "purchase",
+            "sale",
+            "treasure",
+            "gift",
+            "income"
+          ]
+        },
+        "gp": {
+          "description": "Signed change in gold pieces. Positive for a gain (starting, treasure, gift, sale, income), negative for a purchase. Fractional gold is normal -- 1 sp is 0.1 -- and arithmetic against `gear.currency` is done in integer copper so this never drifts.",
+          "type": "number"
+        },
+        "item": {
+          "description": "Equipment slug, when this entry concerns a specific item (a purchase or a sale). Omit for a flat gold movement with nothing to name -- a coin purse found in a chest, an NPC's payment.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quantity": {
+          "description": "How many of `item`, when more than one changed hands in this one line.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "note": {
+          "description": "What happened and why -- the whole point of keeping this rather than only ever editing `gear.currency` by hand. 'Sold the 11th-level kit back for full credit ahead of the 13th-level re-equip', not just 'sale'.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

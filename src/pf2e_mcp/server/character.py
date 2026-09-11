@@ -489,6 +489,11 @@ def _resolve_slugs(
             check(rune, f"/gear/carried/{index}/ownRunes/{o_index}",
                   ("equipment",), level="warning")
 
+    for l_index, entry in enumerate(document.get("ledger") or []):
+        item = entry.get("item")
+        if item:
+            check(item, f"/ledger/{l_index}/item", ("equipment",), level="warning")
+
     spellcasting = document.get("spellcasting") or {}
     for e_index, entry in enumerate(spellcasting.get("entries") or []):
         for rank, spells in (entry.get("spells") or {}).items():
@@ -617,6 +622,62 @@ def _check_organized_play(document: dict[str, Any]) -> list[dict[str, Any]]:
     return issues
 
 
+def _check_ledger(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cross-check the gold journal against the purse it is supposed to explain.
+
+    The same shape as `_check_organized_play`'s currency check, generalised for
+    a character with no PFS chronicle chain: `ledger` is the authority on
+    money, and `gear.currency` is a convenience copy of what it sums to. The
+    two silently drifting apart -- a hand-edited purse that no longer matches
+    its own history -- is the one way this can be wrong, and precisely the
+    failure mode keeping a ledger at all exists to catch.
+    """
+    issues: list[dict[str, Any]] = []
+    ledger = document.get("ledger") or []
+    if not ledger:
+        return issues
+
+    levels = [e.get("level") for e in ledger if isinstance(e.get("level"), int)]
+    if levels != sorted(levels):
+        issues.append(_issue(
+            "warning", "ledger_order", "/ledger",
+            "Ledger entries are not in non-decreasing level order.",
+        ))
+
+    kinds = [e.get("kind") for e in ledger]
+    if kinds.count("starting") > 1:
+        issues.append(_issue(
+            "warning", "duplicate_starting_entry", "/ledger",
+            "More than one ledger entry is kind 'starting' -- a character has "
+            "exactly one starting purse.",
+        ))
+    if kinds and kinds[0] != "starting":
+        issues.append(_issue(
+            "warning", "ledger_missing_start", "/ledger/0",
+            "The ledger's first entry is not kind 'starting'. Without it the "
+            "running balance has no anchor to count up from.",
+        ))
+
+    ledger_cp = sum(chronicle.to_cp(e.get("gp")) for e in ledger)
+    coins = (document.get("gear") or {}).get("currency")
+    if coins is not None:
+        purse_cp = (
+            chronicle.to_cp(coins.get("pp", 0) * 10)
+            + chronicle.to_cp(coins.get("gp", 0))
+            + round(coins.get("sp", 0) * 10)
+            + coins.get("cp", 0)
+        )
+        if purse_cp != ledger_cp:
+            issues.append(_issue(
+                "warning", "currency_disagrees_with_ledger", "/gear/currency",
+                f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
+                f"but the ledger sums to {chronicle.format_currency(ledger_cp)}. "
+                f"The ledger is the authority; update the purse to match it, or "
+                f"add the missing entry that explains the difference.",
+            ))
+    return issues
+
+
 def validate_document(
     document: Any, conn: sqlite3.Connection | None = None
 ) -> dict[str, Any]:
@@ -642,6 +703,7 @@ def validate_document(
         issues += _check_overrides(plain)
         issues += _check_dependencies(plain)
         issues += _check_organized_play(plain)
+        issues += _check_ledger(plain)
         if conn is not None:
             issues += _resolve_slugs(plain, conn)
             issues += _check_languages(plain, conn)

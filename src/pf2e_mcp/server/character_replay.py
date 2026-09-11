@@ -1218,6 +1218,14 @@ def at_level(
         "money": gear["money"],
         "armor": gear["armor"],
         "skillItemBonuses": gear["skillItemBonuses"],
+        # Also not a Pathbuilder field. Filtered to what had already happened
+        # by `level` -- the same "a sheet for an earlier level shows less"
+        # rule `plan` itself follows -- rather than always showing the whole
+        # history regardless of which level is being viewed.
+        "ledger": [
+            e for e in (document.get("ledger") or [])
+            if (e.get("level") or 1) <= level
+        ],
         "spellCasters": casters,
         "focusPoints": focus_points,
         "focus": focus,

@@ -3976,6 +3976,18 @@ def _price_text(cp: int) -> str:
     return " ".join(parts) or "—"
 
 
+def _signed_price_text(cp: int, plus: bool = False) -> str:
+    """`_price_text`, but for a value that can legitimately be negative --
+    the gold journal's own amounts and running balance, where `_price_text`'s
+    own `max(cp, 0)` would silently floor a real negative number to zero
+    rather than show the error it represents. `plus` prints a leading '+' on
+    a non-negative value too, for a column of amounts where the sign is the
+    point; the running balance itself never wants one."""
+    if cp < 0:
+        return f"-{_price_text(-cp)}"
+    return ("+" if plus else "") + _price_text(cp)
+
+
 def _weapon_rune_slugs(weapon: dict[str, Any]) -> list[str]:
     """Every rune etched on a weapon, as slugs, fundamentals included.
 
@@ -4157,6 +4169,65 @@ def _page_inventory(ctx: dict[str, Any]) -> str:
   </table>
   {_wealth(ctx['character'].get('money'))}
   {_foot(ctx['name'], "Inventory")}
+</section>"""
+
+
+#: How a ledger entry's `kind` prints as a heading word. Anything not listed
+#: (there shouldn't be any, since the schema enumerates `kind`) falls back to
+#: a title-cased version of the raw value rather than disappearing.
+_LEDGER_KIND_LABELS = {
+    "starting": "Starting purse",
+    "purchase": "Purchase",
+    "sale": "Sale",
+    "treasure": "Treasure",
+    "gift": "Gift",
+    "income": "Income",
+}
+
+
+def _page_ledger(ctx: dict[str, Any]) -> str:
+    """The gold journal: starting funds and every buy, sell, treasure or gift
+    since, with a running balance -- the history `gear.currency` is always
+    only a snapshot of. Absent entirely for a character with no ledger
+    recorded, the same as every other section with nothing to show."""
+    ledger = ctx["ledger"]
+    if not ledger:
+        return ""
+    lib = ctx["lib"]
+    rows, balance_cp = "", 0
+    for entry in ledger:
+        delta_cp = round(float(entry.get("gp") or 0) * 100)
+        balance_cp += delta_cp
+        label = _LEDGER_KIND_LABELS.get(
+            str(entry.get("kind") or ""), str(entry.get("kind") or "").title() or "—")
+
+        item_html = ""
+        slug = entry.get("item")
+        if slug:
+            found = lib.by_slug(str(slug), "equipment")
+            name = found["name"] if found else str(slug).replace("-", " ")
+            qty = entry.get("quantity") or 1
+            item_html = (f"{qty}&times; {_esc(name)}" if qty > 1 else _esc(name))
+
+        rows += (
+            f'<tr><td class="r">{_esc(entry.get("level"))}</td>'
+            f'<td>{_esc(label)}</td>'
+            f'<td>{item_html}</td>'
+            f'<td class="r">{_signed_price_text(delta_cp, plus=True)}</td>'
+            f'<td class="r">{_signed_price_text(balance_cp)}</td>'
+            f'<td class="dsc last">{_esc(entry.get("note") or "")}</td></tr>'
+        )
+
+    return f"""
+<section class="page" data-sec="ledger">
+  {_section("Gold Journal", "Starting funds, and every purchase,<br>"
+                            "sale, treasure and gift since")}
+  <table class="grid">
+    <tr><th>Lvl</th><th>Event</th><th>Item</th><th class="r">Amount</th>
+      <th class="r">Balance</th><th class="last">Note</th></tr>
+    {rows}
+  </table>
+  {_foot(ctx['name'], "Gold Journal")}
 </section>"""
 
 
@@ -4586,6 +4657,7 @@ def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, 
             if character.get("keyability") else ""
         ),
         "ancestry_stats": ancestry_stats,
+        "ledger": character.get("ledger") or [],
     }
 
 
@@ -4597,6 +4669,7 @@ def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, 
 # the file open on a phone, may not want on paper.
 _OPTIONAL_SECTIONS = [
     ("advancement", "Advancement"),
+    ("ledger", "Gold journal"),
     ("skill-actions", "Skill actions"),
     ("spells", "Spells"),
     ("features", "Features"),
@@ -4850,7 +4923,7 @@ def render_character_sheet(
         # text, is what makes that possible: as one section each, the tables
         # were stranded on top of a dozen pages nobody re-reads.
         pages = (_page_core(ctx) + _page_advancement(ctx)
-                 + _page_spell_slots(ctx) + _page_inventory(ctx)
+                 + _page_spell_slots(ctx) + _page_inventory(ctx) + _page_ledger(ctx)
                  + _page_skill_actions(ctx) + _page_spells(ctx)
                  + _page_features(ctx) + _page_equipment(ctx) + _page_notes(ctx))
         if extra_pages:
@@ -4868,6 +4941,8 @@ def render_character_sheet(
         if ctx["spellcasting"]:
             sections.append("spellcasting")
         sections.append("inventory")
+        if ctx["ledger"]:
+            sections.append("ledger")
         if ctx["skill_actions"]:
             sections.append("skill-actions")
         if ctx["spellcasting"]:
