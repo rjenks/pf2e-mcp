@@ -747,6 +747,31 @@ def _background_feats(
     return out
 
 
+def _heritage_feats(conn: sqlite3.Connection, heritage_slug: str) -> list[list[Any]]:
+    """A feat granted directly by a heritage (e.g. Battle-Ready Orc -> Intimidating
+    Glare), as a legacy tuple in the same shape `_background_feats` produces.
+
+    Sourced from `item_grants`, a generic granter/grant table distinct from
+    `background_boosts.granted_items` (backgrounds only) -- discovered while
+    reconciling a replayed build against its Pathbuilder export, where the
+    heritage's own grant showed up on the Pathbuilder side but not here.
+
+    Limited to unconditional grants (empty `predicate`): a few heritages grant
+    a *choice* of item instead of a fixed one (a non-empty predicate selecting
+    among options), and this project has no ingested representation of that
+    choice yet -- skipped rather than guessed at.
+    """
+    heritage = _entry(conn, heritage_slug, "heritages")
+    if not heritage:
+        return []
+    rows = conn.execute(
+        "SELECT e.name FROM item_grants ig JOIN entries e ON e.id = ig.granted_id "
+        "WHERE ig.granter_id = ? AND (ig.predicate IS NULL OR ig.predicate = '')",
+        (heritage["id"],),
+    ).fetchall()
+    return [[row["name"], None, "Awarded Feat", 1, "Heritage Feat"] for row in rows]
+
+
 def _replay_feats(
     conn: sqlite3.Connection, document: dict, plan: list[dict], level: int
 ) -> tuple[list[list[Any]], list[str]]:
@@ -767,6 +792,7 @@ def _replay_feats(
         name = _name_of(conn, heritage, "heritages")
         feats.append([name, None, "Heritage", 1, "Heritage Feat"])
         specials.append(name)
+        feats.extend(_heritage_feats(conn, heritage))
 
     feats.extend(_background_feats(conn, build.get("background") or ""))
 

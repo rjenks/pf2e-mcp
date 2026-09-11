@@ -107,6 +107,45 @@ def test_a_background_that_grants_nothing_adds_nothing(conn):
     assert not [f for f in feats if f[4] == "Background Feat"], feats
 
 
+# --------------------------------------------- heritage-granted feats (#97)
+
+def test_a_heritages_granted_feat_is_replayed(conn):
+    """A heritage can grant a feat directly (Battle-Ready Orc -> Intimidating
+    Glare), sourced from the generic `item_grants` table rather than
+    `background_boosts.granted_items` -- nothing read it for heritages, so a
+    replayed character was a real feat short of the same character exported
+    from Pathbuilder."""
+    from pf2e_mcp.server import character_replay
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Granted", "currentLevel": 1},
+        "build": {"ancestry": "orc", "background": "acolyte", "class": "ranger",
+                  "heritage": "battle-ready-orc"},
+        "plan": [{"level": 1}],
+    }
+    feats = character_replay.at_level(document, 1, conn)["feats"]
+    assert ["Intimidating Glare", None, "Awarded Feat", 1,
+            "Heritage Feat"] in feats, feats
+
+
+def test_the_heritages_granted_feat_does_not_spend_a_slot(conn):
+    from pf2e_mcp.server import build_tools
+    assert build_tools._feat_slot_bucket("Heritage Feat", False) is None
+
+
+def test_a_heritage_that_grants_nothing_adds_nothing(conn):
+    from pf2e_mcp.server import character_replay
+    document = {
+        "schemaVersion": 1,
+        "identity": {"name": "Bare", "currentLevel": 1},
+        "build": {"ancestry": "human", "background": "acolyte",
+                  "class": "ranger", "heritage": "versatile-human"},
+        "plan": [{"level": 1}],
+    }
+    feats = character_replay.at_level(document, 1, conn)["feats"]
+    assert not [f for f in feats if f[2] == "Awarded Feat" and f[4] == "Heritage Feat"], feats
+
+
 # ------------------------------------------- key attribute choice (#67)
 
 def _ranger(key_attribute=None):
