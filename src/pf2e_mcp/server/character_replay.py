@@ -75,6 +75,7 @@ from typing import Any
 
 from . import class_skills
 from . import character as ch
+from . import pf2e_math as m
 
 #: The sixteen skills, which is a fixed list in the Remaster.
 SKILLS = (
@@ -299,10 +300,6 @@ _SKILL_CATEGORIES = {
 def _rank_to_project(rank: int | None) -> int:
     """Foundry's 0-4 into this project's 0/2/4/6/8 convention."""
     return 0 if rank is None else rank * 2
-
-
-def _ability_mod(score: int) -> int:
-    return (score - 10) // 2
 
 
 def _apply_boost(score: int) -> int:
@@ -638,12 +635,12 @@ def int_gain_levels(plan: list[dict], through: int = 20) -> list[int]:
             for attribute in values or []:
                 if attribute != "int":
                     continue
-                before = _ability_mod(score)
+                before = m.ability_mod(score)
                 score = score - 2 if kind == "flaw" else _apply_boost(score)
                 # Creation-time boosts all land at 1st level and buy the
                 # starting modifier rather than a mid-career grant; only a
                 # levelled increase earns the extra skill and language.
-                if entry_level > 1 and _ability_mod(score) > before:
+                if entry_level > 1 and m.ability_mod(score) > before:
                     levels.append(entry_level)
     return levels
 
@@ -1143,7 +1140,17 @@ def at_level(
 
     redundant: list[str] = []
     for name, override in (document.get("proficiencyOverrides") or {}).items():
-        value = ch.RANK_VALUES.get((override or {}).get("rank"), 0)
+        override = override or {}
+        override_level = override.get("level")
+        if override_level is not None and override_level > level:
+            # Not granted yet at the level being replayed -- same as a feat
+            # from a later level not showing up in `feat_slugs` above. An
+            # override with no recorded level applies from 1st onward, same
+            # as it always has, since most overrides (e.g. a Pathbuilder
+            # import that cannot say which level granted the rank) don't
+            # know any better.
+            continue
+        value = ch.RANK_VALUES.get(override.get("rank"), 0)
         if proficiencies.get(name, 0) >= value:
             redundant.append(name)
         else:

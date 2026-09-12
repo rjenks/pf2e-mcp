@@ -719,6 +719,15 @@
             "string",
             "null"
           ]
+        },
+        "level": {
+          "description": "The level `source` actually granted this rank, if known. Omit when it isn't known (an import recovering an override from an export that doesn't say, for instance) -- an override with no level applies starting 1st, same as before this field existed, so leaving it out is not a regression. When present, replaying the character at an earlier level does not apply this override yet, the same way a feat taken at that level would not appear yet either.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 20
         }
       }
     },

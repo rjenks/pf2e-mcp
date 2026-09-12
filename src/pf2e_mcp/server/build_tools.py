@@ -537,17 +537,6 @@ def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
     return {"options": options}
 
 
-_FEAT_PARAMETER = re.compile(r"^(?P<base>.+?)\s*\([^)]*\)\s*$")
-
-
-def _strip_feat_parameter(name: str) -> str | None:
-    """The feat name without the choice recorded inside it, or None when there
-    is no trailing parenthetical to strip. Callers must try the full name
-    first -- see `pf2e_math.has_feat` for why."""
-    match = _FEAT_PARAMETER.match(str(name or "").strip())
-    return match.group("base").strip() if match else None
-
-
 # Categories that ride in a character's feat list without being feats. Skill
 # Increases and feat-granted Skill Trainings are mechanical gains recorded
 # there so the sheet can place them on the right level; a Heritage is recorded
@@ -562,6 +551,32 @@ def _is_skill_row(feat: Any) -> bool:
     if not (isinstance(feat, (list, tuple)) and len(feat) > 2):
         return False
     return str(feat[2] or "").strip().lower() in _NON_FEAT_ROW_CATEGORIES
+
+
+_KNOWN_VARIANT_RULES = ("free-archetype", "ancestry-paragon")
+
+
+def _normalize_variant_rule(value: str) -> str:
+    """Fold a variant-rule spelling to the kebab-case form `_KNOWN_VARIANT_RULES`
+    is written in.
+
+    Two legitimate sources feed the `variant_rules` parameter with two
+    different conventions: the native character schema's `build.variantRules`
+    (camelCase -- `'freeArchetype'`, `'ancestryParagon'`; the character-builder
+    skill instructs passing that value straight through) and the rules
+    database's own slugs, what `rules_list_variant_rules` returns (kebab-case
+    -- `'free-archetype'`, `'ancestry-paragon'`). Comparing the raw string
+    against only one of those silently no-ops for callers using the other, so
+    every membership check against `_KNOWN_VARIANT_RULES` normalizes first.
+    """
+    kebab = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", value)
+    return kebab.replace("_", "-").lower()
+
+
+def _variant_rule_set(variant_rules: list[str]) -> frozenset[str]:
+    """`variant_rules`, normalized for membership checks against
+    `_KNOWN_VARIANT_RULES` -- see `_normalize_variant_rule`."""
+    return frozenset(_normalize_variant_rule(v) for v in variant_rules)
 
 
 def validate_build(
@@ -653,7 +668,7 @@ def validate_build(
     missing their 5th-level ancestry feat, both of which had been validating
     clean for months."""
     character = _native.as_legacy(character)
-    variant_rules = variant_rules or []
+    variant_rules = _variant_rule_set(variant_rules or [])
     errors: list[str] = []
     warnings: list[str] = []
     derived = _build_derived(character)
@@ -713,7 +728,7 @@ def validate_build(
                 # "Advanced Maneuver (Combat Grab)". Retry on the base name, but
                 # only after the whole string has failed, since a parenthetical
                 # is sometimes the printed name ("Tusks (Orc)").
-                base = _strip_feat_parameter(name)
+                base = m.strip_trailing_parenthetical(name)
                 if base:
                     entry = conn.execute(
                         "SELECT id, category, rarity, traits FROM entries "
@@ -852,7 +867,7 @@ def _feat_slot_bucket(category: str, free_archetype: bool) -> str | None:
 
 
 def _validate_feat_slots(character: dict[str, Any],
-                         variant_rules: list[str]) -> list[str]:
+                         variant_rules: frozenset[str]) -> list[str]:
     """Scheduled feat slots at or below the character's level with no feat
     recorded in them.
 
@@ -868,6 +883,10 @@ def _validate_feat_slots(character: dict[str, Any],
 
     Ancestry is skipped under Ancestry Paragon, whose schedule this doesn't
     model -- the existing budget check above covers over-spending there.
+
+    `variant_rules` must already be normalized (see `_variant_rule_set`) --
+    this is only ever called from `validate_build`, which normalizes once at
+    entry rather than every callee normalizing the same list again.
     """
     level = int(character.get("level") or 1)
     slug = _real_slug("classes", character.get("class", ""))
@@ -2147,9 +2166,6 @@ def list_available_spells(
     }
 
 
-_KNOWN_VARIANT_RULES = ("free-archetype", "ancestry-paragon")
-
-
 def get_level_up_choices(
     character: dict[str, Any],
     target_level: int,
@@ -2163,9 +2179,14 @@ def get_level_up_choices(
 
     `variant_rules` is a list of slugs for optional/variant rules this
     build is using -- see rules_list_variant_rules for the full catalog and
-    rules_get_entry for each one's official text. Only two currently change
-    what this function reports (the rest are recognized as valid slugs but
-    don't affect the computed unlocks yet):
+    rules_get_entry for each one's official text. Accepts either the rules
+    database's own kebab-case slugs ('free-archetype', 'ancestry-paragon')
+    or the native character schema's camelCase `build.variantRules` spelling
+    ('freeArchetype', 'ancestryParagon') -- the character-builder skill
+    instructs passing that field straight through, so both have to work; see
+    `_normalize_variant_rule`. Only two currently change what this function
+    reports (the rest are recognized as valid slugs but don't affect the
+    computed unlocks yet):
 
     - `'ancestry-paragon'` (GM Core p.194): 2 ancestry feats at level 1
       instead of 1, then one more at every odd level (3, 5, 7, 9, ...)
@@ -2178,7 +2199,8 @@ def get_level_up_choices(
       allows this level.
     """
     character = _native.as_legacy(character)
-    variant_rules = variant_rules or []
+    raw_variant_rules = variant_rules or []
+    variant_rules = _variant_rule_set(raw_variant_rules)
     row = _fetchall(
         "SELECT class_feat_levels, ancestry_feat_levels, general_feat_levels, "
         "skill_feat_levels, skill_increase_levels, granted_items "
@@ -2191,7 +2213,7 @@ def get_level_up_choices(
     granted = json.loads(c["granted_items"])
 
     notes = []
-    unrecognized = [v for v in variant_rules if v not in _KNOWN_VARIANT_RULES]
+    unrecognized = [v for v in raw_variant_rules if _normalize_variant_rule(v) not in _KNOWN_VARIANT_RULES]
     if unrecognized:
         notes.append(
             f"Unrecognized variant_rules slug(s) {unrecognized!r} -- no effect on this "

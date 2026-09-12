@@ -165,27 +165,42 @@ _FIXED_RUNE_RE = re.compile(
     re.IGNORECASE)
 
 
-def _resolve_rune_name(lib: "_Library", text: str) -> str:
+def _resolve_rune_entry(lib: "_Library", text: str, pack: str = "equipment",
+                         quiet: bool = False) -> dict[str, Any] | None:
     """A property rune as recorded on a character -- a slug ('crushing-greater')
-    or already a display name ('Returning', 'greater striking') -- resolved to
-    its real rules-database name for printing.
+    or already a display name ('Returning', 'Reinforcing Rune (Major)') --
+    resolved to its full rules-database entry.
 
-    The Inventory table already resolves every rune slug through `lib.by_slug`
-    (see `_inventory`'s `add`); the Strikes table and the page-1 armor block
-    did not, so a graded or multi-word property rune -- anything whose slug
-    isn't just its lowercased name with spaces swapped for dashes -- printed
-    as a raw slug ('crushing-greater') rather than its name ('Crushing
-    (Greater)'). A single-word rune like Fearsome or Returning happens to
-    slugify to itself, which is why this went unnoticed until a build carried
-    one that doesn't.
+    Tries the slug form first: about half of runes' slugs do not resemble
+    their display name at all (`striking-greater` is "Striking (Greater)"),
+    so a name-based lookup alone never finds them. Falls back to `lib.get`'s
+    name-based matching for a rune already recorded as a display name rather
+    than a slug -- `quiet` controls whether a genuine miss on *that* fallback
+    reaches `lib.unresolved` (the slug attempt never reports either way, per
+    `by_slug`'s own contract: a slug either names an entry or it does not).
 
-    Falls back to the text unchanged when nothing resolves -- 'greater
-    striking' (the display form `_graded_striking` already produces, not a
-    real slug) is exactly that case, and must stay readable rather than
-    disappear.
+    The one resolver every rune-bearing part of the sheet shares -- the
+    Strikes table, the page-1 armor block, the Inventory table and a shield's
+    reinforcing rune all need "find this rune" and previously each grew its
+    own version. The shield block's own copy tried name-matching only, which
+    cannot resolve a slug at all -- a shield's reinforcing rune recorded as a
+    slug silently lost its bonus rather than mis-displaying it.
     """
-    candidate = lib.by_slug(text.strip().lower().replace(" ", "-"), "equipment")
-    return candidate["name"] if candidate else text
+    if not text:
+        return None
+    return (lib.by_slug(text.strip().lower().replace(" ", "-"), pack)
+            or lib.get(text, "item", quiet=quiet))
+
+
+def _resolve_rune_name(lib: "_Library", text: str) -> str:
+    """`_resolve_rune_entry`'s name, or `text` unchanged when nothing
+    resolves -- 'greater striking' (the display form `_graded_striking`
+    already produces, not a real slug or a real entry name) is exactly that
+    case, and must stay readable rather than disappear, silently: this is
+    not a data problem worth reporting the way an unresolved feat or item
+    would be."""
+    entry = _resolve_rune_entry(lib, text, quiet=True)
+    return entry["name"] if entry else text
 
 
 def _rune_labels(fixed: list[str], other_runes: list[str]) -> list[str]:
@@ -1298,7 +1313,7 @@ def _shield_stats(character: dict[str, Any], lib: _Library) -> dict[str, Any] | 
         # strongest wins rather than stacking.
         best, best_rune = None, None
         for rune_name in rune_names:
-            rune = lib.get(rune_name, "item")
+            rune = _resolve_rune_entry(lib, rune_name)
             bonus = _reinforcing_bonus(rune) if rune else None
             if bonus and (best is None or bonus["hardness"] > best["hardness"]):
                 best, best_rune = bonus, rune["name"]
@@ -4087,7 +4102,7 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         price_cp, labels = base_cp, []
         source = lib.by_slug(runes_from, "equipment") if runes_from else None
         for slug in runes or []:
-            rune = lib.by_slug(slug, "equipment")
+            rune = _resolve_rune_entry(lib, slug, quiet=True)
             label = rune["name"] if rune else slug.replace("-", " ")
             # Runes copied by doubling rings apply but were never bought, so
             # they are named without being charged for -- the price of the

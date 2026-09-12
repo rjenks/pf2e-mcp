@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import sqlite3
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -16,6 +17,52 @@ from pf2e_mcp.server import character, chronicle
 
 def test_schema_is_itself_valid():
     Draft202012Validator.check_schema(character.load_schema())
+
+
+def test_check_structure_reads_each_schema_file_once_per_process(monkeypatch):
+    """`load_schema`/`chronicle.load_schema` used to re-read and re-parse
+    their file on every call, and `check_structure` rebuilt a fresh
+    `Registry`/`Draft202012Validator` from scratch on top of that on every
+    call too. All of it is cached now: calling `check_structure` (which needs
+    both the character schema and, via its cross-file `$ref`, the chronicle
+    schema) three times must still only read each file once, not six times.
+
+    Every relevant cache is cleared first so this does not depend on whether
+    some earlier test in the same process happened to warm them already, and
+    cleared again after so it does not leave a monkeypatched `read_text`
+    baked into a cache later tests rely on.
+    """
+    for cache in (character._cached_schema, character._registry,
+                  character._character_validator, character._chronicle_validator,
+                  chronicle._cached_schema):
+        cache.cache_clear()
+    calls: list[str] = []
+    real_read_text = character.SCHEMA_PATH.__class__.read_text
+
+    def counting_read_text(self, *args, **kwargs):
+        calls.append(self.name)
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(character.SCHEMA_PATH.__class__, "read_text", counting_read_text)
+    try:
+        for _ in range(3):
+            character.check_structure({"schemaVersion": 1})
+    finally:
+        for cache in (character._cached_schema, character._registry,
+                      character._character_validator, character._chronicle_validator,
+                      chronicle._cached_schema):
+            cache.cache_clear()
+    assert sorted(calls) == sorted([character.SCHEMA_PATH.name, chronicle.SCHEMA_PATH.name])
+
+
+def test_load_schema_returns_an_independent_copy_each_time():
+    """A caller mutating its own copy (or `check_structure`'s internal
+    `to_plain` pass touching it) must never corrupt what the next caller, or
+    the cached validator built from the original, sees."""
+    first = character.load_schema()
+    first["title"] = "corrupted"
+    second = character.load_schema()
+    assert second.get("title") != "corrupted"
 
 
 def test_every_field_is_documented():
@@ -293,6 +340,51 @@ def test_right_slug_wrong_pack_says_so(minimal, conn):
     result = character.validate_document(minimal, conn)
     message = next(i["message"] for i in result["issues"] if i["code"] == "unknown_slug")
     assert "exists, but not" in message
+
+
+class _CountingConn:
+    """Forwards everything to a real connection except counting how many
+    times a chosen query shape runs -- `sqlite3.Connection` is a C type that
+    refuses attribute assignment, at the instance or the class level, so this
+    is the wrapper `monkeypatch.setattr` can't be here instead."""
+
+    def __init__(self, real: sqlite3.Connection, prefix: str, calls: dict[str, int]):
+        self._real = real
+        self._prefix = prefix
+        self._calls = calls
+
+    def execute(self, sql, *args, **kwargs):
+        if sql.strip().upper().startswith(self._prefix):
+            self._calls["n"] += 1
+        return self._real.execute(sql, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def test_slug_resolution_batches_into_one_query_regardless_of_repeats(minimal, conn):
+    """`_resolve_slugs` used to run one `SELECT` per slug encountered while
+    walking the document -- including a repeat round trip for a slug
+    referenced more than once, such as a rune reused across several items.
+    A realistic level 13-20 character triggered 90-130+ individual round
+    trips per `validate_document` call this way.
+
+    Same rune slug on three different gear items here, plus one on the
+    ledger, forces four occurrences of one slug: the whole point of batching
+    is that this must not cost four round trips."""
+    minimal["gear"] = {"carried": [
+        {"item": "light-hammer", "runes": ["returning"]},
+        {"item": "light-hammer", "runes": ["returning"]},
+        {"item": "gauntlet", "runes": ["returning"]},
+    ]}
+    minimal["ledger"] = [{"level": 1, "kind": "purchase", "gp": -55, "item": "returning",
+                          "note": "The rune, for the test fixture."}]
+
+    calls = {"n": 0}
+    counting = _CountingConn(conn, "SELECT SLUG, PACK", calls)
+    result = character.validate_document(minimal, counting)
+    assert result["valid"]
+    assert calls["n"] == 1
 
 
 def test_ambiguous_feat_name_does_not_resolve(minimal, conn):

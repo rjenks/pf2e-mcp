@@ -213,6 +213,44 @@ def test_underivable_proficiency_becomes_an_attributable_override(export, conn):
     assert all(o["source"] == "pathbuilder-import" for o in overrides.values())
 
 
+def test_import_shares_one_replay_between_overrides_and_attribute_mismatch(export, conn):
+    """`_recover_lores`, `_overrides_for` and `_attribute_mismatch` each used
+    to run their own full `replay.at_level` over the same freshly-imported
+    document -- three complete plan replays (proficiency grants, skill
+    grants, gear, spellcasting, all of it) for one `from_pathbuilder` call.
+    `_recover_lores` genuinely needs its own: it runs first and can still
+    mutate `document["plan"]` (adding a Lore's `skillTraining` choice), so
+    its replay has to see the plan *before* that mutation while the other
+    two need to see it *after*. But `_overrides_for` and `_attribute_mismatch`
+    both then diff against the exact same, now-final document -- collapsible
+    from two replays into one shared result, down to two total rather than
+    three."""
+    calls = {"n": 0}
+    real_at_level = character_import.replay.at_level
+
+    def counting_at_level(document, level, connection):
+        calls["n"] += 1
+        return real_at_level(document, level, connection)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(character_import.replay, "at_level", counting_at_level)
+        character_import.from_pathbuilder(export, conn)
+    assert calls["n"] == 2
+
+
+def test_a_nonzero_export_rank_lower_than_derived_is_reported():
+    """Only the exactly-untrained case (export states 0) used to be reported
+    when derivation rates higher -- a nonzero-but-still-too-low export rank
+    (trained where replay reaches expert, say) silently passed through
+    unflagged, despite the docstring promising to catch any case where
+    derivation overreaches ("a bug to chase rather than a fact to record")."""
+    build = {"proficiencies": {"religion": 2}}
+    overrides, unexplained = character_import._overrides_for(
+        build, {"religion": 4})
+    assert overrides == {}
+    assert unexplained == ["religion: derived 4, export 2"]
+
+
 def test_attributes_that_disagree_with_their_boosts_are_reported(export, conn):
     """An export's scores and its boost list are two claims about one thing."""
     export["build"]["abilities"]["dex"] = 20

@@ -54,6 +54,8 @@ first and served to callers but never actually enforced (see
 
 from __future__ import annotations
 
+import copy
+import functools
 import json
 import re
 import sqlite3
@@ -180,18 +182,32 @@ def to_plain(value: Any) -> Any:
 # ---------------------------------------------------------------- schema
 
 
-def load_schema() -> dict[str, Any]:
-    """The JSON Schema describing a character file."""
+@functools.lru_cache(maxsize=1)
+def _cached_schema() -> dict[str, Any]:
     return json.loads(SCHEMA_PATH.read_text())
 
 
+def load_schema() -> dict[str, Any]:
+    """The JSON Schema describing a character file.
+
+    Reads and parses the file once per process (`_cached_schema`), not on
+    every call -- see `chronicle.load_schema`'s docstring for why, and for
+    why this returns a copy rather than the cached dict itself.
+    """
+    return copy.deepcopy(_cached_schema())
+
+
+@functools.lru_cache(maxsize=1)
 def _registry() -> Registry:
     """Both schemas, so the character schema's cross-file `$ref`s resolve.
 
     `organizedPlay` embeds chronicle entries by referencing
     `chronicle_schema.json`'s `$defs` rather than restating them, which keeps
     one definition of a chronicle sheet for both the embedded and the
-    standalone form.
+    standalone form. Cached alongside the two validators below: building a
+    `Registry` re-parses both schema files' `$id`s into `Resource` objects,
+    work that does not change between calls any more than the schemas
+    themselves do.
     """
     resources = [
         (schema["$id"], Resource.from_contents(schema))
@@ -200,8 +216,14 @@ def _registry() -> Registry:
     return Registry().with_resources(resources)
 
 
-def _validator(schema: dict[str, Any]) -> Draft202012Validator:
-    return Draft202012Validator(schema, registry=_registry())
+@functools.lru_cache(maxsize=1)
+def _character_validator() -> Draft202012Validator:
+    return Draft202012Validator(load_schema(), registry=_registry())
+
+
+@functools.lru_cache(maxsize=1)
+def _chronicle_validator() -> Draft202012Validator:
+    return Draft202012Validator(chronicle.load_schema(), registry=_registry())
 
 
 def _pointer(error: Any) -> str:
@@ -209,25 +231,27 @@ def _pointer(error: Any) -> str:
     return "/" + "/".join(str(part) for part in error.absolute_path)
 
 
-def check_structure(document: Any) -> list[dict[str, Any]]:
-    """Validate a document against the schema. Returns findings, never raises.
-
-    Findings use the same shape as `chronicle._issue` -- level, code, message,
-    plus a `path` naming the offending field -- because a caller fixing a file
-    needs to be told where the problem is, and a bare English sentence does not
-    say that.
-    """
-    document = to_plain(document)
-    validator = _validator(load_schema())
-    issues: list[dict[str, Any]] = []
-    for error in sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path)):
-        issues.append({
+def _schema_errors(validator: Draft202012Validator, instance: Any) -> list[dict[str, Any]]:
+    """Run `validator` over `instance` and shape every error the way a caller
+    fixing a file needs: level, code, message, plus a `path` naming the
+    offending field -- the same shape `chronicle._issue` uses, and shared by
+    `check_structure` and `check_chronicle_structure` since validating a
+    document against a schema and reporting what came back is one operation,
+    not two independently-written copies of it."""
+    return [
+        {
             "level": "error",
             "code": "schema",
             "path": _pointer(error) or "/",
             "message": error.message,
-        })
-    return issues
+        }
+        for error in sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path))
+    ]
+
+
+def check_structure(document: Any) -> list[dict[str, Any]]:
+    """Validate a document against the schema. Returns findings, never raises."""
+    return _schema_errors(_character_validator(), to_plain(document))
 
 
 def check_chronicle_structure(log: dict[str, Any]) -> list[dict[str, Any]]:
@@ -239,16 +263,7 @@ def check_chronicle_structure(log: dict[str, Any]) -> list[dict[str, Any]]:
     pass, and it runs before the semantic one so that a malformed file is
     reported as malformed rather than as a ledger that does not add up.
     """
-    validator = _validator(chronicle.load_schema())
-    issues: list[dict[str, Any]] = []
-    for error in sorted(validator.iter_errors(log), key=lambda e: list(e.absolute_path)):
-        issues.append({
-            "level": "error",
-            "code": "schema",
-            "path": _pointer(error) or "/",
-            "message": error.message,
-        })
-    return issues
+    return _schema_errors(_chronicle_validator(), log)
 
 
 # ------------------------------------------------------------- semantics
@@ -357,6 +372,7 @@ def _check_languages(
     them.
     """
     from . import character_replay
+    from . import pf2e_math as m
 
     plan = document.get("plan") or []
     current = (document.get("identity") or {}).get("currentLevel") or 1
@@ -395,7 +411,7 @@ def _check_languages(
     # A positive Intelligence modifier at 1st level buys languages too, and
     # those belong in `build.languages` with the ancestry's own.
     scores = character_replay._replay_attributes(plan, 1)[0]
-    expected += max(0, character_replay._ability_mod(scores.get("int", 10)))
+    expected += max(0, m.ability_mod(scores.get("int", 10)))
 
     recorded = len((document.get("build") or {}).get("languages") or [])
     if recorded < expected:
@@ -416,35 +432,19 @@ def _resolve_slugs(
     visible: under the old name-matching approach it degraded into a silent
     fuzzy match onto something else. Reported as an error for build content and
     as a warning for gear, where free text is legitimate on the wishlist.
-    """
-    issues: list[dict[str, Any]] = []
 
-    def known(slug: str, packs: tuple[str, ...] | None = None) -> bool:
-        if packs:
-            marks = ",".join("?" * len(packs))
-            row = conn.execute(
-                f"SELECT 1 FROM entries WHERE slug = ? AND pack IN ({marks}) LIMIT 1",
-                (slug, *packs),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT 1 FROM entries WHERE slug = ? LIMIT 1", (slug,)
-            ).fetchone()
-        return row is not None
+    Every slug the whole document references is collected first and resolved
+    with one `IN (...)` query, rather than one `SELECT` per slug encountered
+    while walking the document -- confirmed live, a realistic level 13-20
+    character triggers 90-130+ individual round trips per validation this
+    way, including a repeat round trip for the same slug referenced more than
+    once (a rune reused across several items, say).
+    """
+    checks: list[tuple[Any, str, tuple[str, ...] | None, str]] = []
 
     def check(slug: Any, path: str, packs: tuple[str, ...] | None,
               level: str = "error") -> None:
-        if not isinstance(slug, str) or known(slug, packs):
-            return
-        hint = ""
-        if packs and known(slug):
-            hint = (" It exists, but not as "
-                    + ("a " + packs[0].rstrip("s") if len(packs) == 1
-                       else "one of " + ", ".join(packs)) + ".")
-        issues.append(_issue(
-            level, "unknown_slug", path,
-            f"No rules entry with slug {slug!r}.{hint}",
-        ))
+        checks.append((slug, path, packs, level))
 
     build = document.get("build") or {}
     for field, packs in (
@@ -503,6 +503,33 @@ def _resolve_slugs(
     for f_index, slug in enumerate(spellcasting.get("focusSpells") or []):
         check(slug, f"/spellcasting/focusSpells/{f_index}", ("spells",))
 
+    slugs = {slug for slug, _, _, _ in checks if isinstance(slug, str)}
+    packs_by_slug: dict[str, set[str]] = {}
+    if slugs:
+        placeholders = ",".join("?" * len(slugs))
+        rows = conn.execute(
+            f"SELECT slug, pack FROM entries WHERE slug IN ({placeholders})",
+            tuple(slugs),
+        ).fetchall()
+        for row in rows:
+            packs_by_slug.setdefault(row["slug"], set()).add(row["pack"])
+
+    issues: list[dict[str, Any]] = []
+    for slug, path, packs, level in checks:
+        if not isinstance(slug, str):
+            continue
+        existing = packs_by_slug.get(slug)
+        if existing and (packs is None or existing & set(packs)):
+            continue
+        hint = ""
+        if packs and existing:
+            hint = (" It exists, but not as "
+                    + ("a " + packs[0].rstrip("s") if len(packs) == 1
+                       else "one of " + ", ".join(packs)) + ".")
+        issues.append(_issue(
+            level, "unknown_slug", path,
+            f"No rules entry with slug {slug!r}.{hint}",
+        ))
     return issues
 
 

@@ -79,6 +79,20 @@ def default_character_abilities(character: dict) -> dict:
 _TRAILING_PARENTHETICAL = re.compile(r"^(?P<base>.+?)\s*\([^)]*\)\s*$")
 
 
+def strip_trailing_parenthetical(text: str) -> str | None:
+    """`text` with a trailing `(...)` removed, or None when there is none to
+    strip -- e.g. "Advanced Maneuver (Combat Grab)" -> "Advanced Maneuver".
+
+    Shared so a caller matching a recorded feat/choice name against its bare
+    form (`has_feat` below, and `build_tools.validate_build`'s prerequisite
+    check) does not maintain its own copy of the same pattern -- see
+    `has_feat`'s docstring for why the parenthetical is only sometimes a
+    parameter, and the order a caller must therefore try the two forms in.
+    """
+    match = _TRAILING_PARENTHETICAL.match(str(text or "").strip())
+    return match.group("base").strip() if match else None
+
+
 def has_feat(character: dict, name: str) -> bool:
     """True if the character holds the named feat.
 
@@ -98,11 +112,7 @@ def has_feat(character: dict, name: str) -> bool:
     recorded = [f[0].strip().lower() for f in character.get("feats", []) if f and f[0]]
     if any(r == target for r in recorded):
         return True
-    for r in recorded:
-        match = _TRAILING_PARENTHETICAL.match(r)
-        if match and match.group("base").strip() == target:
-            return True
-    return False
+    return any(strip_trailing_parenthetical(r) == target for r in recorded)
 
 
 def has_lore(character: dict, name: str) -> bool:

@@ -499,6 +499,16 @@ _SQL_LEADING = ("select", "with")
 # over the whole catalogue completes comfortably.
 _SQL_VM_STEPS = 50_000_000
 
+# `sqlite3.Connection.set_progress_handler(handler, n)` calls `handler` once
+# every `n` real VM instructions, not once per instruction -- calling into
+# Python that often would swamp the query in callback overhead. The guard
+# below counts real instructions by adding this interval per invocation
+# rather than counting invocations as if each were one instruction, which
+# previously made the effective budget 10,000x looser than `_SQL_VM_STEPS`
+# documents (a query could run ~5*10^11 real steps, not 50,000,000, before
+# aborting).
+_SQL_PROGRESS_INTERVAL = 10_000
+
 
 def _sql_reject(sql: str) -> str | None:
     """Return why `sql` is not an acceptable read-only statement, or None.
@@ -619,10 +629,10 @@ def rules_sql(
         steps = {"n": 0}
 
         def _guard() -> int:
-            steps["n"] += 1
+            steps["n"] += _SQL_PROGRESS_INTERVAL
             return 1 if steps["n"] > _SQL_VM_STEPS else 0
 
-        conn.set_progress_handler(_guard, 10_000)
+        conn.set_progress_handler(_guard, _SQL_PROGRESS_INTERVAL)
         try:
             cursor = conn.execute(sql, tuple(params or ()))
             # One extra row distinguishes "exactly at the limit" from "more".

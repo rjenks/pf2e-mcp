@@ -514,14 +514,25 @@ def from_pathbuilder(
 
     _recover_lores(document, build, conn)
 
-    overrides, unexplained = _overrides_for(document, build, conn)
+    # `_overrides_for` and `_attribute_mismatch` both diff the export against
+    # a fresh replay of this same, now-final document -- computed once and
+    # shared, rather than each running its own full plan replay. Must happen
+    # after `_recover_lores`, which can still mutate `document["plan"]`
+    # above (adding a Lore's `skillTraining` choice); replaying before that
+    # would diff against a plan neither function is actually looking at.
+    try:
+        replayed = replay.at_level(document, document["identity"]["currentLevel"], conn)
+    except ValueError:
+        replayed = {}
+
+    overrides, unexplained = _overrides_for(build, replayed.get("proficiencies") or {})
     if overrides:
         document["proficiencyOverrides"] = overrides
 
     document["_import"] = {
         "source": "pathbuilder",
         "unresolved": unresolved,
-        "attribute_mismatch": _attribute_mismatch(document, build, conn),
+        "attribute_mismatch": _attribute_mismatch(build, replayed.get("abilities") or {}),
         "stated_proficiencies": sorted(overrides),
         "note": (
             "Proficiencies the export claims that replaying the plan cannot "
@@ -558,25 +569,21 @@ def from_pathbuilder(
 
 
 def _overrides_for(
-    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+    build: dict[str, Any], derived: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
     """Whatever the export knows that replay cannot work out.
 
-    Replays the freshly reconstructed plan and diffs the proficiencies against
-    the export's own. Anything the export rates higher becomes an override;
-    anything replay rates *higher* than the export is reported separately,
-    since that direction means derivation is overreaching rather than falling
-    short and is a bug to chase rather than a fact to record.
+    Diffs the export's own proficiencies against `derived` -- the freshly
+    reconstructed plan's own replayed proficiencies, already computed by the
+    caller (see `from_pathbuilder`, which shares one replay of the same
+    document between this and `_attribute_mismatch` rather than each running
+    its own). Anything the export rates higher becomes an override; anything
+    replay rates *higher* than the export is reported separately, since that
+    direction means derivation is overreaching rather than falling short and
+    is a bug to chase rather than a fact to record.
     """
     stated = build.get("proficiencies") or {}
     if not stated:
-        return {}, []
-    try:
-        derived = replay.at_level(
-            {**document, "plan": document.get("plan") or []},
-            document["identity"]["currentLevel"], conn,
-        )["proficiencies"]
-    except ValueError:
         return {}, []
 
     overrides: dict[str, Any] = {}
@@ -595,8 +602,8 @@ def _overrides_for(
                     f"{ch.RANK_NAMES[min(have // 2, 4)]}."
                 ),
             }
-        elif have > value and value == 0:
-            unexplained.append(f"{key}: derived {have}, export 0")
+        elif have > value:
+            unexplained.append(f"{key}: derived {have}, export {value}")
     return overrides, unexplained
 
 
@@ -615,7 +622,7 @@ def to_pathbuilder(
 
 
 def _attribute_mismatch(
-    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+    build: dict[str, Any], derived: dict[str, Any]
 ) -> dict[str, Any]:
     """Where replaying the recorded boosts disagrees with the recorded scores.
 
@@ -628,18 +635,17 @@ def _attribute_mismatch(
     The apex-item case is common enough to name: an apex item raises one
     modifier by 1 and Pathbuilder folds that into the scores, while replay
     derives from boosts alone and so comes out one modifier short (#63).
+
+    `derived` is the freshly reconstructed plan's own replayed abilities,
+    already computed by the caller -- see `_overrides_for`'s docstring for
+    why this and that function share one replay rather than each running its
+    own of the same document.
     """
     stated = {
         key: value for key, value in (build.get("abilities") or {}).items()
         if key in ch.ATTRIBUTES and isinstance(value, int)
     }
-    if not stated:
-        return {}
-    try:
-        derived = replay.at_level(
-            document, document["identity"]["currentLevel"], conn
-        )["abilities"]
-    except ValueError:
+    if not stated or not derived:
         return {}
     return {
         key: {

@@ -49,6 +49,8 @@ internal contradictions (a ledger that does not add up) are reported as errors.
 
 from __future__ import annotations
 
+import copy
+import functools
 import json
 import re
 import sqlite3
@@ -123,9 +125,22 @@ STARTING_FUNDS_CP: dict[int, int] = {1: 1500, 3: 7500, 5: 27000, 7: 72000}
 STARTING_LEVELS = tuple(STARTING_FUNDS_CP)
 
 
-def load_schema() -> dict[str, Any]:
-    """The JSON Schema describing a chronicle log file."""
+@functools.lru_cache(maxsize=1)
+def _cached_schema() -> dict[str, Any]:
     return json.loads(SCHEMA_PATH.read_text())
+
+
+def load_schema() -> dict[str, Any]:
+    """The JSON Schema describing a chronicle log file.
+
+    Reads and parses the file once per process (`_cached_schema`) rather than
+    on every call -- this is called for every chronicle validation, so a
+    validator elsewhere constructed fresh from this each time was re-reading
+    and re-parsing the same static file that often. Returns a copy so a
+    caller mutating its own result (none currently do, but nothing stops one)
+    cannot corrupt what every other caller sees next.
+    """
+    return copy.deepcopy(_cached_schema())
 
 
 # ---------------------------------------------------------------- money

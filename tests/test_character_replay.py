@@ -199,6 +199,30 @@ def test_overrides_apply_and_redundant_ones_are_reported(dwarf_animist, conn):
     assert build["_derivation"]["redundant_overrides"] == ["religion"]
 
 
+def test_an_override_with_no_level_still_applies_at_every_level(dwarf_animist, conn):
+    """Backward compatibility: most overrides (a Pathbuilder import that
+    cannot say which level granted the rank) don't carry one at all, and
+    that must keep meaning "applies from 1st onward", same as before this
+    field existed."""
+    dwarf_animist["proficiencyOverrides"] = {
+        "society": {"rank": "trained", "source": "some-dedication"},
+    }
+    build = character_replay.at_level(dwarf_animist, 1, conn)
+    assert build["proficiencies"]["society"] == 2
+
+
+def test_an_override_does_not_apply_before_its_granting_level(dwarf_animist, conn):
+    """A proficiency granted by a 3rd-level dedication should not show up on
+    a 1st-level snapshot, the same way the feat that grants it would not."""
+    dwarf_animist["proficiencyOverrides"] = {
+        "society": {"rank": "trained", "source": "some-dedication", "level": 3},
+    }
+    early = character_replay.at_level(dwarf_animist, 1, conn)
+    late = character_replay.at_level(dwarf_animist, 3, conn)
+    assert early["proficiencies"].get("society", 0) == 0
+    assert late["proficiencies"]["society"] == 2
+
+
 def test_hp_per_level_feats_are_counted(dwarf_animist, conn):
     dwarf_animist["plan"][2]["choices"].append(
         {"slot": "generalFeat", "pick": "toughness"}

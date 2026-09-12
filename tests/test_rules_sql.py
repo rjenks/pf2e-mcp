@@ -93,3 +93,27 @@ def test_empty_query_points_at_schema() -> None:
 def test_sql_error_is_reported_not_raised() -> None:
     result = rules_tools.rules_sql("select nope from entries")
     assert "SQL error" in result["error"]
+
+
+def test_runaway_query_is_aborted_at_the_documented_step_budget(monkeypatch) -> None:
+    """The progress handler fires once every `_SQL_PROGRESS_INTERVAL` real VM
+    instructions, not once per instruction -- counting invocations as if each
+    were a single step (the original bug) made the effective budget 10,000x
+    looser than `_SQL_VM_STEPS` documents.
+
+    Chosen to actually discriminate the two: a ~5,000-row recursive CTE runs
+    ~85,000 real VM instructions (measured directly against sqlite3, ~17 per
+    row for this shape of query) -- past the fixed budget (5,000 steps, i.e.
+    ~5,100 real instructions at this interval) but nowhere near the old
+    buggy one (5,000 *invocations* at a 100-instruction interval, i.e.
+    500,000 real instructions). Confirmed against the pre-fix accounting
+    that this exact query completes instead of aborting there, so this test
+    would have failed before the fix, not just after it."""
+    monkeypatch.setattr(rules_tools, "_SQL_VM_STEPS", 5_000)
+    monkeypatch.setattr(rules_tools, "_SQL_PROGRESS_INTERVAL", 100)
+    result = rules_tools.rules_sql(
+        "with recursive counter(n) as "
+        "(select 1 union all select n + 1 from counter where n < 5000) "
+        "select count(*) from counter"
+    )
+    assert "too much work" in result["error"]
