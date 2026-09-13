@@ -66,6 +66,24 @@ _SLOT_PACKS = {
 #: absence rather than as a name that failed to resolve.
 _PLACEHOLDERS = {"none", "not set", "n/a", "-", ""}
 
+#: Known cases where Pathbuilder's own display name for an entry disagrees
+#: with the rules database's name outright -- not a reformatting `_slug_for`
+#: could derive (case, punctuation, word order), but a genuinely different
+#: string. "Battle Ready" is Pathbuilder's label for the Orc heritage the
+#: rules data names "Battle-Ready Orc"; every *other* Orc heritage (Badlands,
+#: Deep, Grave, Hold-Scarred, Rainfall, Winter) matches Pathbuilder's label
+#: verbatim, so this is a one-off data quirk, not a pattern worth a general
+#: rule (#99).
+#:
+#: Keyed by (lowercased Pathbuilder name, packs) so an alias only applies in
+#: the pack it was actually observed for. Deliberately small and grown one
+#: entry at a time as a real mismatch is confirmed, rather than attempting to
+#: enumerate every possible Pathbuilder/rules-data disagreement up front --
+#: of 328 ingested heritages, this is the only one found to disagree at all.
+_NAME_ALIASES: dict[tuple[str, tuple[str, ...] | None], str] = {
+    ("battle ready", ("heritages",)): "battle-ready-orc",
+}
+
 #: A feat name carrying its parameter, as Pathbuilder writes it:
 #: "Assurance (Medicine)", "Specialty Crafting (Stonemasonry)".
 _PARAMETERISED = re.compile(r"^(?P<name>.+?)\s*\((?P<parameter>[^)]+)\)\s*$")
@@ -79,6 +97,12 @@ def _slug_for(
     This is the only place in the new format where a name is matched, and it
     runs once, at import. Everything downstream works from the slug it
     produces, which is the point.
+
+    Falls back to `_NAME_ALIASES` when the exact name has no match -- a
+    handful of confirmed cases where Pathbuilder's own display name for an
+    entry is not a reformatting of the rules data's name (case, punctuation,
+    word order all already match via `COLLATE NOCASE`), but a genuinely
+    different string.
     """
     if not name:
         return None
@@ -90,16 +114,21 @@ def _slug_for(
             f"AND pack IN ({marks}) LIMIT 1",
             (name, *packs),
         ).fetchone()
+        if row:
+            return row["slug"]
         # Deliberately no cross-pack fallback when packs were named. "Chosen
         # One" is a background and not any kind of feat, so a file recording it
         # as an ancestry feat has a real mistake in it; falling back would
         # convert that mistake into a confident, wrong slug -- exactly the
-        # silent mismatching this format exists to stop.
-        return row["slug"] if row else None
+        # silent mismatching this format exists to stop. An alias is scoped
+        # the same way, for the same reason.
+        return _NAME_ALIASES.get((name.lower(), packs))
     row = conn.execute(
         "SELECT slug FROM entries WHERE name = ? COLLATE NOCASE LIMIT 1", (name,)
     ).fetchone()
-    return row["slug"] if row else None
+    if row:
+        return row["slug"]
+    return _NAME_ALIASES.get((name.lower(), None))
 
 
 def _describe_unresolved(conn: sqlite3.Connection, name: str) -> str:

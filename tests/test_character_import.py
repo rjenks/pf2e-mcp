@@ -131,6 +131,19 @@ def test_heritage_is_not_imported_as_a_feat(export, conn):
     assert document["build"]["heritage"] == "death-warden-dwarf"
 
 
+def test_a_known_pathbuilder_ancestry_data_disagreement_still_resolves(export, conn):
+    """Pathbuilder's own picker labels the Orc heritage "Battle Ready"; the
+    rules data names it "Battle-Ready Orc". Every *other* Orc heritage
+    (Badlands, Deep, Grave, Hold-Scarred, Rainfall, Winter) matches
+    Pathbuilder's label verbatim, so this needs a specific alias rather than
+    a general reformatting rule -- and must not regress to reporting the
+    heritage as unresolved."""
+    export["build"]["heritage"] = "Battle Ready"
+    document = character_import.from_pathbuilder(export, conn)
+    assert document["build"]["heritage"] == "battle-ready-orc"
+    assert not any("heritage" in u for u in document["_import"]["unresolved"])
+
+
 def test_prose_in_the_choice_slot_is_rescued_into_a_note(export, conn):
     """Agent-authored builds put reasoning there for want of anywhere better."""
     document = character_import.from_pathbuilder(export, conn)
