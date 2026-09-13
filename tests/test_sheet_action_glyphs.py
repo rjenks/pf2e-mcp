@@ -7,34 +7,42 @@ from pf2e_mcp.server import character_import, sheet
 
 @pytest.fixture
 def character_doc(conn) -> dict:
-    return character_import.from_pathbuilder({
-        "build": {
-            "name": "Action Test",
-            "class": "Fighter",
-            "level": 1,
-            "ancestry": "Dwarf",
-            "heritage": "Death Warden Dwarf",
-            "background": "Field Medic",
-            "abilities": {
-                "str": 18, "dex": 12, "con": 16, "int": 10, "wis": 12, "cha": 8,
-                "breakdown": {
-                    "ancestryBoosts": ["Con", "Wis"],
-                    "ancestryFree": ["Str"],
-                    "ancestryFlaws": ["Cha"],
-                    "backgroundBoosts": ["Con", "Str"],
-                    "classBoosts": ["Str"],
-                    "mapLevelledBoosts": {"1": ["Str", "Dex", "Con", "Wis"]},
+    return character_import.from_pathbuilder(
+        {
+            "build": {
+                "name": "Action Test",
+                "class": "Fighter",
+                "level": 1,
+                "ancestry": "Dwarf",
+                "heritage": "Death Warden Dwarf",
+                "background": "Field Medic",
+                "abilities": {
+                    "str": 18,
+                    "dex": 12,
+                    "con": 16,
+                    "int": 10,
+                    "wis": 12,
+                    "cha": 8,
+                    "breakdown": {
+                        "ancestryBoosts": ["Con", "Wis"],
+                        "ancestryFree": ["Str"],
+                        "ancestryFlaws": ["Cha"],
+                        "backgroundBoosts": ["Con", "Str"],
+                        "classBoosts": ["Str"],
+                        "mapLevelledBoosts": {"1": ["Str", "Dex", "Con", "Wis"]},
+                    },
                 },
+                "feats": [
+                    ["Death Warden Dwarf", None, "Heritage", 1],
+                    ["Power Attack", None, "Class Feat", 1],
+                ],
+                "weapons": [{"name": "Longsword", "qty": 1}],
+                "armor": [{"name": "Chain Mail", "qty": 1, "worn": True}],
+                "money": {"gp": 10},
             },
-            "feats": [
-                ["Death Warden Dwarf", None, "Heritage", 1],
-                ["Power Attack", None, "Class Feat", 1],
-            ],
-            "weapons": [{"name": "Longsword", "qty": 1}],
-            "armor": [{"name": "Chain Mail", "qty": 1, "worn": True}],
-            "money": {"gp": 10},
         },
-    }, conn)
+        conn,
+    )
 
 
 def test_glyph_spans():
@@ -58,4 +66,3 @@ def test_rendered_sheet_embeds_action_font(character_doc, tmp_path):
     content = out.read_text(encoding="utf-8")
     assert "font-family:'Pathfinder2eActions'" in content
     assert '<span class="action-glyph">' in content
-

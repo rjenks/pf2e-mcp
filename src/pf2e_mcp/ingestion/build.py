@@ -38,8 +38,15 @@ SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # journals/macros/tables aren't game rules content.
 _EXCLUDED_PACK_SUFFIXES = ("_folders",)
 _EXCLUDED_PACKS = {
-    "journals", "macros", "rollable-tables", "action-macros", "criticaldeck",
-    "iconics", "paizo-pregens", "npc-gallery", "vehicles",
+    "journals",
+    "macros",
+    "rollable-tables",
+    "action-macros",
+    "criticaldeck",
+    "iconics",
+    "paizo-pregens",
+    "npc-gallery",
+    "vehicles",
 }
 
 # Bestiary/monster/NPC/full-adventure packs: excluded on licensing grounds,
@@ -56,9 +63,13 @@ _EXCLUDED_PACKS = {
 # decision not to freeze-copy the upstream attribution lists).
 _PRODUCT_IDENTITY_PACK_SUFFIX = "-bestiary"
 _PRODUCT_IDENTITY_PACKS = {
-    "pathfinder-bestiary-2", "pathfinder-bestiary-3",
-    "pathfinder-monster-core", "pathfinder-monster-core-2",
-    "pathfinder-npc-core", "fall-of-plaguestone", "standalone-adventures",
+    "pathfinder-bestiary-2",
+    "pathfinder-bestiary-3",
+    "pathfinder-monster-core",
+    "pathfinder-monster-core-2",
+    "pathfinder-npc-core",
+    "fall-of-plaguestone",
+    "standalone-adventures",
 }
 
 
@@ -384,9 +395,7 @@ def _load_config_pf2e_lookups(tag: str, cache_dir: Path) -> dict[str, dict[str, 
         lookups["baseWeaponTypes"] = weapon_base_dict
 
     for config_key, entries in lookups.items():
-        lookups[config_key] = {
-            slug: localization.get(label, label) for slug, label in entries.items()
-        }
+        lookups[config_key] = {slug: localization.get(label, label) for slug, label in entries.items()}
     return lookups
 
 
@@ -394,11 +403,7 @@ def _flat_prefix_lookup(flat: dict[str, str], prefix: str) -> dict[str, str]:
     """Pull `{slug: value}` out of a flattened localization dict for all
     keys under `prefix` (e.g. 'PF2E.Weapon.Base.' -> {'adze': 'Adze', ...}),
     slug being the key's final dotted segment."""
-    return {
-        key[len(prefix):]: value
-        for key, value in flat.items()
-        if key.startswith(prefix)
-    }
+    return {key[len(prefix) :]: value for key, value in flat.items() if key.startswith(prefix)}
 
 
 _SIMPLE_PREDICATE_RE = re.compile(r"^item:(tag|trait|level):(.+)$")
@@ -491,12 +496,14 @@ def _insert_item_grants_and_choices(
                     choices = rule.get("choices")
                     if isinstance(choices, list) and choices:
                         localized_choices = [
-                            {
-                                **c,
-                                "label": localization.get(c["label"], c["label"]),
-                            }
-                            if isinstance(c, dict) and isinstance(c.get("label"), str)
-                            else c
+                            (
+                                {
+                                    **c,
+                                    "label": localization.get(c["label"], c["label"]),
+                                }
+                                if isinstance(c, dict) and isinstance(c.get("label"), str)
+                                else c
+                            )
                             for c in choices
                         ]
                         conn.execute(
@@ -515,8 +522,7 @@ def _insert_item_grants_and_choices(
                             )
                     elif isinstance(choices, str) and choices in config_lookups:
                         options = [
-                            {"label": label, "value": slug}
-                            for slug, label in config_lookups[choices].items()
+                            {"label": label, "value": slug} for slug, label in config_lookups[choices].items()
                         ]
                         conn.execute(
                             "INSERT INTO item_choice_sets (entry_id, flag, choices, source) "
@@ -799,8 +805,10 @@ def _insert_class_spell_progression(conn: sqlite3.Connection, data_dir: Path) ->
         slug = row[0]
         if slug in _CUMULATIVE_SLOT_CLASSES:
             progression = _remaster_slot_table()
-            print(f"  {slug}: upstream 'Spells per Day' table is pre-Remaster; "
-                  f"using the published Remaster table instead")
+            print(
+                f"  {slug}: upstream 'Spells per Day' table is pre-Remaster; "
+                f"using the published Remaster table instead"
+            )
         for level, slots in progression.items():
             conn.execute(
                 "INSERT OR REPLACE INTO class_spell_slots (class_slug, level, slots) VALUES (?, ?, ?)",
@@ -839,8 +847,7 @@ def _remaster_slot_table() -> dict[int, dict[str, int]]:
     for level, expected in _SLOT_CHECKPOINTS.items():
         got = {k: v for k, v in table[level].items() if k != "cantrips"}
         if got != expected:
-            raise AssertionError(
-                f"Remaster slot table wrong at level {level}: {got} != {expected}")
+            raise AssertionError(f"Remaster slot table wrong at level {level}: {got} != {expected}")
     return table
 
 
@@ -864,19 +871,22 @@ def _check_slot_monotonicity(conn: sqlite3.Connection) -> None:
     could in principle break the assumption, and an ingestion that refuses to
     finish would be worse than one that says what it doubts."""
     rows: dict[str, dict[int, dict]] = {}
-    for slug, level, slots in conn.execute(
-            "SELECT class_slug, level, slots FROM class_spell_slots"):
+    for slug, level, slots in conn.execute("SELECT class_slug, level, slots FROM class_spell_slots"):
         rows.setdefault(slug, {})[level] = json.loads(slots)
     for slug, levels in sorted(rows.items()):
         for level in sorted(levels)[1:]:
             previous, current = levels.get(level - 1, {}), levels[level]
-            dropped = [f"rank {k} {v}->{current.get(k, 0)}"
-                       for k, v in previous.items()
-                       if k != "cantrips" and current.get(k, 0) < v]
+            dropped = [
+                f"rank {k} {v}->{current.get(k, 0)}"
+                for k, v in previous.items()
+                if k != "cantrips" and current.get(k, 0) < v
+            ]
             if dropped:
-                print(f"  WARNING: {slug}'s spell slots decrease at level "
-                      f"{level} ({'; '.join(dropped)}) -- no class loses "
-                      f"slots on level-up, so this table is probably stale")
+                print(
+                    f"  WARNING: {slug}'s spell slots decrease at level "
+                    f"{level} ({'; '.join(dropped)}) -- no class loses "
+                    f"slots on level-up, so this table is probably stale"
+                )
 
 
 _UUID_LINK_RE = re.compile(r"@UUID\[([^\]]+)\]\{([^}]*)\}")
@@ -928,21 +938,18 @@ def _insert_skill_actions(conn: sqlite3.Connection, data_dir: Path) -> None:
     gm_screen = next((j for j in journals if j.get("name") == "GM Screen"), None)
     if not gm_screen:
         return
-    page = next((p for p in gm_screen.get("pages", [])
-                 if p.get("name") == "Skill Actions"), None)
+    page = next((p for p in gm_screen.get("pages", []) if p.get("name") == "Skill Actions"), None)
     if not page:
         return
 
     parser = _TableExtractor()
     parser.feed(page.get("text", {}).get("content", ""))
-    table = next((t for t in parser.tables
-                  if "Trained Actions" in t["header"]), None)
+    table = next((t for t in parser.tables if "Trained Actions" in t["header"]), None)
     if table is None:
         return
     columns = {name: i for i, name in enumerate(table["header"])}
     skill_col = columns.get("Skill")
-    gated = [(columns.get("Untrained Actions"), "untrained"),
-             (columns.get("Trained Actions"), "trained")]
+    gated = [(columns.get("Untrained Actions"), "untrained"), (columns.get("Trained Actions"), "trained")]
 
     inserted = 0
     for row in table["rows"]:
@@ -961,8 +968,8 @@ def _insert_skill_actions(conn: sqlite3.Connection, data_dir: Path) -> None:
                 if not action_id or (name.strip(), skill) in _SKILL_ACTION_EXCLUSIONS:
                     continue
                 known = conn.execute(
-                    "SELECT 1 FROM entries WHERE id = ? AND type = 'action'",
-                    (action_id,)).fetchone()
+                    "SELECT 1 FROM entries WHERE id = ? AND type = 'action'", (action_id,)
+                ).fetchone()
                 if not known:
                     continue
                 conn.execute(
@@ -1041,10 +1048,24 @@ def _insert_pfs_adventures(conn: sqlite3.Connection) -> None:
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
             (
-                a.code, a.name, a.kind, a.full_title, a.season, a.number,
-                a.tier_low, a.tier_high, a.series, json.dumps(a.tags),
-                json.dumps(a.factions), json.dumps(a.metaplot), a.location,
-                a.author, a.sanctioned, a.pubcode, a.release_date, a.wiki_page,
+                a.code,
+                a.name,
+                a.kind,
+                a.full_title,
+                a.season,
+                a.number,
+                a.tier_low,
+                a.tier_high,
+                a.series,
+                json.dumps(a.tags),
+                json.dumps(a.factions),
+                json.dumps(a.metaplot),
+                a.location,
+                a.author,
+                a.sanctioned,
+                a.pubcode,
+                a.release_date,
+                a.wiki_page,
             )
             for a in adventures
         ],
@@ -1073,8 +1094,10 @@ def _report_changes(old_db: Path, new_conn: sqlite3.Connection) -> None:
             changed = True
             print(f"  {pack}: {old_n} -> {new_n} ({new_n - old_n:+d})")
     if not changed:
-        print("  No entry-count changes since last ingestion (content may still have been "
-              "edited/errata'd in place -- this is a count-level check only).")
+        print(
+            "  No entry-count changes since last ingestion (content may still have been "
+            "edited/errata'd in place -- this is a count-level check only)."
+        )
 
 
 def build_database(output_path: Path, cache_dir: Path) -> None:

@@ -155,4 +155,3 @@ def fetch_source_bytes(tag: str, repo_path: str, cache_dir: Path) -> bytes | Non
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(resp.content)
     return resp.content
-
