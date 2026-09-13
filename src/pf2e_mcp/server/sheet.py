@@ -68,8 +68,7 @@ _PACKS_BY_KIND: dict[str, tuple[str, ...]] = {
     # Exports put more than feats in the `feats` array -- a heritage, sometimes
     # the background, and class features granted by a choice all land there --
     # so the fallback packs matter for anything past a plain Pathbuilder export.
-    "feat": ("feats", "class-features", "heritages", "backgrounds",
-             "ancestries", "actions"),
+    "feat": ("feats", "class-features", "heritages", "backgrounds", "ancestries", "actions"),
     "classfeature": ("class-features", "feats", "actions"),
     "spell": ("spells",),
     "item": ("equipment",),
@@ -83,29 +82,57 @@ _PACKS_BY_KIND: dict[str, tuple[str, ...]] = {
 # set"; hand-edited files use an empty string or a dash. Treated as absence,
 # not as a name that failed to resolve.
 _NO_DEITY = {
-    "", "-", "--", "—", "n/a", "na", "none", "no deity", "not set", "notset",
-    "nothing", "unaffiliated", "atheist", "atheism", "tbd", "?",
+    "",
+    "-",
+    "--",
+    "—",
+    "n/a",
+    "na",
+    "none",
+    "no deity",
+    "not set",
+    "notset",
+    "nothing",
+    "unaffiliated",
+    "atheist",
+    "atheism",
+    "tbd",
+    "?",
 }
 
 _ABILITY_KEYS = ("str", "dex", "con", "int", "wis", "cha")
 _ABILITY_NAMES = {
-    "str": ("Strength", "STR"), "dex": ("Dexterity", "DEX"),
-    "con": ("Constitution", "CON"), "int": ("Intelligence", "INT"),
-    "wis": ("Wisdom", "WIS"), "cha": ("Charisma", "CHA"),
+    "str": ("Strength", "STR"),
+    "dex": ("Dexterity", "DEX"),
+    "con": ("Constitution", "CON"),
+    "int": ("Intelligence", "INT"),
+    "wis": ("Wisdom", "WIS"),
+    "cha": ("Charisma", "CHA"),
 }
 
 _CORE_SKILLS = {
-    "acrobatics": "dex", "arcana": "int", "athletics": "str", "crafting": "int",
-    "deception": "cha", "diplomacy": "cha", "intimidation": "cha", "medicine": "wis",
-    "nature": "wis", "occultism": "int", "performance": "cha", "religion": "wis",
-    "society": "int", "stealth": "dex", "survival": "wis", "thievery": "dex",
+    "acrobatics": "dex",
+    "arcana": "int",
+    "athletics": "str",
+    "crafting": "int",
+    "deception": "cha",
+    "diplomacy": "cha",
+    "intimidation": "cha",
+    "medicine": "wis",
+    "nature": "wis",
+    "occultism": "int",
+    "performance": "cha",
+    "religion": "wis",
+    "society": "int",
+    "stealth": "dex",
+    "survival": "wis",
+    "thievery": "dex",
 }
 
 _RANK_ABBR = {0: "U", 2: "T", 4: "E", 6: "M", 8: "L"}
 # Spelled out where there is room for it -- the armour footer reads better as
 # "Trained (+4)" than "T (+4)".
-_RANK_NAME = {0: "Untrained", 2: "Trained", 4: "Expert", 6: "Master",
-              8: "Legendary"}
+_RANK_NAME = {0: "Untrained", 2: "Trained", 4: "Expert", 6: "Master", 8: "Legendary"}
 
 # A striking rune reaches this renderer under three spellings, and a weapon
 # can carry any of them:
@@ -121,7 +148,9 @@ _RANK_NAME = {0: "Untrained", 2: "Trained", 4: "Expert", 6: "Master",
 # fundamental rune off the equipment list -- so the tier is the highest any of
 # them claims.
 _STRIKING_DICE = {
-    "striking": 2, "greater striking": 3, "major striking": 4,
+    "striking": 2,
+    "greater striking": 3,
+    "major striking": 4,
 }
 
 # The rules-database slug for each striking tier, for looking a rune's real
@@ -139,8 +168,7 @@ def _striking_dice(weapon: dict[str, Any]) -> int:
     named = [str(r).strip().lower() for r in (weapon.get("runes") or [])]
     named.append(str(weapon.get("str") or "").strip().lower())
     return max(
-        [_STRIKING_DICE[n] for n in named if n in _STRIKING_DICE]
-        + [2 if weapon.get("increasedDice") else 1]
+        [_STRIKING_DICE[n] for n in named if n in _STRIKING_DICE] + [2 if weapon.get("increasedDice") else 1]
     )
 
 
@@ -160,13 +188,12 @@ _RESILIENT_SLUGS = ("", "resilient", "resilient-greater", "resilient-major")
 # ("pot": 1 alongside a redundant "Weapon Potency (+1)" string in `runes`),
 # so entries matching this pattern are dropped from the freeform list rather
 # than risk printing the same fact twice.
-_FIXED_RUNE_RE = re.compile(
-    r"^(weapon|armor)\s+potency\b|^(greater\s+|major\s+)?resilient\b",
-    re.IGNORECASE)
+_FIXED_RUNE_RE = re.compile(r"^(weapon|armor)\s+potency\b|^(greater\s+|major\s+)?resilient\b", re.IGNORECASE)
 
 
-def _resolve_rune_entry(lib: "_Library", text: str, pack: str = "equipment",
-                         quiet: bool = False) -> dict[str, Any] | None:
+def _resolve_rune_entry(
+    lib: "_Library", text: str, pack: str = "equipment", quiet: bool = False
+) -> dict[str, Any] | None:
     """A property rune as recorded on a character -- a slug ('crushing-greater')
     or already a display name ('Returning', 'Reinforcing Rune (Major)') --
     resolved to its full rules-database entry.
@@ -188,8 +215,7 @@ def _resolve_rune_entry(lib: "_Library", text: str, pack: str = "equipment",
     """
     if not text:
         return None
-    return (lib.by_slug(text.strip().lower().replace(" ", "-"), pack)
-            or lib.get(text, "item", quiet=quiet))
+    return lib.by_slug(text.strip().lower().replace(" ", "-"), pack) or lib.get(text, "item", quiet=quiet)
 
 
 def _resolve_rune_name(lib: "_Library", text: str) -> str:
@@ -215,18 +241,17 @@ def _rune_labels(fixed: list[str], other_runes: list[str]) -> list[str]:
             labels.append(text)
     return labels
 
+
 # PF2e's damage die ladder, for effects that step a die up.
 _DIE_LADDER = ("d4", "d6", "d8", "d10", "d12")
 
 
 # Traits that quote a die of their own in a weapon's note -- "deadly d8" is a
 # bonus die on a critical hit, not the weapon's damage die.
-_TRAIT_DIE_WORDS = ("deadly", "fatal", "fatal aim", "versatile", "jousting",
-                    "two-hand", "climbing", "brutal")
+_TRAIT_DIE_WORDS = ("deadly", "fatal", "fatal aim", "versatile", "jousting", "two-hand", "climbing", "brutal")
 
 
-def _display_die_conflict(display: str, printed: str,
-                          weapon_name: str = "") -> str | None:
+def _display_die_conflict(display: str, printed: str, weapon_name: str = "") -> str | None:
     """A damage die named in a weapon's free-text note that disagrees with the
     one being printed, or None.
 
@@ -245,13 +270,13 @@ def _display_die_conflict(display: str, printed: str,
         die = f"d{match.group(1)}"
         if die == printed:
             continue
-        before = display[:match.start()].rstrip()
+        before = display[: match.start()].rstrip()
         if any(before.lower().endswith(word) for word in _TRAIT_DIE_WORDS):
             continue
         others = [
-            token for token in re.findall(r"[A-Za-z][\w']*", before[-32:])
-            if token[:1].isupper() and len(token) > 2
-            and token.lower().strip("'s") not in own
+            token
+            for token in re.findall(r"[A-Za-z][\w']*", before[-32:])
+            if token[:1].isupper() and len(token) > 2 and token.lower().strip("'s") not in own
         ]
         if others:
             continue
@@ -265,14 +290,21 @@ def _step_die(die: str) -> str:
     except ValueError:
         return die
 
+
 # Conditions worth tracking in pencil, with what each actually does.
 _CONDITIONS = [
-    ("Off-guard", "−2 AC"), ("Frightened", "−N all checks/DCs"),
-    ("Sickened", "−N all checks/DCs"), ("Clumsy", "−N Dex-based"),
-    ("Enfeebled", "−N Str-based"), ("Stupefied", "−N Int/Wis/Cha"),
-    ("Drained", "−N Con, lose HP"), ("Slowed", "−N actions"),
-    ("Prone", "off-guard, must Crawl"), ("Grabbed", "off-guard, immobilized"),
-    ("Deafened", "−2 auditory Perc."), ("Fleeing", "must flee source"),
+    ("Off-guard", "−2 AC"),
+    ("Frightened", "−N all checks/DCs"),
+    ("Sickened", "−N all checks/DCs"),
+    ("Clumsy", "−N Dex-based"),
+    ("Enfeebled", "−N Str-based"),
+    ("Stupefied", "−N Int/Wis/Cha"),
+    ("Drained", "−N Con, lose HP"),
+    ("Slowed", "−N actions"),
+    ("Prone", "off-guard, must Crawl"),
+    ("Grabbed", "off-guard, immobilized"),
+    ("Deafened", "−2 auditory Perc."),
+    ("Fleeing", "must flee source"),
 ]
 
 _PAPER = {"letter": "letter portrait", "a4": "A4 portrait"}
@@ -282,8 +314,12 @@ _PAPER = {"letter": "letter portrait", "a4": "A4 portrait"}
 # browser will display, so they are rejected with an explanation rather than
 # silently embedded as a broken image.
 _LOGO_MIME = {
-    ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
 }
 # Beyond this a logo dominates the file size for no visible gain at 30px tall.
 _LOGO_SOFT_LIMIT = 400 * 1024
@@ -340,12 +376,12 @@ def _png_alpha_bounds(data: bytes) -> tuple[float, float] | None:
         return None
     pos, idat, ihdr = 8, [], None
     while pos + 8 <= len(data):
-        length = int.from_bytes(data[pos:pos + 4], "big")
-        tag = data[pos + 4:pos + 8]
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        tag = data[pos + 4 : pos + 8]
         if tag == b"IHDR":
-            ihdr = data[pos + 8:pos + 8 + length]
+            ihdr = data[pos + 8 : pos + 8 + length]
         elif tag == b"IDAT":
-            idat.append(data[pos + 8:pos + 8 + length])
+            idat.append(data[pos + 8 : pos + 8 + length])
         elif tag == b"IEND":
             break
         pos += 12 + length
@@ -354,7 +390,7 @@ def _png_alpha_bounds(data: bytes) -> tuple[float, float] | None:
     width = int.from_bytes(ihdr[0:4], "big")
     height = int.from_bytes(ihdr[4:8], "big")
     depth, colour, _, _, interlace = ihdr[8], ihdr[9], ihdr[10], ihdr[11], ihdr[12]
-    channels = {4: 2, 6: 4}.get(colour)          # grey+alpha, RGBA
+    channels = {4: 2, 6: 4}.get(colour)  # grey+alpha, RGBA
     if depth != 8 or interlace != 0 or channels is None or not width or not height:
         return None
     try:
@@ -369,8 +405,10 @@ def _png_alpha_bounds(data: bytes) -> tuple[float, float] | None:
     first_ink = last_ink = None
     at = 0
     for y in range(height):
-        filt = raw[at]; at += 1
-        line = bytearray(raw[at:at + stride]); at += stride
+        filt = raw[at]
+        at += 1
+        line = bytearray(raw[at : at + stride])
+        at += stride
         if filt == 1:
             for x in range(channels, stride):
                 line[x] = (line[x] + line[x - channels]) & 0xFF
@@ -388,9 +426,8 @@ def _png_alpha_bounds(data: bytes) -> tuple[float, float] | None:
                 c = prev[x - channels] if x >= channels else 0
                 p = a + b - c
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
-                line[x] = (line[x] + (a if (pa <= pb and pa <= pc)
-                                      else b if pb <= pc else c)) & 0xFF
-        if any(v > 8 for v in line[channels - 1::channels]):
+                line[x] = (line[x] + (a if (pa <= pb and pa <= pc) else b if pb <= pc else c)) & 0xFF
+        if any(v > 8 for v in line[channels - 1 :: channels]):
             if first_ink is None:
                 first_ink = y
             last_ink = y
@@ -411,12 +448,13 @@ def _find_symbol(symbol_dir: str, deity_name: str) -> Path | None:
     root = Path(symbol_dir).expanduser()
     if not root.is_dir():
         raise ValueError(f"symbol_dir is not a directory: {root}")
-    wanted = {deity_name.strip().lower(),
-              deity_name.strip().lower().replace(" ", "_"),
-              deity_name.strip().lower().replace(" ", "-")}
+    wanted = {
+        deity_name.strip().lower(),
+        deity_name.strip().lower().replace(" ", "_"),
+        deity_name.strip().lower().replace(" ", "-"),
+    }
     for path in sorted(root.iterdir()):
-        if (path.is_file() and path.suffix.lower() in _LOGO_MIME
-                and path.stem.lower() in wanted):
+        if path.is_file() and path.suffix.lower() in _LOGO_MIME and path.stem.lower() in wanted:
             return path
     return None
 
@@ -508,8 +546,7 @@ class _Library:
                     # case is expected by design, not a data disagreement
                     # worth flagging. Anything else is a real near-miss; say
                     # so rather than letting it pass for an exact hit.
-                    self.aliased.append({"recorded": name, "matched": entry["name"],
-                                         "kind": kind})
+                    self.aliased.append({"recorded": name, "matched": entry["name"], "kind": kind})
                 break
         if entry is None:
             # Last resort, the inverse of stripping a qualifier: the rules data
@@ -518,8 +555,7 @@ class _Library:
             # "Spellbook (Blank)", "Oil" as "Oil (1 pint)".
             entry = self._query_qualified(name, kind)
             if entry is not None:
-                self.aliased.append({"recorded": name, "matched": entry["name"],
-                                     "kind": kind})
+                self.aliased.append({"recorded": name, "matched": entry["name"], "kind": kind})
         if entry is None and not quiet:
             self.unresolved.append({"name": name, "kind": kind})
         self._cache[key] = entry
@@ -582,8 +618,7 @@ class _Library:
         return entry
 
     def by_id(self, entry_id: str) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            "SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+        row = self._conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
         return self._hydrate(row)
 
     def _query(self, name: str, kind: str) -> dict[str, Any] | None:
@@ -617,8 +652,7 @@ class _Library:
             "source_book": row["source_book"],
             "is_remaster": row["is_remaster"],
             "desc_html": raw.get("description", {}).get("value", ""),
-            "system": {k: v for k, v in raw.items()
-                       if k not in ("description", "rules", "publication")},
+            "system": {k: v for k, v in raw.items() if k not in ("description", "rules", "publication")},
         }
         self.used.append(entry)
         return entry
@@ -636,8 +670,9 @@ class _Library:
         if row is None:
             return []
         out = []
-        for grant in sorted(json.loads(row["granted_items"] or "[]"),
-                            key=lambda g: (g.get("level") or 0, g.get("name") or "")):
+        for grant in sorted(
+            json.loads(row["granted_items"] or "[]"), key=lambda g: (g.get("level") or 0, g.get("name") or "")
+        ):
             if (grant.get("level") or 0) > level:
                 continue
             # Resolve by the Foundry id in the grant's uuid, not by its name.
@@ -655,8 +690,7 @@ class _Library:
                 out.append({**entry, "granted_level": grant.get("level")})
         return out
 
-    def subclass_selections(self, class_name: str,
-                            character: dict[str, Any]) -> list[dict[str, Any]]:
+    def subclass_selections(self, class_name: str, character: dict[str, Any]) -> list[dict[str, Any]]:
         """Best-effort recovery of a subclass choice (cleric doctrine, druid
         order, sorcerer bloodline). Character exports record these only in
         free-text `specials` prose, so this matches the class's own tagged
@@ -664,13 +698,13 @@ class _Library:
         list so a caller can see what it decided."""
         tag = f"{class_name.lower().replace(' ', '-')}-"
         rows = self._conn.execute(
-            "SELECT name FROM entries WHERE pack = 'class-features' "
-            "AND other_tags LIKE ?", (f'%"{tag}%',),
+            "SELECT name FROM entries WHERE pack = 'class-features' " "AND other_tags LIKE ?",
+            (f'%"{tag}%',),
         ).fetchall()
-        haystack = " ".join(
-            str(s) for s in character.get("specials", []) or []
-        ) + " " + " ".join(
-            str(f[0]) for f in character.get("feats", []) or [] if f
+        haystack = (
+            " ".join(str(s) for s in character.get("specials", []) or [])
+            + " "
+            + " ".join(str(f[0]) for f in character.get("feats", []) or [] if f)
         )
         found = []
         for row in rows:
@@ -684,6 +718,7 @@ class _Library:
 # --------------------------------------------------------------------------
 # Foundry markup -> printable HTML
 # --------------------------------------------------------------------------
+
 
 def _template_text(match: re.Match) -> str:
     body = match.group(1)
@@ -720,8 +755,7 @@ def _enricher_text(match: re.Match) -> str:
         text = label
         if not text:
             slug = body.strip().split()[0] if body.strip() else ""
-            text = _TITLE_MINOR_RE.sub(lambda mo: mo.group(1).lower(),
-                                       slug.replace("-", " ").title())
+            text = _TITLE_MINOR_RE.sub(lambda mo: mo.group(1).lower(), slug.replace("-", " ").title())
         return f'<span class="xref">{text}</span>' if text else ""
     if label:
         # A roll's label is a quantity ("2 bludgeoning splash"), not a
@@ -731,7 +765,7 @@ def _enricher_text(match: re.Match) -> str:
     return re.sub(r"\s+", " ", formula)
 
 
-_DICE_TERM_RE = re.compile(r'([+-]?)\s*(\d+)(?:d(\d+))?')
+_DICE_TERM_RE = re.compile(r"([+-]?)\s*(\d+)(?:d(\d+))?")
 
 
 def _parse_formula(formula: str) -> dict[int | None, int]:
@@ -800,8 +834,7 @@ def _heightened_damage(entry: dict[str, Any]) -> dict[str, Any] | None:
             if not formula:
                 continue
             delta = (delta_map or {}).get(key)
-            out[key] = (_scale_add(formula, delta, steps) if delta else formula,
-                        dmg.get("type") or "")
+            out[key] = (_scale_add(formula, delta, steps) if delta else formula, dmg.get("type") or "")
         return out
 
     variants: list[dict[str, Any]] = []
@@ -810,8 +843,7 @@ def _heightened_damage(entry: dict[str, Any]) -> dict[str, Any] | None:
         if steps <= 0:
             return None
         base_damage = system.get("damage") or {}
-        overlays = sorted((system.get("overlays") or {}).values(),
-                          key=lambda o: o.get("sort", 0))
+        overlays = sorted((system.get("overlays") or {}).values(), key=lambda o: o.get("sort", 0))
         # An overlay whose damage override touches only "type" -- not
         # "formula" -- is Foundry's shape for a spell's "choose a damage
         # type" options (Telekinetic Projectile: bludgeoning/piercing/
@@ -819,7 +851,8 @@ def _heightened_damage(entry: dict[str, Any]) -> dict[str, Any] | None:
         # separately castable option there, just the template the choices
         # are built from, so it's dropped rather than printed as if it were.
         retyped_only = {
-            key for ov in overlays
+            key
+            for ov in overlays
             for key, override in (ov.get("system", {}).get("damage") or {}).items()
             if override.keys() and override.keys() <= {"type", "category"}
         }
@@ -849,7 +882,7 @@ def _heightened_damage(entry: dict[str, Any]) -> dict[str, Any] | None:
                 bits.append(f"{action} action{'s' if action != '1' else ''}")
             label = ov.get("name") or ""
             if label.startswith(name):
-                label = label[len(name):].strip()
+                label = label[len(name) :].strip()
             if label:
                 bits.append(label)
             variants.append({"label": " ".join(bits), "damage": result})
@@ -862,8 +895,7 @@ def _heightened_damage(entry: dict[str, Any]) -> dict[str, Any] | None:
         for r in applicable:
             for key, val in ((levels[r] or {}).get("damage") or {}).items():
                 merged[key] = {**merged.get(key, {}), **val}
-        result = {k: (v.get("formula"), v.get("type") or "")
-                 for k, v in merged.items() if v.get("formula")}
+        result = {k: (v.get("formula"), v.get("type") or "") for k, v in merged.items() if v.get("formula")}
         if result:
             variants.append({"label": "", "damage": result})
     else:
@@ -885,12 +917,12 @@ def _heightened_note(entry: dict[str, Any]) -> str:
         return ""
     lines = []
     for v in result["variants"]:
-        dmg = " + ".join(f'<strong>{_esc(formula)}</strong> {_esc(typ)}'.strip()
-                         for formula, typ in v["damage"].values())
+        dmg = " + ".join(
+            f"<strong>{_esc(formula)}</strong> {_esc(typ)}".strip() for formula, typ in v["damage"].values()
+        )
         label = _esc(v["label"])
         lines.append(f"{label}: {dmg}" if label else dmg)
-    return (f'<div class="chosen"><b>Heightened to rank '
-            f'{result["rank"]}</b> {"; ".join(lines)}</div>')
+    return f'<div class="chosen"><b>Heightened to rank ' f'{result["rank"]}</b> {"; ".join(lines)}</div>'
 
 
 # A spell's own "Heightened (+1) ..." / "Heightened (5th) ..." paragraph --
@@ -901,8 +933,7 @@ def _heightened_note(entry: dict[str, Any]) -> str:
 # already-computed total, not something to re-derive at the table under
 # pressure -- misreading which of several paragraphs applied to the current
 # slot is exactly what caused a wrong heighten call last session.
-_HEIGHTEN_PARA_RE = re.compile(
-    r"<p>(\s*<strong>Heightened\b.*?</strong>.*?)</p>", re.S)
+_HEIGHTEN_PARA_RE = re.compile(r"<p>(\s*<strong>Heightened\b.*?</strong>.*?)</p>", re.S)
 
 
 def _rules_html(raw: str, spell_rank: int | None = None) -> str:
@@ -919,13 +950,13 @@ def _rules_html(raw: str, spell_rank: int | None = None) -> str:
     # Persistent-damage formulas keyed to spell rank, e.g. Needle Darts'
     # "@Damage[(@item.level)[bleed]]". Resolve when we know the rank.
     if spell_rank is not None:
-        s = re.sub(r"@Damage\[\(@item\.level\)\[(\w+)\]\]",
-                   lambda mo: f"{spell_rank} persistent {mo.group(1)}", s)
+        s = re.sub(
+            r"@Damage\[\(@item\.level\)\[(\w+)\]\]", lambda mo: f"{spell_rank} persistent {mo.group(1)}", s
+        )
     s = re.sub(r"@\w+\[[^\]]*\]\{([^}]*)\}", r"\1", s)
     s = re.sub(r"@\w+\[[^\]]*\]", "", s)
     s = _ENRICHER_RE.sub(_enricher_text, s)
-    s = re.sub(r'<span class="action-glyph">\s*([123RrFf]+)\s*</span>',
-               lambda mo: _glyph(mo.group(1)), s)
+    s = re.sub(r'<span class="action-glyph">\s*([123RrFf]+)\s*</span>', lambda mo: _glyph(mo.group(1)), s)
     return s.strip()
 
 
@@ -934,16 +965,20 @@ def _rules_html(raw: str, spell_rank: int | None = None) -> str:
 # is traced from or derived from any publisher's artwork.
 # --------------------------------------------------------------------------
 
+
 def _glyph(spec: str) -> str:
     """Action-cost glyph: a filled lozenge per action, an open lozenge for a
     free action, a hooked arrow for a reaction."""
     spec = str(spec).strip().lower()
     filled = '<path d="M5 0.6 L9.4 5 L5 9.4 L0.6 5 Z" fill="currentColor"/>'
-    hollow = ('<path d="M5 0.9 L9.1 5 L5 9.1 L0.9 5 Z" fill="none" '
-              'stroke="currentColor" stroke-width="1.5"/>')
-    arrow = ('<path d="M8.6 2.2 A3.9 3.9 0 1 0 5 8.9" fill="none" '
-             'stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
-             '<path d="M8.9 0.1 L8.9 3.6 L5.5 1.9 Z" fill="currentColor"/>')
+    hollow = (
+        '<path d="M5 0.9 L9.1 5 L5 9.1 L0.9 5 Z" fill="none" ' 'stroke="currentColor" stroke-width="1.5"/>'
+    )
+    arrow = (
+        '<path d="M8.6 2.2 A3.9 3.9 0 1 0 5 8.9" fill="none" '
+        'stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+        '<path d="M8.9 0.1 L8.9 3.6 L5.5 1.9 Z" fill="currentColor"/>'
+    )
 
     def svg(inner: str) -> str:
         return f'<svg class="glyph" viewBox="0 0 10 10" aria-hidden="true">{inner}</svg>'
@@ -963,8 +998,10 @@ def _cost(spec: Any) -> str:
         return ""
     s = str(spec).strip()
     if s == "1 to 3":
-        return (f'{_glyph("1")}<span class="cost-txt" style="margin:0 3px">to</span>'
-                f'{_glyph("3")}<span class="cost-txt">1 to 3 actions</span>')
+        return (
+            f'{_glyph("1")}<span class="cost-txt" style="margin:0 3px">to</span>'
+            f'{_glyph("3")}<span class="cost-txt">1 to 3 actions</span>'
+        )
     if s.isdigit():
         word = "action" if s == "1" else "actions"
         return f'{_glyph(s)}<span class="cost-txt">{s} {word}</span>'
@@ -989,8 +1026,7 @@ def _cost_glyphs(spec: Any) -> str:
         return "&mdash;"
     s = str(spec).strip()
     if s == "1 to 3":
-        return (f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">to'
-                f'</span>{_glyph("3")}')
+        return f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">to' f'</span>{_glyph("3")}'
     if s.isdigit():
         return _glyph(s)
     if s.lower() in ("reaction", "free"):
@@ -1070,22 +1106,25 @@ def _spiral(size: int = 22) -> str:
         t = i / 140 * (4.2 * math.pi)
         r = 0.55 * math.exp(0.245 * t)
         pts.append(f"{16 + r * math.cos(t):.2f},{16 + r * math.sin(t):.2f}")
-    return (f'<svg class="spiral" viewBox="0 0 32 32" width="{size}" '
-            f'height="{size}" aria-hidden="true"><polyline points="{" ".join(pts)}" '
-            f'fill="none" stroke="currentColor" stroke-width="1.05" '
-            f'stroke-linecap="round"/></svg>')
+    return (
+        f'<svg class="spiral" viewBox="0 0 32 32" width="{size}" '
+        f'height="{size}" aria-hidden="true"><polyline points="{" ".join(pts)}" '
+        f'fill="none" stroke="currentColor" stroke-width="1.05" '
+        f'stroke-linecap="round"/></svg>'
+    )
 
 
 def _pips(rank: int) -> str:
-    return ('<span class="pips">' + "".join(
-        f'<span class="pip{" filled" if rank >= i else ""}"></span>'
-        for i in (2, 4, 6, 8)) + "</span>")
+    return (
+        '<span class="pips">'
+        + "".join(f'<span class="pip{" filled" if rank >= i else ""}"></span>' for i in (2, 4, 6, 8))
+        + "</span>"
+    )
 
 
 def _circles(n: int, cls: str = "") -> str:
     n = max(0, min(int(n), 24))
-    return (f'<span class="circles {cls}">'
-            + '<span class="circ"></span>' * n + "</span>")
+    return f'<span class="circles {cls}">' + '<span class="circ"></span>' * n + "</span>"
 
 
 def _mod(n: int) -> str:
@@ -1096,8 +1135,7 @@ def _traits(traits, rarity=None) -> str:
     out = []
     if rarity and rarity != "common":
         out.append(f'<span class="trait rarity">{html.escape(rarity)}</span>')
-    out += [f'<span class="trait">{html.escape(str(t).replace("-", " "))}</span>'
-            for t in traits or []]
+    out += [f'<span class="trait">{html.escape(str(t).replace("-", " "))}</span>' for t in traits or []]
     return f'<span class="traits">{"".join(out)}</span>' if out else ""
 
 
@@ -1149,7 +1187,7 @@ def _strip_to_qualifier(recorded: str, resolved: str) -> str:
     trailing = re.search(r"\(([^)]*)\)\s*$", recorded.strip())
     if not trailing:
         return ""
-    base = recorded.strip()[:trailing.start()].strip()
+    base = recorded.strip()[: trailing.start()].strip()
     if base.lower() != resolved.strip().lower():
         return ""
     return trailing.group(1).strip()
@@ -1194,8 +1232,7 @@ def _deity_info(character: dict[str, Any], lib: _Library) -> dict[str, Any]:
 
     entry = lib.get(recorded, "deity", quiet=True)
     if entry is None:
-        return {"recorded": recorded, "status": "unrecognized", "entry": None,
-                "facts": []}
+        return {"recorded": recorded, "status": "unrecognized", "entry": None, "facts": []}
 
     s = entry["system"]
     facts: list[tuple[str, str]] = []
@@ -1224,8 +1261,7 @@ def _deity_info(character: dict[str, Any], lib: _Library) -> dict[str, Any]:
         # Only reachable through the Raised by Belief background, per the
         # game's own hint text for this field -- labelled so it isn't mistaken
         # for a cleric's key attribute.
-        facts.append(("Divine Attribute",
-                      " or ".join(str(a).upper() for a in s["attribute"])))
+        facts.append(("Divine Attribute", " or ".join(str(a).upper() for a in s["attribute"])))
 
     spells = s.get("spells") or {}
     if isinstance(spells, dict) and spells:
@@ -1237,11 +1273,16 @@ def _deity_info(character: dict[str, Any], lib: _Library) -> dict[str, Any]:
         # caller as data as well as being rendered into the page.
         facts.append(("Cleric Spells", ", ".join(parts)))
 
-    return {"recorded": recorded, "status": "resolved", "entry": entry,
-            "facts": facts, "category": category,
-            # Slugs, for matching a carried weapon against the favored one --
-            # Deadly Simplicity turns on exactly that comparison.
-            "favored_weapons": [str(w).lower() for w in (s.get("weapons") or [])]}
+    return {
+        "recorded": recorded,
+        "status": "resolved",
+        "entry": entry,
+        "facts": facts,
+        "category": category,
+        # Slugs, for matching a carried weapon against the favored one --
+        # Deadly Simplicity turns on exactly that comparison.
+        "favored_weapons": [str(w).lower() for w in (s.get("weapons") or [])],
+    }
 
 
 # A reinforcing rune states its own increments and caps in its description
@@ -1263,8 +1304,14 @@ def _reinforcing_bonus(entry: dict[str, Any]) -> dict[str, int] | None:
     if not match:
         return None
     hard, hp, bt, max_hard, max_hp, max_bt = (int(g) for g in match.groups())
-    return {"hardness": hard, "hp": hp, "bt": bt,
-            "max_hardness": max_hard, "max_hp": max_hp, "max_bt": max_bt}
+    return {
+        "hardness": hard,
+        "hp": hp,
+        "bt": bt,
+        "max_hardness": max_hard,
+        "max_hp": max_hp,
+        "max_bt": max_bt,
+    }
 
 
 def _shield_stats(character: dict[str, Any], lib: _Library) -> dict[str, Any] | None:
@@ -1340,9 +1387,14 @@ def _shield_stats(character: dict[str, Any], lib: _Library) -> dict[str, Any] | 
     return None
 
 
-def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
-             prof: dict[str, Any], lib: _Library,
-             deity: dict[str, Any] | None = None) -> tuple[list[dict], list[str]]:
+def _strikes(
+    character: dict[str, Any],
+    abilities: dict[str, int],
+    level: int,
+    prof: dict[str, Any],
+    lib: _Library,
+    deity: dict[str, Any] | None = None,
+) -> tuple[list[dict], list[str]]:
     """Attack bonus and damage for each carried weapon.
 
     The attack ability and the damage ability are decided separately, because
@@ -1410,17 +1462,14 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         rune_labels = _rune_labels(fixed, raw_runes)
         die = weapon.get("die") or "d4"
         base_die = ((entry or {}).get("system", {}).get("damage") or {}).get("die")
-        slug = ((entry or {}).get("system", {}).get("slug")
-                or weapon["name"].lower().replace(" ", "-"))
+        slug = (entry or {}).get("system", {}).get("slug") or weapon["name"].lower().replace(" ", "-")
         stepped_by = ""
         # Only step a die the export left at the base item's value. If the two
         # already disagree the export has applied some effect of its own, and
         # stepping again would double-count it.
-        if (has_deadly_simplicity and slug in favored
-                and base_die is not None and die == base_die):
+        if has_deadly_simplicity and slug in favored and base_die is not None and die == base_die:
             unarmed = weapon.get("prof") == "unarmed" or has("unarmed")
-            die = ("d6" if unarmed and _DIE_LADDER.index(die) < 1
-                   else _step_die(die))
+            die = "d6" if unarmed and _DIE_LADDER.index(die) < 1 else _step_die(die)
             stepped_by = "Deadly Simplicity"
 
         def damage_mod(is_thrown_or_melee: bool) -> int:
@@ -1447,8 +1496,11 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         if conflict:
             warnings.append(
                 f"{weapon['name']}: printing {die} damage"
-                + (f" ({stepped_by} applied to the base {base_die})"
-                   if stepped_by else " from the character data")
+                + (
+                    f" ({stepped_by} applied to the base {base_die})"
+                    if stepped_by
+                    else " from the character data"
+                )
                 + f", but its note names {conflict}. Die-size effects other "
                 f"than Deadly Simplicity are not applied automatically — "
                 f"check this one."
@@ -1475,21 +1527,25 @@ def _strikes(character: dict[str, Any], abilities: dict[str, int], level: int,
         # the melee number.
         if thrown and not ranged_weapon:
             distance = next(
-                (t.split("-", 1)[1] for t in traits
-                 if t.startswith("thrown-") and t.split("-", 1)[1].isdigit()),
+                (
+                    t.split("-", 1)[1]
+                    for t in traits
+                    if t.startswith("thrown-") and t.split("-", 1)[1].isdigit()
+                ),
                 None,
             )
-            label = (f"{weapon['name']} (thrown {distance} ft.)" if distance
-                     else f"{weapon['name']} (thrown)")
-            rows.append({
-                **row,
-                "name": label,
-                "attack": dex_mod + bonus,
-                "damage": damage_text(damage_mod(True)),
-                # Finesse governs a melee attack; it has no bearing on a throw.
-                "traits": [t for t in traits if t != "finesse"],
-                "display": "",
-            })
+            label = f"{weapon['name']} (thrown {distance} ft.)" if distance else f"{weapon['name']} (thrown)"
+            rows.append(
+                {
+                    **row,
+                    "name": label,
+                    "attack": dex_mod + bonus,
+                    "damage": damage_text(damage_mod(True)),
+                    # Finesse governs a melee attack; it has no bearing on a throw.
+                    "traits": [t for t in traits if t != "finesse"],
+                    "display": "",
+                }
+            )
     return rows, warnings
 
 
@@ -1534,9 +1590,12 @@ def _assurance_skills(character: dict[str, Any]) -> set[str]:
     return out
 
 
-def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
-                level: int,
-                hidden_lores: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+def _skill_rows(
+    character: dict[str, Any],
+    abilities: dict[str, int],
+    level: int,
+    hidden_lores: frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
     """The page-1 skills table: every skill the character has permanently,
     with its rank and total.
 
@@ -1579,7 +1638,8 @@ def _skill_rows(character: dict[str, Any], abilities: dict[str, int],
             continue
         row = {
             "name": label,
-            "key": "INT", "rank": rank,
+            "key": "INT",
+            "rank": rank,
             "total": m.total_bonus(abilities["int"], rank, level),
         }
         assurance_val = _assurance_value(label, rank)
@@ -1609,25 +1669,25 @@ def _permanent_lores(character: dict[str, Any], conn) -> set[str]:
     found: set[str] = set()
 
     def plain(html_text: str) -> str:
-        text = re.sub(r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1",
-                      re.sub(r"<[^>]+>", " ", html_text or ""))
+        text = re.sub(r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1", re.sub(r"<[^>]+>", " ", html_text or ""))
         return re.sub(r"\s+", " ", text)
 
     background = str(character.get("background") or "").strip()
     if background:
         row = conn.execute(
-            "SELECT description FROM entries WHERE name = ? COLLATE NOCASE "
-            "AND pack = 'backgrounds'", (background,)).fetchone()
+            "SELECT description FROM entries WHERE name = ? COLLATE NOCASE " "AND pack = 'backgrounds'",
+            (background,),
+        ).fetchone()
         if row is not None:
-            found.update(f"{lore} lore".lower()
-                         for lore in _LORE_RE.findall(plain(row["description"])))
+            found.update(f"{lore} lore".lower() for lore in _LORE_RE.findall(plain(row["description"])))
 
     for feat in character.get("feats", []) or []:
         if not (isinstance(feat, (list, tuple)) and len(feat) > 1 and feat[1]):
             continue
         row = conn.execute(
-            "SELECT description FROM entries WHERE name = ? COLLATE NOCASE "
-            "AND pack = 'feats'", (str(feat[0]),)).fetchone()
+            "SELECT description FROM entries WHERE name = ? COLLATE NOCASE " "AND pack = 'feats'",
+            (str(feat[0]),),
+        ).fetchone()
         if row is None or "lore" not in plain(row["description"]).lower():
             continue
         topic = str(feat[1]).strip()
@@ -1636,8 +1696,7 @@ def _permanent_lores(character: dict[str, Any], conn) -> set[str]:
     return found
 
 
-def _skill_actions(character: dict[str, Any], lib: _Library,
-                   conn) -> list[dict[str, Any]]:
+def _skill_actions(character: dict[str, Any], lib: _Library, conn) -> list[dict[str, Any]]:
     """The skill actions this character's training unlocks, from the ingested
     `skill_actions` table.
 
@@ -1701,8 +1760,7 @@ def _skill_actions(character: dict[str, Any], lib: _Library,
     return actions
 
 
-def _spellcasting(character: dict[str, Any], level: int,
-                  lib: _Library) -> list[dict[str, Any]]:
+def _spellcasting(character: dict[str, Any], level: int, lib: _Library) -> list[dict[str, Any]]:
     """One block per spellcasting entry on the character, with each spell's
     full rules text resolved. Reads Pathbuilder's `spellCasters` shape, plus
     a synthesized block for its `focus` shape.
@@ -1732,23 +1790,26 @@ def _spellcasting(character: dict[str, Any], level: int,
                     # A cantrip is always heightened to the caster's own
                     # highest rank, which is what rank-scaled formulas in its
                     # text should resolve against.
-                    found = {**found,
-                             "effective_rank": max_rank if rank == 0 else rank}
+                    found = {**found, "effective_rank": max_rank if rank == 0 else rank}
                     resolved.append(found)
-            ranks.append({
-                "rank": rank,
-                "slots": per_day[rank] if rank < len(per_day) else None,
-                "spells": resolved,
-            })
-        blocks.append({
-            "name": caster.get("name") or "Spellcasting",
-            "tradition": (caster.get("magicTradition") or "").title(),
-            "kind": (caster.get("spellcastingType") or "").title(),
-            "ability": (caster.get("ability") or "").lower(),
-            "proficiency": caster.get("proficiency") or 0,
-            "ranks": sorted(ranks, key=lambda r: r["rank"]),
-            "focus_points": None,
-        })
+            ranks.append(
+                {
+                    "rank": rank,
+                    "slots": per_day[rank] if rank < len(per_day) else None,
+                    "spells": resolved,
+                }
+            )
+        blocks.append(
+            {
+                "name": caster.get("name") or "Spellcasting",
+                "tradition": (caster.get("magicTradition") or "").title(),
+                "kind": (caster.get("spellcastingType") or "").title(),
+                "ability": (caster.get("ability") or "").lower(),
+                "proficiency": caster.get("proficiency") or 0,
+                "ranks": sorted(ranks, key=lambda r: r["rank"]),
+                "focus_points": None,
+            }
+        )
 
     focus = character.get("focus")
     if isinstance(focus, dict) and focus:
@@ -1767,11 +1828,11 @@ def _spellcasting(character: dict[str, Any], level: int,
             # one-level-shallower reading this code used to assume; it is kept
             # as a fallback so a hand-written character file in that shape
             # still renders rather than silently losing its focus spells.
-            entries = ([(None, by_ability)]
-                       if ("focusSpells" in by_ability
-                           or "focusCantrips" in by_ability)
-                       else [(k, v) for k, v in by_ability.items()
-                             if isinstance(v, dict)])
+            entries = (
+                [(None, by_ability)]
+                if ("focusSpells" in by_ability or "focusCantrips" in by_ability)
+                else [(k, v) for k, v in by_ability.items() if isinstance(v, dict)]
+            )
             for ability, entry in entries:
                 if ability and not focus_ability:
                     focus_ability = str(ability).lower()
@@ -1783,35 +1844,36 @@ def _spellcasting(character: dict[str, Any], level: int,
                     # archetype's).
                     if focus_rank is None and entry.get("proficiency") is not None:
                         focus_rank = entry.get("proficiency")
-                names.extend((str(n), True)
-                             for n in (entry.get("focusCantrips") or []))
-                names.extend((str(n), False)
-                             for n in (entry.get("focusSpells") or []))
+                names.extend((str(n), True) for n in (entry.get("focusCantrips") or []))
+                names.extend((str(n), False) for n in (entry.get("focusSpells") or []))
         resolved = []
         for name, at_will in names:
             found = lib.get(name, "spell")
             if found:
-                resolved.append({**found, "effective_rank": max_rank,
-                                 "at_will": at_will})
+                resolved.append({**found, "effective_rank": max_rank, "at_will": at_will})
         if resolved:
             # Focus spells are cast with the statistic the focus entry itself
             # names. Failing that (the shallow fallback shape, which carries
             # no attribute), borrow from a spellCasters entry of the same
             # tradition, and failing that use the character's key ability at
             # trained.
-            source = next((b for b in blocks
-                            if b["tradition"].lower() == tradition.lower()), None)
-            blocks.append({
-                "name": "Focus Spells",
-                "tradition": source["tradition"] if source else tradition.title(),
-                "kind": "Focus",
-                "ability": (focus_ability or (source["ability"] if source
-                            else str(character.get("keyability") or "").lower())),
-                "proficiency": (focus_rank if focus_rank is not None
-                                else (source["proficiency"] if source else 2)),
-                "ranks": [{"rank": max_rank, "slots": None, "spells": resolved}],
-                "focus_points": character.get("focusPoints") or 0,
-            })
+            source = next((b for b in blocks if b["tradition"].lower() == tradition.lower()), None)
+            blocks.append(
+                {
+                    "name": "Focus Spells",
+                    "tradition": source["tradition"] if source else tradition.title(),
+                    "kind": "Focus",
+                    "ability": (
+                        focus_ability
+                        or (source["ability"] if source else str(character.get("keyability") or "").lower())
+                    ),
+                    "proficiency": (
+                        focus_rank if focus_rank is not None else (source["proficiency"] if source else 2)
+                    ),
+                    "ranks": [{"rank": max_rank, "slots": None, "spells": resolved}],
+                    "focus_points": character.get("focusPoints") or 0,
+                }
+            )
     return blocks
 
 
@@ -1819,11 +1881,11 @@ def _spellcasting(character: dict[str, Any], level: int,
 # Stylesheet
 # --------------------------------------------------------------------------
 
+
 def _stylesheet(paper: str) -> str:
     faces = "".join(
         "@font-face{font-family:'%s';font-style:%s;font-weight:100 900;"
-        "font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2');}"
-        % (family, style, b64)
+        "font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2');}" % (family, style, b64)
         for family, style, b64 in FACES.values()
     )
     return faces + r"""
@@ -2369,20 +2431,26 @@ table.grid td.du .sust{font-family:'SheetSans',sans-serif;font-size:5.6pt;
 # Section builders
 # --------------------------------------------------------------------------
 
+
 def _section(title: str, note: str = "") -> str:
     tail = f'<div class="sec-note">{note}</div>' if note else ""
     return f'<div class="sec">{_spiral(22)}<h2>{_esc(title)}</h2>{tail}</div>'
 
 
 def _foot(name: str, label: str) -> str:
-    return (f'<div class="pagefoot"><span>{_esc(name)}</span>'
-            f'<span>{_esc(label)}</span></div>')
+    return f'<div class="pagefoot"><span>{_esc(name)}</span>' f"<span>{_esc(label)}</span></div>"
 
 
-def _card(entry: dict[str, Any], kicker: str = "", chosen: str = "",
-          cost: Any = None, plain: bool = False,
-          spell_rank: int | None = None, meta: str = "",
-          title: str = "") -> str:
+def _card(
+    entry: dict[str, Any],
+    kicker: str = "",
+    chosen: str = "",
+    cost: Any = None,
+    plain: bool = False,
+    spell_rank: int | None = None,
+    meta: str = "",
+    title: str = "",
+) -> str:
     """`title` overrides the heading. Used where the character's own spelling
     carries information the resolved entry's name does not -- "Advanced
     Maneuver (Combat Grab)" resolves to the Advanced Maneuver entry, and a
@@ -2395,8 +2463,7 @@ def _card(entry: dict[str, Any], kicker: str = "", chosen: str = "",
         cost = str(actions) if actions else (atype if atype in ("reaction", "free") else None)
     cost_html = f'<span class="cost">{_cost(cost)}</span>' if cost else ""
     kick = f'<span class="rank">{_esc(kicker)}</span>' if kicker else ""
-    chosen_html = (f'<div class="chosen"><b>As chosen</b> &nbsp;{chosen}</div>'
-                   if chosen else "")
+    chosen_html = f'<div class="chosen"><b>As chosen</b> &nbsp;{chosen}</div>' if chosen else ""
     heightened_html = _heightened_note(entry) if spell_rank is not None else ""
     return f"""
 <article class="card{' plain' if plain else ''}">
@@ -2424,7 +2491,7 @@ def _spell_meta(entry: dict[str, Any], dc: int | None) -> str:
         add("Area", f'{_esc(area.get("value"))}-foot {_esc(area.get("type"))}')
     add("Targets", _esc((system.get("target") or {}).get("value")))
     add("Duration", _esc((system.get("duration") or {}).get("value")))
-    save = ((system.get("defense") or {}).get("save") or {})
+    save = (system.get("defense") or {}).get("save") or {}
     if save.get("statistic"):
         basic = "basic " if save.get("basic") else ""
         vs = f" vs. DC {dc}" if dc is not None else ""
@@ -2477,11 +2544,10 @@ def _page_core(ctx: dict[str, Any]) -> str:
 
     save_html = "".join(
         f'<div class="statrow"><span class="nm">{label}</span>'
-        f'{_pips(prof.get(key, 0) or 0)}'
+        f"{_pips(prof.get(key, 0) or 0)}"
         f'<span class="rk">{_RANK_ABBR.get(prof.get(key, 0) or 0, "?")}</span>'
         f'<span class="tot">{_mod(d["saves"][key])}</span></div>'
-        for key, label in (("fortitude", "Fortitude"), ("reflex", "Reflex"),
-                           ("will", "Will"))
+        for key, label in (("fortitude", "Fortitude"), ("reflex", "Reflex"), ("will", "Will"))
     )
 
     strike_html = ""
@@ -2492,23 +2558,24 @@ def _page_core(ctx: dict[str, Any]) -> str:
         # swamp the column, and a die mismatch is reported as a warning anyway.
         note = s["display"] if len(s["display"]) <= 80 else ""
         extra = f'<div class="tr">{_esc(note)}</div>' if note else ""
-        runes_line = (f'<div class="tr rune">{_esc(", ".join(s["rune_labels"]))}</div>'
-                      if s.get("rune_labels") else "")
+        runes_line = (
+            f'<div class="tr rune">{_esc(", ".join(s["rune_labels"]))}</div>' if s.get("rune_labels") else ""
+        )
         strike_html += (
             f'<tr><td><div class="wn">{_esc(s["name"])}'
             f'{f" &times;{s['qty']}" if s["qty"] > 1 else ""}</div>'
             f'<div class="tr">{_esc(", ".join(t.replace("-", " ") for t in s["traits"]))}</div>'
-            f'{runes_line}{extra}</td>'
+            f"{runes_line}{extra}</td>"
             f'<td class="r bn">{_mod(s["attack"])}</td>'
             f'<td class="r">{_esc(s["damage"])}<div class="tr">{_esc(s["type"])}</div></td></tr>'
         )
     if not strike_html:
-        strike_html = ('<tr><td colspan="3" class="tr">No weapons recorded on '
-                       'this character.</td></tr>')
+        strike_html = '<tr><td colspan="3" class="tr">No weapons recorded on ' "this character.</td></tr>"
 
     def mstat(label: str, value: Any) -> str:
-        return (f'<div class="mstat"><span class="k">{label}</span>'
-                f'<span class="v">{_esc(value)}</span></div>')
+        return (
+            f'<div class="mstat"><span class="k">{label}</span>' f'<span class="v">{_esc(value)}</span></div>'
+        )
 
     # The armour statistics that always exist, as a labelled grid rather than a
     # sentence: in a column this narrow the prose wrapped mid-value ("Dex cap
@@ -2516,23 +2583,27 @@ def _page_core(ctx: dict[str, Any]) -> str:
     armor = ctx["armor"]
     if armor:
         armor_rank = prof.get(armor["category"], 0) or 0
-        ac_cells = (mstat("Item", _mod(armor["ac_bonus"]))
-                    + mstat("Dex cap", _mod(armor["dex_cap"]))
-                    + mstat("Check", armor["check_penalty"] or 0)
-                    + mstat("Speed", armor["speed_penalty"] or 0))
-        ac_cap = (f'<b>{_esc(armor["display_name"])}</b>'
-                  f'<span class="capmeta"> &middot; '
-                  f'{_RANK_NAME.get(armor_rank, "?")} '
-                  f'({_mod(level + armor_rank if armor_rank else 0)})'
-                  + (f' &middot; {_esc(", ".join(armor["rune_labels"]))}'
-                     if armor.get("rune_labels") else ""))
+        ac_cells = (
+            mstat("Item", _mod(armor["ac_bonus"]))
+            + mstat("Dex cap", _mod(armor["dex_cap"]))
+            + mstat("Check", armor["check_penalty"] or 0)
+            + mstat("Speed", armor["speed_penalty"] or 0)
+        )
+        ac_cap = (
+            f'<b>{_esc(armor["display_name"])}</b>'
+            f'<span class="capmeta"> &middot; '
+            f'{_RANK_NAME.get(armor_rank, "?")} '
+            f"({_mod(level + armor_rank if armor_rank else 0)})"
+            + (f' &middot; {_esc(", ".join(armor["rune_labels"]))}' if armor.get("rune_labels") else "")
+        )
     else:
         unarmored_rank = prof.get("unarmored", 0) or 0
-        ac_cells = (mstat("Item", "—") + mstat("Dex cap", "—")
-                    + mstat("Check", 0) + mstat("Speed", 0))
-        ac_cap = (f'<b>Unarmored</b><span class="capmeta"> &middot; '
-                  f'{_RANK_NAME.get(unarmored_rank, "?")} '
-                  f'({_mod(level + unarmored_rank if unarmored_rank else 0)})')
+        ac_cells = mstat("Item", "—") + mstat("Dex cap", "—") + mstat("Check", 0) + mstat("Speed", 0)
+        ac_cap = (
+            f'<b>Unarmored</b><span class="capmeta"> &middot; '
+            f'{_RANK_NAME.get(unarmored_rank, "?")} '
+            f"({_mod(level + unarmored_rank if unarmored_rank else 0)})"
+        )
     if shield:
         ac_cap += f' &middot; <b>{d["ac"] + shield["ac_bonus"]}</b> raised'
     ac_cap += "</span>"
@@ -2542,9 +2613,11 @@ def _page_core(ctx: dict[str, Any]) -> str:
         # Shield HP is the one defensive number that changes during a fight --
         # Shield Block spends it -- so it gets a box to write in, alongside the
         # fixed values it has to be compared against.
-        runes = (f'<span class="capmeta"> &middot; '
-                 f'{_esc(", ".join(shield["runes"]))}</span>'
-                 if shield.get("runes") else "")
+        runes = (
+            f'<span class="capmeta"> &middot; ' f'{_esc(", ".join(shield["runes"]))}</span>'
+            if shield.get("runes")
+            else ""
+        )
         shield_tile = f"""
         <div class="itemcap"><b>{_esc(shield['display_name'])}</b>{runes}</div>
         <div class="tile">
@@ -2573,9 +2646,13 @@ def _page_core(ctx: dict[str, Any]) -> str:
         attack = m.total_bonus(key, rank, level)
         if i == 0:
             slot_line = " &middot; ".join(
-                f'Rank {r["rank"]}: <b>{r["slots"]}</b>' if r["rank"] else
-                f'Cantrips <b>{len(r["spells"])}</b>'
-                for r in block["ranks"] if r["slots"] or r["rank"] == 0
+                (
+                    f'Rank {r["rank"]}: <b>{r["slots"]}</b>'
+                    if r["rank"]
+                    else f'Cantrips <b>{len(r["spells"])}</b>'
+                )
+                for r in block["ranks"]
+                if r["slots"] or r["rank"] == 0
             )
             cast_tile += f"""
         <div class="tile">
@@ -2694,6 +2771,8 @@ def _page_core(ctx: dict[str, Any]) -> str:
   </div>
 
 </section>"""
+
+
 # Feats and features used to sit at the foot of this page, fitted by a
 # character-count budget that stood in for "how many lines will this wrap to".
 # The proxy failed on a dense build -- a level-14 animist with six feat
@@ -2719,14 +2798,18 @@ def _spell_cells(spell: dict[str, Any]) -> str:
     by every casting source on the sheet, not just an animist's.
     """
     system = spell.get("system", {}) or {}
-    return (f'<td class="ac">{_cost_glyphs((system.get("time") or {}).get("value"))}'
-            f'</td><td class="rg">{_spell_range(spell)}</td>'
-            f'<td class="du">{_spell_duration(spell)}</td>')
+    return (
+        f'<td class="ac">{_cost_glyphs((system.get("time") or {}).get("value"))}'
+        f'</td><td class="rg">{_spell_range(spell)}</td>'
+        f'<td class="du">{_spell_duration(spell)}</td>'
+    )
 
 
-def _prep_table(blocks: list[dict[str, Any]],
-                repertoire_shown_elsewhere: frozenset[str] = frozenset(),
-                vessel_spells: frozenset[str] = frozenset()) -> str:
+def _prep_table(
+    blocks: list[dict[str, Any]],
+    repertoire_shown_elsewhere: frozenset[str] = frozenset(),
+    vessel_spells: frozenset[str] = frozenset(),
+) -> str:
     """One consolidated slot-usage table spanning every spellcasting source
     on the character -- a class list, its font, focus spells, an
     archetype's repertoire, whatever's present -- rather than a separate
@@ -2790,41 +2873,46 @@ def _prep_table(blocks: list[dict[str, Any]],
                 continue
             if kind == "focus":
                 pool = block.get("focus_points") or 0
-                at_will = sorted({s["name"] for s in r["spells"]
-                                  if s.get("at_will")})
-                pooled = sorted({s["name"] for s in r["spells"]
-                                 if not s.get("at_will")})
+                at_will = sorted({s["name"] for s in r["spells"] if s.get("at_will")})
+                pooled = sorted({s["name"] for s in r["spells"] if not s.get("at_will")})
                 by_name = {s["name"]: s for s in r["spells"]}
                 # Every vessel spell in the pool becomes the same one deferred
                 # row, however many apparitions contributed one.
                 vessels = [n for n in pooled if n in vessel_spells]
                 pooled = [n for n in pooled if n not in vessel_spells]
                 if pooled or vessels:
-                    lbl = ("Focus pool — any combination below"
-                           if len(pooled) + bool(vessels) > 1 else "Focus pool")
+                    lbl = (
+                        "Focus pool — any combination below"
+                        if len(pooled) + bool(vessels) > 1
+                        else "Focus pool"
+                    )
                     rows.append(
                         f'<tr class="grp"><td>{source}</td><td>Focus</td>'
                         f'<td class="nm">{lbl}</td>{blank}'
-                        f'<td class="r last">{_circles(pool)}</td></tr>')
+                        f'<td class="r last">{_circles(pool)}</td></tr>'
+                    )
                     if vessels:
                         rows.append(
                             f'<tr class="sub"><td></td><td></td>'
                             f'<td class="nm">Vessel spell of your primary '
                             f'apparition</td><td colspan="3" class="dsc">'
-                            f'see the apparition blocks below</td>'
-                            f'<td class="r last"></td></tr>')
+                            f"see the apparition blocks below</td>"
+                            f'<td class="r last"></td></tr>'
+                        )
                     for name in pooled:
                         rows.append(
                             f'<tr class="sub"><td></td><td></td>'
                             f'<td class="nm">{_esc(name)}</td>'
-                            f'{_spell_cells(by_name[name])}'
-                            f'<td class="r last"></td></tr>')
+                            f"{_spell_cells(by_name[name])}"
+                            f'<td class="r last"></td></tr>'
+                        )
                 for name in at_will:
                     rows.append(
-                        f'<tr><td>{source}</td><td>Focus</td>'
+                        f"<tr><td>{source}</td><td>Focus</td>"
                         f'<td class="nm">{_esc(name)}</td>'
-                        f'{_spell_cells(by_name[name])}'
-                        f'<td class="r last">at will</td></tr>')
+                        f"{_spell_cells(by_name[name])}"
+                        f'<td class="r last">at will</td></tr>'
+                    )
                 continue
             if r["rank"] == 0:
                 by_name = {s["name"]: s for s in r["spells"]}
@@ -2838,15 +2926,17 @@ def _prep_table(blocks: list[dict[str, Any]],
                     f'<tr class="grp"><td>{source}</td><td>Cantrip</td>'
                     f'<td class="nm">At will</td>{blank}'
                     f'<td class="r last"><span class="dsc">{len(names)} known '
-                    f'&middot; cast at rank {heightened}</span></td></tr>')
+                    f"&middot; cast at rank {heightened}</span></td></tr>"
+                )
                 if elsewhere:
                     continue
                 for name in names:
                     rows.append(
                         f'<tr class="sub"><td></td><td></td>'
                         f'<td class="nm">{_esc(name)}</td>'
-                        f'{_spell_cells(by_name[name])}'
-                        f'<td class="r last"></td></tr>')
+                        f"{_spell_cells(by_name[name])}"
+                        f'<td class="r last"></td></tr>'
+                    )
                 continue
             counts: dict[str, int] = {}
             by_name: dict[str, dict[str, Any]] = {}
@@ -2865,32 +2955,35 @@ def _prep_table(blocks: list[dict[str, Any]],
                     f'<tr class="grp"><td>{source}</td><td>{r["rank"]}</td>'
                     f'<td class="nm">Prepared</td>{blank}'
                     f'<td class="r last"><span class="dsc">{n} '
-                    f'slot{"" if n == 1 else "s"}</span></td></tr>')
+                    f'slot{"" if n == 1 else "s"}</span></td></tr>'
+                )
                 for name in sorted(counts):
                     spell = by_name[name]
                     rows.append(
                         f'<tr class="sub"><td></td><td></td>'
                         f'<td class="nm">{_esc(name)}</td>'
-                        f'{_spell_cells(spell)}'
-                        f'<td class="r last">{_circles(counts[name])}</td></tr>')
+                        f"{_spell_cells(spell)}"
+                        f'<td class="r last">{_circles(counts[name])}</td></tr>'
+                    )
             else:
                 n = r["slots"] or 0
-                label = ("Any combination below" if len(counts) > 1
-                         else "Slots")
+                label = "Any combination below" if len(counts) > 1 else "Slots"
                 if elsewhere:
                     label = "Any attuned apparition spell of this rank"
                 rows.append(
                     f'<tr class="grp"><td>{source}</td><td>{r["rank"]}</td>'
                     f'<td class="nm">{label}</td>{blank}'
-                    f'<td class="r last">{_circles(n)}</td></tr>')
+                    f'<td class="r last">{_circles(n)}</td></tr>'
+                )
                 if elsewhere:
                     continue
                 for name in sorted(counts):
                     rows.append(
                         f'<tr class="sub"><td></td><td></td>'
                         f'<td class="nm">{_esc(name)}</td>'
-                        f'{_spell_cells(by_name[name])}'
-                        f'<td class="r last"></td></tr>')
+                        f"{_spell_cells(by_name[name])}"
+                        f'<td class="r last"></td></tr>'
+                    )
     if not rows:
         return ""
     return f"""
@@ -2930,8 +3023,13 @@ def _spell_index(ctx: dict[str, Any]) -> list[tuple]:
                 name = spell["name"]
                 if name not in by_name:
                     order.append(name)
-                    by_name[name] = {"spell": spell, "rank": r["rank"],
-                                     "count": 0, "source": block["name"], "dc": dc}
+                    by_name[name] = {
+                        "spell": spell,
+                        "rank": r["rank"],
+                        "count": 0,
+                        "source": block["name"],
+                        "dc": dc,
+                    }
                 entry = by_name[name]
                 entry["count"] += 1
                 if r["rank"] > entry["rank"]:
@@ -2951,21 +3049,25 @@ def _spell_index(ctx: dict[str, Any]) -> list[tuple]:
     # primary -- so a sheet that carried the rules text for only one of them
     # would send the player to a book for the other two.
     have = set(by_name)
-    focus = next((b for b in ctx["spellcasting"]
-                  if b["kind"].lower() == "focus"), None)
+    focus = next((b for b in ctx["spellcasting"] if b["kind"].lower() == "focus"), None)
     if focus is not None:
-        focus_dc = 10 + m.total_bonus(abilities.get(focus["ability"], 10),
-                                      focus["proficiency"] or 0, level)
+        focus_dc = 10 + m.total_bonus(abilities.get(focus["ability"], 10), focus["proficiency"] or 0, level)
         for app in ctx["apparitions"]:
             spell = app["vessel_spell"]
             if spell is None or spell["entry"] is None or spell["name"] in have:
                 continue
             have.add(spell["name"])
             max_rank = min((level + 1) // 2, 10)
-            entries.append((spell["name"],
-                            {**spell["entry"], "effective_rank": max_rank},
-                            max_rank, 1,
-                            f"Vessel &middot; {app['name']}", focus_dc))
+            entries.append(
+                (
+                    spell["name"],
+                    {**spell["entry"], "effective_rank": max_rank},
+                    max_rank,
+                    1,
+                    f"Vessel &middot; {app['name']}",
+                    focus_dc,
+                )
+            )
     return entries
 
 
@@ -2980,6 +3082,25 @@ _CASTER_KINDS = ("Prepared", "Spontaneous", "Innate")
 
 # Ability boosts land at character creation and every fifth level after.
 _BOOST_LEVELS = (1, 5, 10, 15, 20)
+_GRADUAL_BOOST_LEVELS = (
+    1,
+    2,
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    15,
+    17,
+    18,
+    19,
+    20,
+)
 
 
 def _boost_abilities(ch: dict[str, Any], level: int) -> list[str]:
@@ -2998,8 +3119,13 @@ def _boost_abilities(ch: dict[str, Any], level: int) -> list[str]:
     boosted: set[str] = set()
     sources = []
     if level == 1:
-        sources += ["ancestryFree", "ancestryBoosts",
-                    "backgroundBoosts", "backgroundAbilities", "classBoosts"]
+        sources += [
+            "ancestryFree",
+            "ancestryBoosts",
+            "backgroundBoosts",
+            "backgroundAbilities",
+            "classBoosts",
+        ]
     for key in sources:
         src = breakdown.get(key)
         if isinstance(src, list):
@@ -3059,8 +3185,7 @@ def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], i
     """
     if safe:
         prof = ch.get("proficiencies", {}) or {}
-        named = [skill.capitalize() for skill in sorted(m.KNOWN_SKILLS)
-                 if (prof.get(skill, 0) or 0) >= 2]
+        named = [skill.capitalize() for skill in sorted(m.KNOWN_SKILLS) if (prof.get(skill, 0) or 0) >= 2]
         named += [label for label, rank in _lore_entries(ch) if rank >= 2]
         return named, 0
 
@@ -3092,9 +3217,7 @@ def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], i
     if class_rows and class_rows[0]["trained_skills"]:
         # Through the corrections, like every other reader -- the upstream row
         # omits the Ranger's Nature outright. See server/class_skills.py.
-        class_trained = class_skills.apply(
-            class_slug, json.loads(class_rows[0]["trained_skills"])
-        )
+        class_trained = class_skills.apply(class_slug, json.loads(class_rows[0]["trained_skills"]))
         for skill in class_trained.get("fixed", []) or []:
             if skill:
                 add_named(skill.capitalize())
@@ -3121,8 +3244,7 @@ def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], i
             lore = lore.strip()
             if not lore:
                 continue
-            if (_LORE_NAME_RE.match(lore)
-                    and " or " not in lore and " and " not in lore):
+            if _LORE_NAME_RE.match(lore) and " or " not in lore and " and " not in lore:
                 add_named(lore)
             else:
                 free += 1
@@ -3148,10 +3270,15 @@ def _level1_skill_training(ch: dict[str, Any], safe: bool) -> tuple[list[str], i
 # Feat'). Normalise the slugs and leave anything already readable alone, so
 # one table doesn't mix CLASSFEATURE and CLASS FEAT down the same column.
 _ADV_CATEGORIES = {
-    "class": "Class feat", "classfeature": "Class feature",
-    "skill": "Skill feat", "general": "General feat",
-    "ancestry": "Ancestry feat", "heritage": "Heritage",
-    "archetype": "Archetype feat", "background": "Background", "feat": "Feat",
+    "class": "Class feat",
+    "classfeature": "Class feature",
+    "skill": "Skill feat",
+    "general": "General feat",
+    "ancestry": "Ancestry feat",
+    "heritage": "Heritage",
+    "archetype": "Archetype feat",
+    "background": "Background",
+    "feat": "Feat",
 }
 
 
@@ -3182,8 +3309,7 @@ def _adv_side(category: str) -> str:
     c = (category or "").lower()
     if "class" in c or "archetype" in c or "dedication" in c:
         return "class"
-    if any(w in c for w in
-           ("ancestry", "general", "skill", "heritage", "awarded", "bonus", "granted")):
+    if any(w in c for w in ("ancestry", "general", "skill", "heritage", "awarded", "bonus", "granted")):
         return "ancestry"
     if c.rsplit(" ", 1)[-1:] == ["feat"]:
         return "class"
@@ -3200,8 +3326,10 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     happen -- the same distinction the companion .md files draw.
     """
     ch, lib = ctx["character"], ctx["lib"]
-    rows = [{"level": n, "ancestry": [], "class": [], "skill_increases": []}
-            for n in range(1, max(1, ctx["level"]) + 1)]
+    rows = [
+        {"level": n, "ancestry": [], "class": [], "skill_increases": []}
+        for n in range(1, max(1, ctx["level"]) + 1)
+    ]
 
     def add(level: Any, side: str, label: str, note: str = "") -> None:
         try:
@@ -3217,9 +3345,11 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         rows[n - 1][side].append({"label": label, "note": note})
 
     # Level 1 carries the character's identity before any chosen feat.
-    for label, note in ((ch.get("ancestry"), "Ancestry"),
-                        (ch.get("heritage"), "Heritage"),
-                        (ch.get("background"), "Background")):
+    for label, note in (
+        (ch.get("ancestry"), "Ancestry"),
+        (ch.get("heritage"), "Heritage"),
+        (ch.get("background"), "Background"),
+    ):
         if label:
             add(1, "ancestry", str(label), note)
 
@@ -3258,18 +3388,21 @@ def _advancement(ctx: dict[str, Any]) -> list[dict[str, Any]]:
             if 1 <= n <= len(rows):
                 skill = re.sub(rf"^\s*{re.escape(cat_key)}\s*:\s*", "", name, flags=re.IGNORECASE).strip()
                 is_increase = cat_key == "skill increase"
-                rows[n - 1]["skill_increases"].append({
-                    "label": "Skill increase" if is_increase else "Skill training",
-                    "skill": skill or name, "note": chosen, "is_increase": is_increase,
-                })
+                rows[n - 1]["skill_increases"].append(
+                    {
+                        "label": "Skill increase" if is_increase else "Skill training",
+                        "skill": skill or name,
+                        "note": chosen,
+                        "is_increase": is_increase,
+                    }
+                )
             continue
         label = _adv_category(category)
         # A recorded note can run to a paragraph of build rationale (confirmed
         # live: a feat like Emblazon Armament). One clause of it identifies
         # the choice; the feat's own card on the Features page carries the
         # rest verbatim.
-        note = (label if not chosen
-                else f"{label} &mdash; {_esc(_clip(chosen, 52))}")
+        note = label if not chosen else f"{label} &mdash; {_esc(_clip(chosen, 52))}"
         add(level, _adv_side(category), name, note)
 
     for feature in ctx["class_features"]:
@@ -3292,6 +3425,11 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
         return ""
 
     ch = ctx["character"]
+    gradual_boosts = any(
+        str(rule).replace("_", "-").lower() in ("gradualabilityboosts", "gradual-ability-boosts")
+        for rule in ctx.get("variant_rules") or []
+    )
+    boost_levels = _GRADUAL_BOOST_LEVELS if gradual_boosts else _BOOST_LEVELS
     skill_inc_levels = set(_skill_increase_levels(ch.get("class") or ""))
     # Below the class's first Skill Increase level, nothing has had the
     # chance to change a skill's training since 1st level, so the current
@@ -3303,17 +3441,20 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
         html = "".join(
             f'<div class="adv-item">{_esc(i["label"])}'
             f'{f"<span class=\'cat\'>{i["note"]}</span>" if i["note"] else ""}'
-            f'</div>' for i in items)
+            f"</div>"
+            for i in items
+        )
         for line in extra or []:
             html += f'<div class="adv-boost">{line}</div>'
         return html or '<span class="adv-none">&mdash;</span>'
 
     def ancestry_extra(r: dict[str, Any]) -> list[str]:
         extra = []
-        if r["level"] in _BOOST_LEVELS:
+        if r["level"] in boost_levels:
             boosted = _boost_abilities(ch, r["level"])
-            extra.append(f"Attribute boosts ({', '.join(boosted)})"
-                         if boosted else "Attribute boosts")
+            extra.append(f"Attribute boosts ({', '.join(boosted)})" if boosted else "Attribute boosts")
+        if gradual_boosts and r["level"] == 1:
+            extra.append("Gradual Attribute Boosts active (one boost per level)")
         # Training recorded against this level by the character's own plan.
         # The native format names every free pick; only a Pathbuilder export,
         # which records ranks rather than choices, has to fall back to a count.
@@ -3336,8 +3477,7 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
             # pushes the row off the page.
             note = f" ({_esc(_clip(si['note'], 52))})" if si["note"] else ""
             extra.append(f"{si['label']}: {_esc(si['skill'])}{note}")
-        if (r["level"] in skill_inc_levels
-                and not any(si["is_increase"] for si in r["skill_increases"])):
+        if r["level"] in skill_inc_levels and not any(si["is_increase"] for si in r["skill_increases"]):
             extra.append("Skill increase")
         return extra
 
@@ -3366,17 +3506,19 @@ def _page_advancement(ctx: dict[str, Any]) -> str:
 # "Primary Apparition: Witness to Ancient Battles" / "Attuned Apparition: ..."
 # / "Bench Apparition: ..." -- the convention already used in characters/.
 _APPARITION_RE = re.compile(
-    r"^(primary|attuned|bench|second|third|fourth)\s+apparition\s*:\s*(.+)$",
-    re.IGNORECASE)
+    r"^(primary|attuned|bench|second|third|fourth)\s+apparition\s*:\s*(.+)$", re.IGNORECASE
+)
 _APPARITION_SKILLS_RE = re.compile(r"Apparition Skills? (.+?) Apparition Spells")
 _APPARITION_SPELLS_RE = re.compile(r"Apparition Spells (.+?) Vessel Spell")
 _APPARITION_VESSEL_RE = re.compile(r"Vessel Spell (.+?)(?= Avatar|$)")
 _APPARITION_RANK_RE = re.compile(
-    r"(Cantrip|\d+(?:st|nd|rd|th))\s+(.+?)(?=\s+(?:Cantrip|\d+(?:st|nd|rd|th))\s+|$)")
+    r"(Cantrip|\d+(?:st|nd|rd|th))\s+(.+?)(?=\s+(?:Cantrip|\d+(?:st|nd|rd|th))\s+|$)"
+)
 
 
-def _apparitions(character: dict[str, Any], conn, lib: _Library,
-                 abilities: dict[str, int], level: int) -> list[dict[str, Any]]:
+def _apparitions(
+    character: dict[str, Any], conn, lib: _Library, abilities: dict[str, int], level: int
+) -> list[dict[str, Any]]:
     """An animist's apparitions, each with what attuning to it grants.
 
     An animist chooses which apparitions to attune during daily preparations,
@@ -3412,11 +3554,13 @@ def _apparitions(character: dict[str, Any], conn, lib: _Library,
             if not label:
                 continue
             rank = recorded.get(label.lower(), 2)
-            rows.append({
-                "name": label,
-                "rank": rank,
-                "total": m.total_bonus(abilities["int"], rank, level),
-            })
+            rows.append(
+                {
+                    "name": label,
+                    "rank": rank,
+                    "total": m.total_bonus(abilities["int"], rank, level),
+                }
+            )
         return rows
 
     def spell(rank_label: str, name: str) -> dict[str, Any]:
@@ -3431,39 +3575,41 @@ def _apparitions(character: dict[str, Any], conn, lib: _Library,
         row = conn.execute(
             "SELECT name, description FROM entries "
             "WHERE name = ? COLLATE NOCASE AND other_tags LIKE '%animist-apparition%'",
-            (name,)).fetchone()
+            (name,),
+        ).fetchone()
         if row is None:
             continue
-        text = re.sub(r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1",
-                      re.sub(r"<[^>]+>", " ", row["description"] or ""))
+        text = re.sub(r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1", re.sub(r"<[^>]+>", " ", row["description"] or ""))
         text = re.sub(r"\s+", " ", text)
         skills = _APPARITION_SKILLS_RE.search(text)
         spells = _APPARITION_SPELLS_RE.search(text)
         vessel = _APPARITION_VESSEL_RE.search(text)
         by_rank = _APPARITION_RANK_RE.findall(f"{spells.group(1)} ") if spells else []
         vessel_name = vessel.group(1).strip() if vessel else ""
-        found.append({
-            "name": row["name"],
-            # "second"/"third"/"fourth apparition" name the class features that
-            # grant extra slots, not a different kind of attunement.
-            "primary": role == "primary",
-            "bench": role == "bench",
-            "lores": skills.group(1).strip() if skills else "",
-            "lore_rows": lore_rows(skills.group(1) if skills else ""),
-            "vessel": vessel_name,
-            "vessel_spell": spell("Vessel", vessel_name) if vessel_name else None,
-            "spells": [spell(rank, name.strip()) for rank, name in by_rank],
-        })
+        found.append(
+            {
+                "name": row["name"],
+                # "second"/"third"/"fourth apparition" name the class features that
+                # grant extra slots, not a different kind of attunement.
+                "primary": role == "primary",
+                "bench": role == "bench",
+                "lores": skills.group(1).strip() if skills else "",
+                "lore_rows": lore_rows(skills.group(1) if skills else ""),
+                "vessel": vessel_name,
+                "vessel_spell": spell("Vessel", vessel_name) if vessel_name else None,
+                "spells": [spell(rank, name.strip()) for rank, name in by_rank],
+            }
+        )
     return found
 
 
-_REQUIREMENTS_RE = re.compile(
-    r"Requirements? (.+?)(?=\s+(?:Trigger|Frequency|Effect)\b|$)")
+_REQUIREMENTS_RE = re.compile(r"Requirements? (.+?)(?=\s+(?:Trigger|Frequency|Effect)\b|$)")
 _LORE_RE = re.compile(r"\b([A-Z][\w'-]*(?:[ -][A-Z][\w'-]*)*) Lore\b")
 
 
-def _wandering_feats(character: dict[str, Any], apparitions: list[dict[str, Any]],
-                     conn) -> list[dict[str, Any]]:
+def _wandering_feats(
+    character: dict[str, Any], apparitions: list[dict[str, Any]], conn
+) -> list[dict[str, Any]]:
     """Each wandering feat the character has taken, with every option that
     slot could hold instead.
 
@@ -3483,16 +3629,19 @@ def _wandering_feats(character: dict[str, Any], apparitions: list[dict[str, Any]
     """
     attuned_lores = {
         lore.strip().lower()
-        for app in apparitions if not app["bench"]
-        for lore in app["lores"].split(",") if lore.strip()
+        for app in apparitions
+        if not app["bench"]
+        for lore in app["lores"].split(",")
+        if lore.strip()
     }
     slots = []
     for feat in character.get("feats", []) or []:
         if not (isinstance(feat, (list, tuple)) and feat):
             continue
         row = conn.execute(
-            "SELECT name, level, traits FROM entries WHERE name = ? COLLATE NOCASE "
-            "AND pack = 'feats'", (str(feat[0]),)).fetchone()
+            "SELECT name, level, traits FROM entries WHERE name = ? COLLATE NOCASE " "AND pack = 'feats'",
+            (str(feat[0]),),
+        ).fetchone()
         if row is None or "wandering" not in json.loads(row["traits"] or "[]"):
             continue
         try:
@@ -3501,28 +3650,30 @@ def _wandering_feats(character: dict[str, Any], apparitions: list[dict[str, Any]
             slot_level = row["level"]
         options = []
         for candidate in conn.execute(
-                "SELECT name, level, description FROM entries WHERE pack = 'feats' "
-                "AND traits LIKE '%wandering%' AND level <= ? ORDER BY level, name",
-                (slot_level,)):
-            text = re.sub(r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1",
-                          re.sub(r"<[^>]+>", " ", candidate["description"] or ""))
+            "SELECT name, level, description FROM entries WHERE pack = 'feats' "
+            "AND traits LIKE '%wandering%' AND level <= ? ORDER BY level, name",
+            (slot_level,),
+        ):
+            text = re.sub(
+                r"@UUID\[[^\]]*\]\{([^}]*)\}", r"\1", re.sub(r"<[^>]+>", " ", candidate["description"] or "")
+            )
             text = re.sub(r"\s+", " ", text)
             match = _REQUIREMENTS_RE.search(text)
             # Only an apparition-skill requirement gates *selection*; a feat
             # whose Requirements line is about something else (Apparition
             # Cloud wants your familiar adjacent) is always selectable.
-            lores = (_LORE_RE.findall(match.group(1)) if match else [])
+            lores = _LORE_RE.findall(match.group(1)) if match else []
             needed = [f"{lore} Lore" for lore in lores]
-            options.append({
-                "name": candidate["name"],
-                "level": candidate["level"],
-                "needs": needed,
-                "available": (not needed) or any(
-                    n.lower() in attuned_lores for n in needed),
-                "selected": candidate["name"].lower() == str(feat[0]).lower(),
-            })
-        slots.append({"taken": row["name"], "level": slot_level,
-                      "options": options})
+            options.append(
+                {
+                    "name": candidate["name"],
+                    "level": candidate["level"],
+                    "needs": needed,
+                    "available": (not needed) or any(n.lower() in attuned_lores for n in needed),
+                    "selected": candidate["name"].lower() == str(feat[0]).lower(),
+                }
+            )
+        slots.append({"taken": row["name"], "level": slot_level, "options": options})
     return slots
 
 
@@ -3537,14 +3688,14 @@ def _wandering_blocks(ctx: dict[str, Any]) -> str:
     for slot in slots:
         rows = ""
         for opt in slot["options"]:
-            needs = (" &middot; ".join(_esc(n) for n in opt["needs"])
-                     or "no apparition requirement")
+            needs = " &middot; ".join(_esc(n) for n in opt["needs"]) or "no apparition requirement"
             rows += (
                 f'<div class="wrow{"" if opt["available"] else " off"}">'
                 f'<span class="bub{" on" if opt["selected"] else ""}"></span>'
                 f'<span class="wnm">{_esc(opt["name"])}</span>'
                 f'<span class="wlv">{opt["level"]}</span>'
-                f'<span class="wrq">{needs}</span></div>')
+                f'<span class="wrq">{needs}</span></div>'
+            )
         blocks += f"""
   <div class="appar">
     <div class="ahd"><span class="anm" style="margin-left:0">Wandering feat
@@ -3586,12 +3737,16 @@ def _apparition_blocks(ctx: dict[str, Any]) -> str:
 
     def row(spell: dict[str, Any], rank_label: str, cls: str = "") -> str:
         entry = spell["entry"]
-        cells = (_spell_cells(entry) if entry
-                 else '<td class="ac">&mdash;</td><td class="rg">&mdash;</td>'
-                      '<td class="du">&mdash;</td>')
+        cells = (
+            _spell_cells(entry)
+            if entry
+            else '<td class="ac">&mdash;</td><td class="rg">&mdash;</td>' '<td class="du">&mdash;</td>'
+        )
         attr = f' class="{cls}"' if cls else ""
-        return (f'<tr{attr}><td class="rk">{_esc(rank_label)}</td>'
-                f'<td class="nm">{_esc(spell["name"])}</td>{cells}</tr>')
+        return (
+            f'<tr{attr}><td class="rk">{_esc(rank_label)}</td>'
+            f'<td class="nm">{_esc(spell["name"])}</td>{cells}</tr>'
+        )
 
     blocks = ""
     for app in apparitions:
@@ -3600,12 +3755,14 @@ def _apparition_blocks(ctx: dict[str, Any]) -> str:
             rows += row(app["vessel_spell"], "Vessel", "ves")
         for spell in app["spells"]:
             if castable(spell["rank"]):
-                label = ("C" if spell["rank"].lower() == "cantrip"
-                         else spell["rank"])
+                label = "C" if spell["rank"].lower() == "cantrip" else spell["rank"]
                 rows += row(spell, label)
-        lores = " &middot; ".join(
-            f'{_esc(lore["name"])} <b>{_mod(lore["total"])}</b>'
-            for lore in app["lore_rows"]) or "&mdash;"
+        lores = (
+            " &middot; ".join(
+                f'{_esc(lore["name"])} <b>{_mod(lore["total"])}</b>' for lore in app["lore_rows"]
+            )
+            or "&mdash;"
+        )
         blocks += f"""
   <div class="appar">
     <div class="ahd">
@@ -3649,17 +3806,14 @@ def _casting_groups(ctx: dict[str, Any]) -> list[tuple[tuple, dict[str, Any]]]:
     groups: dict[tuple[str, str, int], dict[str, Any]] = {}
     for block in ctx["spellcasting"]:
         key = (block["tradition"], block["ability"], block["proficiency"] or 0)
-        group = groups.setdefault(
-            key, {"names": [], "kinds": set(), "blocks": []})
+        group = groups.setdefault(key, {"names": [], "kinds": set(), "blocks": []})
         group["names"].append(block["name"])
         group["kinds"].add(block["kind"])
         group["blocks"].append(block)
-    return sorted(groups.items(),
-                  key=lambda kv: 0 if "Innate" in kv[1]["kinds"] else 1)
+    return sorted(groups.items(), key=lambda kv: 0 if "Innate" in kv[1]["kinds"] else 1)
 
 
-def _casting_band(ctx: dict[str, Any], key: tuple,
-                  group: dict[str, Any]) -> str:
+def _casting_band(ctx: dict[str, Any], key: tuple, group: dict[str, Any]) -> str:
     """Tradition, spell attack, spell DC and proficiency for one group.
 
     The arithmetic is spelled out -- attribute, level, proficiency -- since
@@ -3674,8 +3828,7 @@ def _casting_band(ctx: dict[str, Any], key: tuple,
     rank_lbl = _RANK_NAME.get(rank, "?")
     # The proficiency term carries its own bonus rather than just its name,
     # so the parts visibly sum to the figure above them: 4 + 2 + 2 = 8.
-    drv = (f'{key_lbl} {_mod(mod)} &middot; level {level} &middot; '
-           f'{rank_lbl.lower()} {_mod(rank)}')
+    drv = f"{key_lbl} {_mod(mod)} &middot; level {level} &middot; " f"{rank_lbl.lower()} {_mod(rank)}"
     order = {k: i for i, k in enumerate(_CASTER_KINDS)}
     kinds = sorted(group["kinds"], key=lambda k: (order.get(k, 99), k))
     style = " &middot; ".join(_esc(x) for x in (tradition, *kinds) if x)
@@ -3719,16 +3872,20 @@ def _page_spell_slots(ctx: dict[str, Any]) -> str:
     # granted each spell, further down the page, so the slot table keeps the
     # bubbles and drops the duplicate list.
     elsewhere = frozenset(
-        block["name"] for _, group in groups for block in group["blocks"]
-        if ctx["apparitions"] and "apparition" in block["name"].lower())
+        block["name"]
+        for _, group in groups
+        for block in group["blocks"]
+        if ctx["apparitions"] and "apparition" in block["name"].lower()
+    )
     # Likewise the vessel spell, which is whichever apparition is primary at
     # the moment and so is named only in the apparition blocks.
-    vessels = frozenset(app["vessel"] for app in ctx["apparitions"]
-                        if app["vessel"])
+    vessels = frozenset(app["vessel"] for app in ctx["apparitions"] if app["vessel"])
     body = ""
     for key, group in groups:
-        body += (f'<div class="castgroup">{_casting_band(ctx, key, group)}'
-                 f'{_prep_table(group["blocks"], elsewhere, vessels)}</div>')
+        body += (
+            f'<div class="castgroup">{_casting_band(ctx, key, group)}'
+            f'{_prep_table(group["blocks"], elsewhere, vessels)}</div>'
+        )
     body += _apparition_blocks(ctx) + _wandering_blocks(ctx)
     return f"""
 <section class="page" data-sec="spellcasting">
@@ -3752,15 +3909,14 @@ def _page_spells(ctx: dict[str, Any]) -> str:
     entries = _spell_index(ctx)
 
     cards = ""
-    for name, spell, spell_rank, count, source, dc in sorted(
-            entries, key=lambda e: e[0].lower()):
-        rank_lbl = ("Cantrip" if "cantrip" in spell["traits"]
-                    else f"Rank {spell_rank}")
+    for name, spell, spell_rank, count, source, dc in sorted(entries, key=lambda e: e[0].lower()):
+        rank_lbl = "Cantrip" if "cantrip" in spell["traits"] else f"Rank {spell_rank}"
         if count > 1:
             rank_lbl += f" ×{count}"
         kicker = f"{source} · {rank_lbl}" if multi_source else rank_lbl
         cards += _card(
-            spell, kicker=kicker,
+            spell,
+            kicker=kicker,
             cost=(spell["system"].get("time") or {}).get("value"),
             spell_rank=spell.get("effective_rank"),
             meta=_spell_meta(spell, dc),
@@ -3785,10 +3941,16 @@ def _deity_card(info: dict[str, Any]) -> str:
 
     if info["status"] == "unrecognized":
         rows = "".join(
-            f'<tr><td class="dl">{label}</td>'
-            f'<td class="dv"><span class="fill"></span></td></tr>'
-            for label in ("Divine Font", "Divine Sanctification", "Divine Skill",
-                          "Favored Weapon", "Domains", "Edicts", "Anathema")
+            f'<tr><td class="dl">{label}</td>' f'<td class="dv"><span class="fill"></span></td></tr>'
+            for label in (
+                "Divine Font",
+                "Divine Sanctification",
+                "Divine Skill",
+                "Favored Weapon",
+                "Domains",
+                "Edicts",
+                "Anathema",
+            )
         )
         return f"""
   <article class="card deity">
@@ -3802,11 +3964,9 @@ def _deity_card(info: dict[str, Any]) -> str:
 
     entry = info["entry"]
     rows = "".join(
-        f'<tr><td class="dl">{label}</td><td class="dv">{value}</td></tr>'
-        for label, value in info["facts"]
+        f'<tr><td class="dl">{label}</td><td class="dv">{value}</td></tr>' for label, value in info["facts"]
     )
-    symbol = (f'<img class="symbol" src="{info["symbol_uri"]}" alt="">'
-              if info.get("symbol_uri") else "")
+    symbol = f'<img class="symbol" src="{info["symbol_uri"]}" alt="">' if info.get("symbol_uri") else ""
     return f"""
   <article class="card deity">
     <div class="card-hd"><h3>{_esc(entry['name'])}</h3>
@@ -3828,8 +3988,7 @@ def _page_skill_actions(ctx: dict[str, Any]) -> str:
     # by action name, because this is a reference page -- you come to it
     # already knowing what you want to look up.
     cards = "".join(
-        _card(a, kicker=", ".join(a["skills"]))
-        for a in sorted(actions, key=lambda a: a["name"].casefold())
+        _card(a, kicker=", ".join(a["skills"])) for a in sorted(actions, key=lambda a: a["name"].casefold())
     )
     return f"""
 <section class="page" data-sec="skill-actions">
@@ -3923,8 +4082,9 @@ def _page_features(ctx: dict[str, Any]) -> str:
         # feat, that feat's card has to be printed too, because "you gain a
         # fighter feat" is not something anyone can play from.
         qualifier = _strip_to_qualifier(name, entry["name"])
-        feat_entries.append((name, _card(entry, kicker=kicker, title=name,
-                                         chosen=_esc(note) if note else "")))
+        feat_entries.append(
+            (name, _card(entry, kicker=kicker, title=name, chosen=_esc(note) if note else ""))
+        )
         if not qualifier:
             continue
         granted = lib.get(qualifier, "feat", quiet=True)
@@ -3934,12 +4094,9 @@ def _page_features(ctx: dict[str, Any]) -> str:
         if key in recorded_names or key in granted_shown:
             continue
         granted_shown.add(key)
-        feat_entries.append((granted["name"],
-                             _card(granted, kicker=f"Granted by {entry['name']}")))
+        feat_entries.append((granted["name"], _card(granted, kicker=f"Granted by {entry['name']}")))
 
-    feat_cards = "".join(
-        html for _, html in sorted(feat_entries, key=lambda p: p[0].casefold())
-    )
+    feat_cards = "".join(html for _, html in sorted(feat_entries, key=lambda p: p[0].casefold()))
 
     specials = [s for s in (ch.get("specials", []) or []) if str(s).strip()]
     special_html = ""
@@ -3986,8 +4143,7 @@ def _price_text(cp: int) -> str:
     and only the denominations that are actually non-zero."""
     gold, rest = divmod(max(cp, 0), 100)
     silver, copper = divmod(rest, 10)
-    parts = [f"{value} {coin}" for value, coin
-             in ((gold, "gp"), (silver, "sp"), (copper, "cp")) if value]
+    parts = [f"{value} {coin}" for value, coin in ((gold, "gp"), (silver, "sp"), (copper, "cp")) if value]
     return " ".join(parts) or "—"
 
 
@@ -4054,10 +4210,15 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
     than two independently sorted ones."""
     rows, seen = "", []
 
-    def add(name: str, qty: Any, note: str = "",
-            runes: list[str] | None = None, runes_from: str = "",
-            own_runes: list[str] | None = None,
-            price_override_gp: float | None = None) -> None:
+    def add(
+        name: str,
+        qty: Any,
+        note: str = "",
+        runes: list[str] | None = None,
+        runes_from: str = "",
+        own_runes: list[str] | None = None,
+        price_override_gp: float | None = None,
+    ) -> None:
         nonlocal rows
         entry = lib.get(name, "item")
         if entry and entry["name"] not in seen:
@@ -4097,8 +4258,7 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         # feat's prose rather than priced as an equipment-table row of its
         # own (the Orc Warmask's 50 gp attunement ceremony, described inside
         # the *feat*'s text rather than the *item*'s).
-        base_cp = (round(price_override_gp * 100) if price_override_gp is not None
-                   else _price_cp(entry))
+        base_cp = round(price_override_gp * 100) if price_override_gp is not None else _price_cp(entry)
         price_cp, labels = base_cp, []
         source = lib.by_slug(runes_from, "equipment") if runes_from else None
         for slug in runes or []:
@@ -4115,33 +4275,45 @@ def _inventory(ch: dict[str, Any], lib: _Library) -> tuple[str, list[str]]:
         if labels:
             note = f"{note}; {', '.join(labels)}" if note else ", ".join(labels)
 
-        rows += (f'<tr><td class="nm">{_esc(display)}</td>'
-                 f'<td class="r">{_esc(qty)}</td>'
-                 f'<td class="r">{bulk_s}</td>'
-                 f'<td class="r">{_price_text(price_cp)}</td>'
-                 f'<td class="dsc last">{_esc(note)}</td></tr>')
+        rows += (
+            f'<tr><td class="nm">{_esc(display)}</td>'
+            f'<td class="r">{_esc(qty)}</td>'
+            f'<td class="r">{bulk_s}</td>'
+            f'<td class="r">{_price_text(price_cp)}</td>'
+            f'<td class="dsc last">{_esc(note)}</td></tr>'
+        )
 
     for w in ch.get("weapons", []) or []:
         if isinstance(w, dict) and w.get("name"):
-            add(w["name"], w.get("qty") or 1, runes=_weapon_rune_slugs(w),
+            add(
+                w["name"],
+                w.get("qty") or 1,
+                runes=_weapon_rune_slugs(w),
                 runes_from=str(w.get("runesFrom") or ""),
                 own_runes=w.get("ownRunes"),
-                price_override_gp=w.get("priceOverride"))
+                price_override_gp=w.get("priceOverride"),
+            )
     for a in ch.get("armor", []) or []:
         if isinstance(a, dict) and a.get("name"):
-            add(a["name"], a.get("qty") or 1,
-                "Worn" if a.get("worn") else "", runes=_armor_rune_slugs(a),
+            add(
+                a["name"],
+                a.get("qty") or 1,
+                "Worn" if a.get("worn") else "",
+                runes=_armor_rune_slugs(a),
                 runes_from=str(a.get("runesFrom") or ""),
                 own_runes=a.get("ownRunes"),
-                price_override_gp=a.get("priceOverride"))
+                price_override_gp=a.get("priceOverride"),
+            )
     for item in ch.get("equipment", []) or []:
         if isinstance(item, (list, tuple)) and item:
-            add(str(item[0]), item[1] if len(item) > 1 else 1,
-                " ".join(str(x) for x in item[2:]))
+            add(str(item[0]), item[1] if len(item) > 1 else 1, " ".join(str(x) for x in item[2:]))
         elif isinstance(item, dict) and item.get("name"):
-            add(item["name"], item.get("qty") or 1,
+            add(
+                item["name"],
+                item.get("qty") or 1,
                 "Invested" if item.get("invested") else "",
-                price_override_gp=item.get("priceOverride"))
+                price_override_gp=item.get("priceOverride"),
+            )
     return rows, seen
 
 
@@ -4153,10 +4325,8 @@ def _wealth(money: Any) -> str:
     for denom in ("PP", "GP", "SP", "CP"):
         held = money.get(denom.lower())
         start = f'<span class="rec">{_esc(held)} at start</span>' if held else ""
-        coins += (f'<div class="coin"><div class="k">{denom}{start}</div>'
-                  f'<div class="v"></div></div>')
-    blanks = ('<tr class="blank"><td></td><td class="r"></td>'
-              '<td class="r last"></td></tr>') * 6
+        coins += f'<div class="coin"><div class="k">{denom}{start}</div>' f'<div class="v"></div></div>'
+    blanks = ('<tr class="blank"><td></td><td class="r"></td>' '<td class="r last"></td></tr>') * 6
     return f"""
   <div class="sub">Wealth</div>
   <div class="wealth">{coins}</div>
@@ -4214,7 +4384,8 @@ def _page_ledger(ctx: dict[str, Any]) -> str:
         delta_cp = round(float(entry.get("gp") or 0) * 100)
         balance_cp += delta_cp
         label = _LEDGER_KIND_LABELS.get(
-            str(entry.get("kind") or ""), str(entry.get("kind") or "").title() or "—")
+            str(entry.get("kind") or ""), str(entry.get("kind") or "").title() or "—"
+        )
 
         item_html = ""
         slug = entry.get("item")
@@ -4222,12 +4393,12 @@ def _page_ledger(ctx: dict[str, Any]) -> str:
             found = lib.by_slug(str(slug), "equipment")
             name = found["name"] if found else str(slug).replace("-", " ")
             qty = entry.get("quantity") or 1
-            item_html = (f"{qty}&times; {_esc(name)}" if qty > 1 else _esc(name))
+            item_html = f"{qty}&times; {_esc(name)}" if qty > 1 else _esc(name)
 
         rows += (
             f'<tr><td class="r">{_esc(entry.get("level"))}</td>'
-            f'<td>{_esc(label)}</td>'
-            f'<td>{item_html}</td>'
+            f"<td>{_esc(label)}</td>"
+            f"<td>{item_html}</td>"
             f'<td class="r">{_signed_price_text(delta_cp, plus=True)}</td>'
             f'<td class="r">{_signed_price_text(balance_cp)}</td>'
             f'<td class="dsc last">{_esc(entry.get("note") or "")}</td></tr>'
@@ -4276,18 +4447,20 @@ def _page_notes(ctx: dict[str, Any]) -> str:
             f"the rules data, so its text is not on this sheet.</li>"
             for u in unresolved
         ) + "".join(f"<li>{_esc(w)}</li>" for w in warnings)
-        warn_html = (f'<div class="warn"><strong>Check these.</strong>'
-                     f'<ul class="plainlist">{items}</ul></div>')
+        warn_html = (
+            f'<div class="warn"><strong>Check these.</strong>' f'<ul class="plainlist">{items}</ul></div>'
+        )
     if aliased:
         rows = "".join(
             f"<li>&ldquo;{_esc(a['recorded'])}&rdquo; was matched to "
-            f"<strong>{_esc(a['matched'])}</strong>.</li>" for a in aliased
+            f"<strong>{_esc(a['matched'])}</strong>.</li>"
+            for a in aliased
         )
         warn_html += (
             '<div class="card plain tight"><div class="rules">'
-            '<p><strong>Names matched inexactly.</strong> The character data and '
-            'the rules data spell these differently; the rules text shown is for '
-            'the entry named second.</p>'
+            "<p><strong>Names matched inexactly.</strong> The character data and "
+            "the rules data spell these differently; the rules text shown is for "
+            "the entry named second.</p>"
             f'<ul class="plainlist">{rows}</ul></div></div>'
         )
 
@@ -4375,8 +4548,7 @@ _OGL_PARAS = [
 # licence notice and URL -- see sheet_assets.py). So it is reproduced here,
 # the same way the OGL is, and for the same reason.
 _OFL_COPYRIGHT = (
-    "Copyright 2022 The Noto Project Authors "
-    "(https://github.com/notofonts/latin-greek-cyrillic)"
+    "Copyright 2022 The Noto Project Authors " "(https://github.com/notofonts/latin-greek-cyrillic)"
 )
 
 _OFL_PARAS = [
@@ -4434,8 +4606,7 @@ _OFL_PARAS = [
     "must be distributed entirely under this license, and must not be distributed "
     "under any other license. The requirement for fonts to remain under this "
     "license does not apply to any document created using the Font Software.",
-    "<b>TERMINATION</b> This license becomes null and void if any of the above "
-    "conditions are not met.",
+    "<b>TERMINATION</b> This license becomes null and void if any of the above " "conditions are not met.",
     "<b>DISCLAIMER</b> THE FONT SOFTWARE IS PROVIDED &ldquo;AS IS&rdquo;, WITHOUT "
     "WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY "
     "WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND "
@@ -4528,6 +4699,7 @@ def _page_legal(ctx: dict[str, Any]) -> str:
 # Context assembly
 # --------------------------------------------------------------------------
 
+
 def _ancestry_stats(conn, ancestry_name: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT hp, size, vision FROM ancestry_boosts WHERE ancestry_slug = ?",
@@ -4535,16 +4707,23 @@ def _ancestry_stats(conn, ancestry_name: str) -> dict[str, Any] | None:
     ).fetchone()
     if row is None:
         return None
-    return {"hp": row["hp"], "size": row["size"],
-            "vision": (row["vision"] or "normal").replace("-", " ")}
+    return {"hp": row["hp"], "size": row["size"], "vision": (row["vision"] or "normal").replace("-", " ")}
 
 
-_SIZE_NAMES = {"tiny": "Tiny", "sm": "Small", "small": "Small", "med": "Medium",
-               "medium": "Medium", "lg": "Large", "large": "Large"}
+_SIZE_NAMES = {
+    "tiny": "Tiny",
+    "sm": "Small",
+    "small": "Small",
+    "med": "Medium",
+    "medium": "Medium",
+    "lg": "Large",
+    "large": "Large",
+}
 
 
-def _armor_stats(character: dict[str, Any], lib: _Library,
-                 abilities: dict[str, int]) -> tuple[dict | None, str]:
+def _armor_stats(
+    character: dict[str, Any], lib: _Library, abilities: dict[str, int]
+) -> tuple[dict | None, str]:
     """Worn armor's printable stats, with the Strength-threshold adjustment
     applied: meeting the armor's Strength value removes its check penalty and
     reduces its Speed penalty by 5 feet."""
@@ -4563,9 +4742,11 @@ def _armor_stats(character: dict[str, Any], lib: _Library,
         if threshold is not None and str_mod >= threshold:
             # Kept to one line: this sits at the foot of the narrowest column
             # on page 1, where a long sentence costs three lines of height.
-            note = (f"Strength {_mod(str_mod)} meets this armor&rsquo;s "
-                    f"{threshold} &mdash; no check penalty, Speed penalty "
-                    f"reduced by 5 ft.")
+            note = (
+                f"Strength {_mod(str_mod)} meets this armor&rsquo;s "
+                f"{threshold} &mdash; no check penalty, Speed penalty "
+                f"reduced by 5 ft."
+            )
             check = 0
             speed = min(speed + 5, 0)
         return {
@@ -4580,8 +4761,7 @@ def _armor_stats(character: dict[str, Any], lib: _Library,
             "potency": item.get("pot") or 0,
             "rune_labels": _rune_labels(
                 ([f"+{item.get('pot')} potency"] if item.get("pot") else [])
-                + ([_RESILIENT_NAMES[tier]]
-                   if (tier := m.resilient_tier(item.get("res"))) else []),
+                + ([_RESILIENT_NAMES[tier]] if (tier := m.resilient_tier(item.get("res"))) else []),
                 [_resolve_rune_name(lib, str(r)) for r in item.get("runes") or []],
             ),
         }, note
@@ -4600,7 +4780,12 @@ def _license_split(lib: _Library) -> tuple[set[str], set[str]]:
     return orc, ogl
 
 
-def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, Any]:
+def _build_context(
+    character: dict[str, Any],
+    lib: _Library,
+    conn,
+    variant_rules: list[str] | None = None,
+) -> dict[str, Any]:
     level = int(character.get("level") or 1)
     abilities = m.default_character_abilities(character)
     derived = build_tools.calculate_derived_stats(character)
@@ -4613,9 +4798,10 @@ def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, 
     ancestry_stats = _ancestry_stats(conn, character.get("ancestry") or "")
     subclasses = lib.subclass_selections(character.get("class") or "", character)
 
-    size = _SIZE_NAMES.get(str(character.get("size") or
-                               (ancestry_stats or {}).get("size") or "").lower(),
-                           str(character.get("sizeName") or "Medium"))
+    size = _SIZE_NAMES.get(
+        str(character.get("size") or (ancestry_stats or {}).get("size") or "").lower(),
+        str(character.get("sizeName") or "Medium"),
+    )
 
     # Both daily-preparation blocks read the same parsed apparitions: the
     # wandering feats' gates are Lore skills the attunement grants.
@@ -4626,15 +4812,19 @@ def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, 
     # the background or feat that granted it keeps it on page 1.
     permanent = _permanent_lores(character, conn)
     hidden_lores = frozenset(
-        lore["name"].lower() for app in apparitions for lore in app["lore_rows"]
-        if lore["name"].lower() not in permanent)
+        lore["name"].lower()
+        for app in apparitions
+        for lore in app["lore_rows"]
+        if lore["name"].lower() not in permanent
+    )
 
     # The inventory table and the item rules text are two sections now, but
     # one walk of the character's gear -- built here so neither section has to
     # resolve the same items again to find out what the other will print.
     inventory_rows, carried = _inventory(character, lib)
-    item_rules = [entry for entry in (lib.get(n, "item") for n in carried)
-                  if entry and entry.get("desc_html")]
+    item_rules = [
+        entry for entry in (lib.get(n, "item") for n in carried) if entry and entry.get("desc_html")
+    ]
 
     return {
         "character": character,
@@ -4667,12 +4857,17 @@ def _build_context(character: dict[str, Any], lib: _Library, conn) -> dict[str, 
         # Repeating the class name under "Fighter 9" tells the reader nothing;
         # classes with no subclass mechanic get their key attribute instead.
         "subclass_label": (
-            subclasses[0]["name"] if subclasses
-            else f"Key attribute {str(character.get('keyability') or '').upper()}"
-            if character.get("keyability") else ""
+            subclasses[0]["name"]
+            if subclasses
+            else (
+                f"Key attribute {str(character.get('keyability') or '').upper()}"
+                if character.get("keyability")
+                else ""
+            )
         ),
         "ancestry_stats": ancestry_stats,
         "ledger": character.get("ledger") or [],
+        "variant_rules": variant_rules or [],
     }
 
 
@@ -4698,8 +4893,7 @@ _OPTIONAL_SECTIONS = [
 # anything from the file -- which matters for the notices: the OGL and OFL
 # text has to travel with what the sheet carries, and it still does. This is
 # the print-dialog page range, in a form that doesn't need counting pages.
-_NOTICES_TIP = ("The licence text stays in the file either way &mdash; "
-                "this only leaves it off the paper.")
+_NOTICES_TIP = "The licence text stays in the file either way &mdash; " "this only leaves it off the paper."
 
 
 def _toolbar(sections: list[str]) -> str:
@@ -4708,8 +4902,7 @@ def _toolbar(sections: list[str]) -> str:
         if key not in sections:
             continue
         tip = f' title="{_NOTICES_TIP}"' if key == "attribution" else ""
-        picks += (f'<label{tip}><input type="checkbox" checked value="{key}">'
-                  f'{label}</label>')
+        picks += f'<label{tip}><input type="checkbox" checked value="{key}">' f"{label}</label>"
     if picks:
         picks = f'<div class="picks"><b>Print:</b>{picks}</div>'
     return f"""
@@ -4720,6 +4913,7 @@ def _toolbar(sections: list[str]) -> str:
   {picks}
 </div>
 """
+
 
 # Fails open: with scripting off every box stays ticked and the whole sheet
 # prints, which is the same behaviour the file had before the switches existed.
@@ -4738,6 +4932,7 @@ document.querySelectorAll('.toolbar input[type=checkbox]').forEach(function (box
 # --------------------------------------------------------------------------
 # The tool
 # --------------------------------------------------------------------------
+
 
 def render_character_sheet(
     character: dict[str, Any],
@@ -4882,6 +5077,9 @@ def render_character_sheet(
     # build. A native document is replayed to `level` first, which is what
     # makes rendering an earlier or later level a parameter rather than a
     # second file.
+    native_variant_rules = (
+        ((character.get("build") or {}).get("variantRules") or []) if _native.is_native(character) else []
+    )
     character = _native.as_legacy(character, level)
     if paper not in _PAPER:
         raise ValueError(f"paper must be one of {sorted(_PAPER)}, got {paper!r}")
@@ -4906,18 +5104,19 @@ def render_character_sheet(
             pad_top, pad_bottom = bounds
             ink = max(1e-3, 1.0 - pad_top - pad_bottom)
             box = _LOGO_INK_HEIGHT / ink
-            style = (f'height:{box:.1f}px;'
-                     f'margin-top:{-box * pad_top:.1f}px;'
-                     # +3px leaves the ink a hair above the text box's bottom,
-                     # which puts it about on the name's baseline.
-                     f'margin-bottom:{3 - box * pad_bottom:.1f}px;')
-        logo_html = (f'<img class="logo" src="{uri}" alt=""'
-                     f'{f" style=\"{style}\"" if style else ""}>')
+            style = (
+                f"height:{box:.1f}px;"
+                f"margin-top:{-box * pad_top:.1f}px;"
+                # +3px leaves the ink a hair above the text box's bottom,
+                # which puts it about on the name's baseline.
+                f"margin-bottom:{3 - box * pad_bottom:.1f}px;"
+            )
+        logo_html = f'<img class="logo" src="{uri}" alt=""' f'{f" style=\"{style}\"" if style else ""}>'
 
     conn = get_connection()
     try:
         lib = _Library(conn, class_name=str(character.get("class") or ""))
-        ctx = _build_context(character, lib, conn)
+        ctx = _build_context(character, lib, conn, native_variant_rules)
         ctx["logo_html"] = logo_html
         ctx["warnings"] = ctx["warnings"] + logo_warnings
 
@@ -4937,10 +5136,18 @@ def render_character_sheet(
         # table off its spell descriptions, and the inventory off its item
         # text, is what makes that possible: as one section each, the tables
         # were stranded on top of a dozen pages nobody re-reads.
-        pages = (_page_core(ctx) + _page_advancement(ctx)
-                 + _page_spell_slots(ctx) + _page_inventory(ctx) + _page_ledger(ctx)
-                 + _page_skill_actions(ctx) + _page_spells(ctx)
-                 + _page_features(ctx) + _page_equipment(ctx) + _page_notes(ctx))
+        pages = (
+            _page_core(ctx)
+            + _page_advancement(ctx)
+            + _page_spell_slots(ctx)
+            + _page_inventory(ctx)
+            + _page_ledger(ctx)
+            + _page_skill_actions(ctx)
+            + _page_spells(ctx)
+            + _page_features(ctx)
+            + _page_equipment(ctx)
+            + _page_notes(ctx)
+        )
         if extra_pages:
             pages += "".join(extra_pages)
         orc_books, ogl_books = _license_split(lib)
@@ -4977,7 +5184,7 @@ def render_character_sheet(
             f'{_esc(character.get("class") or "")} {ctx["level"]}</title>\n'
             f"<style>{_stylesheet(paper)}</style>\n</head>\n<body>\n"
             f'{_toolbar(sections)}<div class="sheet">{pages}</div>\n'
-            f'{_TOGGLE_SCRIPT}</body>\n</html>\n'
+            f"{_TOGGLE_SCRIPT}</body>\n</html>\n"
         )
         out.write_text(doc, encoding="utf-8")
 
@@ -4985,9 +5192,7 @@ def render_character_sheet(
             "path": str(out.resolve()),
             "bytes": len(doc.encode("utf-8")),
             "paper": paper,
-            "logo": {"embedded": bool(logo_html),
-                     "source": logo_path,
-                     "data_uri_bytes": logo_bytes},
+            "logo": {"embedded": bool(logo_html), "source": logo_path, "data_uri_bytes": logo_bytes},
             "sections": sections,
             "rendered": {
                 "skills": len(ctx["skills"]),
@@ -4995,8 +5200,7 @@ def render_character_sheet(
                 "strikes": len(ctx["strikes"]),
                 "class_features": len(ctx["class_features"]),
                 "feats": len([f for f in (character.get("feats") or []) if f]),
-                "spells": sum(len(r["spells"]) for b in ctx["spellcasting"]
-                              for r in b["ranks"]),
+                "spells": sum(len(r["spells"]) for b in ctx["spellcasting"] for r in b["ranks"]),
                 "spellcasting_entries": len(ctx["spellcasting"]),
             },
             "subclass": ctx["subclass_label"],

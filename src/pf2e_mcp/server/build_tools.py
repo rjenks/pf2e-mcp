@@ -63,8 +63,6 @@ def _fetchall(sql: str, params: tuple = ()) -> list[dict[str, Any]]:
         conn.close()
 
 
-
-
 def list_ancestries(filter: str | None = None, include_legacy: bool = False) -> list[dict[str, Any]]:
     """List playable ancestries, optionally filtered by name substring.
 
@@ -117,7 +115,9 @@ def list_backgrounds(filter: str | None = None, include_legacy: bool = False) ->
     rows = _fetchall(sql, params)
     for r in rows:
         r["boosts"] = json.loads(r["boosts"])
-        r["trained_skills"] = json.loads(r["trained_skills"]) if r["trained_skills"] else {"fixed": [], "lore": []}
+        r["trained_skills"] = (
+            json.loads(r["trained_skills"]) if r["trained_skills"] else {"fixed": [], "lore": []}
+        )
         r["granted_items"] = json.loads(r["granted_items"]) if r["granted_items"] else []
     return rows
 
@@ -190,8 +190,14 @@ def list_classes(filter: str | None = None, include_legacy: bool = False) -> lis
         params = (f"%{filter}%",)
     rows = _fetchall(sql, params)
     for r in rows:
-        for key in ("key_ability", "class_feat_levels", "ancestry_feat_levels",
-                    "general_feat_levels", "skill_feat_levels", "skill_increase_levels"):
+        for key in (
+            "key_ability",
+            "class_feat_levels",
+            "ancestry_feat_levels",
+            "general_feat_levels",
+            "skill_feat_levels",
+            "skill_increase_levels",
+        ):
             r[key] = json.loads(r[key])
 
         r["perception"] = _foundry_rank_to_project(r.pop("perception_rank"))
@@ -211,13 +217,9 @@ def list_classes(filter: str | None = None, include_legacy: bool = False) -> lis
         defenses = json.loads(r["defenses"])
         r["defenses"] = {k: _foundry_rank_to_project(v) for k, v in defenses.items()}
 
-        r["trained_skills"] = class_skills.apply(
-            r["slug"], json.loads(r["trained_skills"])
-        )
+        r["trained_skills"] = class_skills.apply(r["slug"], json.loads(r["trained_skills"]))
 
-        choice_rows = _fetchall(
-            "SELECT flag, choices FROM item_choice_sets WHERE entry_id = ?", (r["id"],)
-        )
+        choice_rows = _fetchall("SELECT flag, choices FROM item_choice_sets WHERE entry_id = ?", (r["id"],))
         if choice_rows:
             # A class item can carry more than one ChoiceSet (rare) -- surface
             # all of them rather than guessing which one is "the" skill choice.
@@ -235,7 +237,9 @@ STARTING_WEALTH_GP = 15
 
 def list_equipment(
     filter: str | None = None,
-    item_type: Literal["weapon", "armor", "shield", "equipment", "consumable", "ammo", "treasure"] | None = None,
+    item_type: (
+        Literal["weapon", "armor", "shield", "equipment", "consumable", "ammo", "treasure"] | None
+    ) = None,
     max_price_gp: float | None = None,
     include_legacy: bool = False,
 ) -> dict[str, Any]:
@@ -247,7 +251,10 @@ def list_equipment(
 
     `include_legacy` (default False): excludes pre-Remaster/OGL-flagged
     equipment unless set. See `_legacy_filter_sql`."""
-    sql = "SELECT id, name, type, raw_json FROM entries WHERE pack = 'equipment'" + licensing.legacy_filter_sql(include_legacy)
+    sql = (
+        "SELECT id, name, type, raw_json FROM entries WHERE pack = 'equipment'"
+        + licensing.legacy_filter_sql(include_legacy)
+    )
     params: list[Any] = []
     if filter:
         sql += " AND name LIKE ?"
@@ -261,7 +268,9 @@ def list_equipment(
     for r in rows:
         system = json.loads(r["raw_json"])["system"]
         price = system.get("price", {}).get("value", {})
-        price_gp = price.get("pp", 0) * 10 + price.get("gp", 0) + price.get("sp", 0) / 10 + price.get("cp", 0) / 100
+        price_gp = (
+            price.get("pp", 0) * 10 + price.get("gp", 0) + price.get("sp", 0) / 10 + price.get("cp", 0) / 100
+        )
         if max_price_gp is not None and price_gp > max_price_gp:
             continue
         items.append({"id": r["id"], "name": r["name"], "type": r["type"], "price_gp": round(price_gp, 2)})
@@ -381,12 +390,14 @@ def list_available_feats(
                 # below_threshold's docstring for why this is checked here
                 # at all (Foundry's own reference implementation doesn't).
                 status = "ineligible"
-                checks = checks + [{
-                    "raw_text": f"can't select another dedication feat until "
-                                f"{' and '.join(committed_below_threshold)} "
-                                "gain(s) two other feats from their archetype",
-                    "satisfied": False,
-                }]
+                checks = checks + [
+                    {
+                        "raw_text": f"can't select another dedication feat until "
+                        f"{' and '.join(committed_below_threshold)} "
+                        "gain(s) two other feats from their archetype",
+                        "satisfied": False,
+                    }
+                ]
             entry = {
                 "id": feat["id"],
                 "name": feat["name"],
@@ -435,12 +446,14 @@ def check_prerequisite(character: dict[str, Any], feat_id: str) -> dict[str, Any
             committed_below_threshold = _committed_dedications_below_threshold(character)
             if committed_below_threshold:
                 status = "ineligible"
-                checks = checks + [{
-                    "raw_text": f"can't select another dedication feat until "
-                                f"{' and '.join(committed_below_threshold)} "
-                                "gain(s) two other feats from their archetype",
-                    "satisfied": False,
-                }]
+                checks = checks + [
+                    {
+                        "raw_text": f"can't select another dedication feat until "
+                        f"{' and '.join(committed_below_threshold)} "
+                        "gain(s) two other feats from their archetype",
+                        "satisfied": False,
+                    }
+                ]
         result = {"id": feat_id, "name": entry["name"], "status": status, "checks": checks}
         if entry["access_text"]:
             # Narrative gate, not a mechanical check -- see list_available_feats'
@@ -533,7 +546,9 @@ def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
         if target_rank is None:
             continue
         if m.skill_rank_legal_at_level(target_rank, level):
-            options.append({"skill": skill, "current_rank": m.RANK_BY_VALUE[current], "next_rank": target_rank})
+            options.append(
+                {"skill": skill, "current_rank": m.RANK_BY_VALUE[current], "next_rank": target_rank}
+            )
     return {"options": options}
 
 
@@ -553,7 +568,11 @@ def _is_skill_row(feat: Any) -> bool:
     return str(feat[2] or "").strip().lower() in _NON_FEAT_ROW_CATEGORIES
 
 
-_KNOWN_VARIANT_RULES = ("free-archetype", "ancestry-paragon")
+_KNOWN_VARIANT_RULES = (
+    "free-archetype",
+    "ancestry-paragon",
+    "gradual-ability-boosts",
+)
 
 
 def _normalize_variant_rule(value: str) -> str:
@@ -766,19 +785,18 @@ def validate_build(
     if class_row:
         base_levels = json.loads(class_row["ancestry_feat_levels"])
         if "ancestry-paragon" in variant_rules:
-            ancestry_budget = (2 if level >= 1 else 0) + len(
-                [lvl for lvl in range(3, level + 1, 2)]
-            )
+            ancestry_budget = (2 if level >= 1 else 0) + len([lvl for lvl in range(3, level + 1, 2)])
         else:
             ancestry_budget = len([lvl for lvl in base_levels if lvl <= level])
         if has_ancestral_paragon:
             ancestry_budget += 1
         if ancestry_taken > ancestry_budget:
             variant_hint = (
-                "" if "ancestry-paragon" in variant_rules
+                ""
+                if "ancestry-paragon" in variant_rules
                 else " -- pass variant_rules=['ancestry-paragon'] if this table uses that "
-                     "variant rule (GM Core p.194 grants 2 ancestry feats at level 1 and one "
-                     "more at every odd level)"
+                "variant rule (GM Core p.194 grants 2 ancestry feats at level 1 and one "
+                "more at every odd level)"
             )
             errors.append(
                 f"{ancestry_taken} ancestry-category feats taken but only {ancestry_budget} "
@@ -799,7 +817,12 @@ def validate_build(
     warnings.extend(_validate_fixed_trained_skills(character))
     warnings.extend(_validate_trained_skill_count(character))
     warnings.extend(_validate_proficiency_ranks(character))
-    warnings.extend(_validate_attribute_boosts(character))
+    warnings.extend(
+        _validate_attribute_boosts(
+            character,
+            gradual_boosts="gradual-ability-boosts" in _variant_rule_set(variant_rules or []),
+        )
+    )
     warnings.extend(_validate_feat_slots(character, variant_rules))
 
     result: dict[str, Any] = {"errors": errors, "warnings": warnings}
@@ -812,15 +835,40 @@ def validate_build(
         for entry in report["requires_boon"]:
             warnings.append(
                 f"PFS: {entry['kind']} '{entry['name']}' is {entry['status']} "
-                f"({entry['rarity']}, {entry['source']})")
+                f"({entry['rarity']}, {entry['source']})"
+            )
         for entry in report["unchecked"]:
             warnings.append(
-                f"PFS: {entry['kind']} '{entry['name']}' could not be checked "
-                f"-- {entry['reason']}")
+                f"PFS: {entry['kind']} '{entry['name']}' could not be checked " f"-- {entry['reason']}"
+            )
     return result
 
 
 _BOOST_MILESTONES = (1, 5, 10, 15, 20)
+_GRADUAL_BOOST_MILESTONES = (
+    2,
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    15,
+    17,
+    18,
+    19,
+    20,
+)
+_GRADUAL_BOOST_SETS = (
+    (2, 3, 4, 5),
+    (7, 8, 9, 10),
+    (12, 13, 14, 15),
+    (17, 18, 19, 20),
+)
 _ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
 
 
@@ -866,8 +914,7 @@ def _feat_slot_bucket(category: str, free_archetype: bool) -> str | None:
     return None
 
 
-def _validate_feat_slots(character: dict[str, Any],
-                         variant_rules: frozenset[str]) -> list[str]:
+def _validate_feat_slots(character: dict[str, Any], variant_rules: frozenset[str]) -> list[str]:
     """Scheduled feat slots at or below the character's level with no feat
     recorded in them.
 
@@ -893,7 +940,8 @@ def _validate_feat_slots(character: dict[str, Any],
     rows = _fetchall(
         "SELECT class_feat_levels, skill_feat_levels, general_feat_levels, "
         "ancestry_feat_levels FROM class_progression WHERE class_slug = ?",
-        (slug,))
+        (slug,),
+    )
     if not rows:
         return []
     schedule = rows[0]
@@ -903,8 +951,7 @@ def _validate_feat_slots(character: dict[str, Any],
     for feat in character.get("feats") or []:
         if not (isinstance(feat, (list, tuple)) and feat):
             continue
-        bucket = _feat_slot_bucket(
-            str(feat[2]) if len(feat) > 2 and feat[2] else "", free_archetype)
+        bucket = _feat_slot_bucket(str(feat[2]) if len(feat) > 2 and feat[2] else "", free_archetype)
         if not bucket:
             continue
         try:
@@ -913,10 +960,12 @@ def _validate_feat_slots(character: dict[str, Any],
             continue
 
     warnings = []
-    for bucket, column in (("class", "class_feat_levels"),
-                           ("skill", "skill_feat_levels"),
-                           ("general", "general_feat_levels"),
-                           ("ancestry", "ancestry_feat_levels")):
+    for bucket, column in (
+        ("class", "class_feat_levels"),
+        ("skill", "skill_feat_levels"),
+        ("general", "general_feat_levels"),
+        ("ancestry", "ancestry_feat_levels"),
+    ):
         if bucket == "ancestry" and "ancestry-paragon" in variant_rules:
             continue
         due = [lvl for lvl in json.loads(schedule[column] or "[]") if lvl <= level]
@@ -926,8 +975,10 @@ def _validate_feat_slots(character: dict[str, Any],
             warnings.append(
                 f"No {bucket} feat recorded for level {levels} -- the class "
                 f"grants one at each of those levels and the character is "
-                f"level {level}.")
+                f"level {level}."
+            )
     return warnings
+
 
 # Where to look each part of a character up, in the order a player would read
 # them off a sheet. `pack` is checked first so a name that exists in several
@@ -974,8 +1025,7 @@ def _validate_pfs(character: dict[str, Any]) -> dict[str, Any]:
         base = "SELECT name, rarity, source_book FROM entries WHERE "
         rows: list[dict[str, Any]] = []
         if pack:
-            rows = _fetchall(base + "name = ? COLLATE NOCASE AND pack = ? LIMIT 1",
-                             (name, pack))
+            rows = _fetchall(base + "name = ? COLLATE NOCASE AND pack = ? LIMIT 1", (name, pack))
         if not rows:
             # The character's own label for a thing often disagrees with the
             # pack it lives in -- a heritage recorded as a feat, say -- so a
@@ -985,26 +1035,34 @@ def _validate_pfs(character: dict[str, Any]) -> dict[str, Any]:
             # Several entries are stored under a qualified name the character
             # records bare: "Spirit Familiar" is "Spirit Familiar (Animist)".
             escaped = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            rows = _fetchall(
-                base + "name LIKE ? ESCAPE '\\' COLLATE NOCASE", (f"{escaped} (%",))
+            rows = _fetchall(base + "name LIKE ? ESCAPE '\\' COLLATE NOCASE", (f"{escaped} (%",))
             if len({r["rarity"] for r in rows}) > 1:
-                unchecked.append({
-                    "name": name, "kind": kind,
-                    "reason": "several entries share this name and disagree on "
-                              "rarity; check by hand"})
+                unchecked.append(
+                    {
+                        "name": name,
+                        "kind": kind,
+                        "reason": "several entries share this name and disagree on " "rarity; check by hand",
+                    }
+                )
                 return
         if not rows:
-            unchecked.append({"name": name, "kind": kind,
-                              "reason": "no entry of that name in the rules data"})
+            unchecked.append(
+                {"name": name, "kind": kind, "reason": "no entry of that name in the rules data"}
+            )
             return
         row = rows[0]
         status = pfs.pfs_status(row["name"], row["rarity"], overrides)
         if status["status"] != "legal":
-            requires_boon.append({
-                "name": row["name"], "kind": kind,
-                "status": status["status"], "rarity": row["rarity"],
-                "source": row["source_book"], "note": status["note"],
-            })
+            requires_boon.append(
+                {
+                    "name": row["name"],
+                    "kind": kind,
+                    "status": status["status"],
+                    "rarity": row["rarity"],
+                    "source": row["source_book"],
+                    "note": status["note"],
+                }
+            )
 
     for kind, pack in _PFS_SUBJECTS:
         check(kind, character.get(kind), pack)
@@ -1028,15 +1086,17 @@ def _validate_pfs(character: dict[str, Any]) -> dict[str, Any]:
         "requires_boon": requires_boon,
         "unchecked": unchecked,
         "authoritative": False,
-        "note": ("Rarity-based heuristic plus a curated override list, not a "
-                 "read of Paizo's Additional Resources. 'legal': true means "
-                 "nothing was flagged, not that the build is sanctioned -- "
-                 "check anything that matters against the current Additional "
-                 "Resources document."),
+        "note": (
+            "Rarity-based heuristic plus a curated override list, not a "
+            "read of Paizo's Additional Resources. 'legal': true means "
+            "nothing was flagged, not that the build is sanctioned -- "
+            "check anything that matters against the current Additional "
+            "Resources document."
+        ),
     }
 
 
-def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
+def _validate_attribute_boosts(character: dict[str, Any], gradual_boosts: bool = False) -> list[str]:
     """Two checks on a character's attribute array.
 
     **Half-steps, at 20th only.** An attribute modifier is
@@ -1065,8 +1125,7 @@ def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
     """
     warnings: list[str] = []
     abilities = character.get("abilities") or {}
-    scores = {k: v for k, v in abilities.items()
-              if k in _ABILITIES and isinstance(v, int)}
+    scores = {k: v for k, v in abilities.items() if k in _ABILITIES and isinstance(v, int)}
     if not scores:
         return warnings
     level = int(character.get("level") or 1)
@@ -1082,7 +1141,8 @@ def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
                 f"even -- and redirect the 20th-level boost specifically, "
                 f"since that is the one with no later milestone to complete "
                 f"it; an earlier boost that leaves a score odd is only half a "
-                f"step, and finishes at the next milestone.")
+                f"step, and finishes at the next milestone."
+            )
 
     breakdown = abilities.get("breakdown")
     if not isinstance(breakdown, dict):
@@ -1109,7 +1169,8 @@ def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
     apply(breakdown.get("classBoosts"))
     # Likewise the milestones: a dict keyed by level, or one key per level.
     milestones = dict(breakdown.get("mapLevelledBoosts") or {})
-    for level_key in _BOOST_MILESTONES:
+    boost_milestones = _GRADUAL_BOOST_MILESTONES if gradual_boosts else _BOOST_MILESTONES
+    for level_key in boost_milestones:
         flat = breakdown.get(f"lvl{level_key}")
         if flat is not None:
             milestones.setdefault(str(level_key), flat)
@@ -1121,25 +1182,40 @@ def _validate_attribute_boosts(character: dict[str, Any]) -> list[str]:
             warnings.append(
                 f"Level-{milestone} attribute boosts repeat an attribute "
                 f"({', '.join(chosen)}); boosts gained at the same time must "
-                f"each go to a different attribute.")
-        if len(chosen) > 4:
+                f"each go to a different attribute."
+            )
+        max_boosts = 1 if gradual_boosts and int(milestone) in _GRADUAL_BOOST_MILESTONES else 4
+        if len(chosen) > max_boosts:
             warnings.append(
-                f"Level-{milestone} grants 4 attribute boosts, but "
-                f"{len(chosen)} are recorded.")
+                f"Level-{milestone} grants {max_boosts} attribute boost(s), but "
+                f"{len(chosen)} are recorded."
+            )
         apply(chosen)
 
-    off = {k: scores[k] - replay[k] for k in scores
-           if k in replay and scores[k] != replay[k]}
+    if gradual_boosts:
+        for group in _GRADUAL_BOOST_SETS:
+            chosen = [
+                str(attribute).lower()
+                for milestone in group
+                for attribute in milestones.get(str(milestone), []) or []
+            ]
+            duplicates = sorted({attribute for attribute in chosen if chosen.count(attribute) > 1})
+            if duplicates:
+                warnings.append(
+                    f"Gradual Attribute Boosts repeat {', '.join(duplicates)} "
+                    f"within the level-{group[0]}-{group[-1]} boost set."
+                )
+
+    off = {k: scores[k] - replay[k] for k in scores if k in replay and scores[k] != replay[k]}
     if off:
-        detail = ", ".join(f"{k.upper()} {scores[k]} vs {replay[k]}"
-                           for k in sorted(off))
+        detail = ", ".join(f"{k.upper()} {scores[k]} vs {replay[k]}" for k in sorted(off))
         apex = [k for k, v in off.items() if v == 2]
-        note = (" A single attribute 2 higher than its boosts is what an "
-                "invested apex item looks like." if len(off) == 1 and apex
-                else "")
-        warnings.append(
-            f"Recorded attributes don't match the recorded boosts: {detail}."
-            f"{note}")
+        note = (
+            " A single attribute 2 higher than its boosts is what an " "invested apex item looks like."
+            if len(off) == 1 and apex
+            else ""
+        )
+        warnings.append(f"Recorded attributes don't match the recorded boosts: {detail}." f"{note}")
     return warnings
 
 
@@ -1324,10 +1400,7 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
     # (and more than one convention each) -- see `_normalize_lore` for the
     # four spellings and where each comes from. Fold both sides through it
     # rather than comparing raw strings.
-    lore_names = {
-        _normalize_lore(l[0])
-        for l in character.get("lores", []) if l and l[0]
-    }
+    lore_names = {_normalize_lore(l[0]) for l in character.get("lores", []) if l and l[0]}
 
     bg_rows = _fetchall(
         "SELECT trained_skills FROM background_boosts WHERE background_slug = ?",
@@ -1344,9 +1417,7 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
             continue
         trained = json.loads(rows[0]["trained_skills"])
         if label == "class":
-            trained = class_skills.apply(
-                _real_slug("classes", character.get("class", "")), trained
-            )
+            trained = class_skills.apply(_real_slug("classes", character.get("class", "")), trained)
         for skill in trained.get("fixed", []):
             if prof.get(skill, 0) <= 0:
                 warnings.append(
@@ -1379,11 +1450,7 @@ def _validate_fixed_trained_skills(character: dict[str, Any]) -> list[str]:
     if choice_grants:
         spare = len(lore_names - matched)
         if spare < len(choice_grants):
-            source = (
-                choice_grants[0].capitalize()
-                if len(set(choice_grants)) == 1
-                else "Background/class"
-            )
+            source = choice_grants[0].capitalize() if len(set(choice_grants)) == 1 else "Background/class"
             warnings.append(
                 f"{source} grants {len(choice_grants)} Lore skill(s) of the "
                 f"player's own choosing, but the character records {spare} "
@@ -1527,9 +1594,18 @@ _PROFICIENCY_RANK_NAMES = ["untrained", "trained", "expert", "master", "legendar
 # `_validate_proficiency_ranks`) or a class slug (classDC, handled
 # separately since it depends on the character's own class).
 _PROFICIENCY_GRANT_KEYS = {
-    "perception", "fortitude", "reflex", "will",
-    "simple", "martial", "advanced", "unarmed",
-    "unarmored", "light", "medium", "heavy",
+    "perception",
+    "fortitude",
+    "reflex",
+    "will",
+    "simple",
+    "martial",
+    "advanced",
+    "unarmed",
+    "unarmored",
+    "light",
+    "medium",
+    "heavy",
 }
 
 
@@ -1592,7 +1668,8 @@ def _validate_proficiency_ranks(character: dict[str, Any]) -> list[str]:
         _bump(def_key, defenses.get(def_key))
 
     granted_names = [
-        g["name"] for g in json.loads(c["granted_items"])
+        g["name"]
+        for g in json.loads(c["granted_items"])
         if g.get("level") is not None and g["level"] <= level
     ]
     taken_names = [f[0].strip() for f in character.get("feats", []) if f and f[0]]
@@ -1653,7 +1730,9 @@ def _validate_dedication_exclusivity(character: dict[str, Any]) -> list[str]:
     trait_rows = _fetchall(
         f"SELECT name, traits FROM entries WHERE name IN ({placeholders}) COLLATE NOCASE", tuple(names)
     )
-    dedication_names = {r["name"].lower() for r in trait_rows if "dedication" in json.loads(r["traits"] or "[]")}
+    dedication_names = {
+        r["name"].lower() for r in trait_rows if "dedication" in json.loads(r["traits"] or "[]")
+    }
 
     errors: list[str] = []
     committed: list[str] = []  # lowercased, for matching
@@ -1792,11 +1871,7 @@ def _character_vision_level(character: dict[str, Any]) -> str | None:
                 if predicate is None:
                     best = max(best, rank)
                     continue
-                if (
-                    isinstance(predicate, list)
-                    and len(predicate) == 1
-                    and isinstance(predicate[0], str)
-                ):
+                if isinstance(predicate, list) and len(predicate) == 1 and isinstance(predicate[0], str):
                     match = re.match(r"^self:(.+):from-ancestry$", predicate[0])
                     if match and match.group(1) == ancestry_vision:
                         best = max(best, rank)
@@ -1897,22 +1972,51 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
 
     if armor:
         ac = m.armor_ac(
-            abilities["dex"], prof.get(armor["category"], 0), level,
-            armor["ac_bonus"], armor["dex_cap"], armor["potency"],
+            abilities["dex"],
+            prof.get(armor["category"], 0),
+            level,
+            armor["ac_bonus"],
+            armor["dex_cap"],
+            armor["potency"],
         )
     else:
         ac = 10 + m.total_bonus(abilities["dex"], prof.get("unarmored", 0), level)
 
     skill_keys = [
-        "acrobatics", "arcana", "athletics", "crafting", "deception", "diplomacy",
-        "intimidation", "medicine", "nature", "occultism", "performance", "religion",
-        "society", "stealth", "survival", "thievery",
+        "acrobatics",
+        "arcana",
+        "athletics",
+        "crafting",
+        "deception",
+        "diplomacy",
+        "intimidation",
+        "medicine",
+        "nature",
+        "occultism",
+        "performance",
+        "religion",
+        "society",
+        "stealth",
+        "survival",
+        "thievery",
     ]
     key_ability_by_skill = {
-        "acrobatics": "dex", "arcana": "int", "athletics": "str", "crafting": "int",
-        "deception": "cha", "diplomacy": "cha", "intimidation": "cha", "medicine": "wis",
-        "nature": "wis", "occultism": "int", "performance": "cha", "religion": "wis",
-        "society": "int", "stealth": "dex", "survival": "wis", "thievery": "dex",
+        "acrobatics": "dex",
+        "arcana": "int",
+        "athletics": "str",
+        "crafting": "int",
+        "deception": "cha",
+        "diplomacy": "cha",
+        "intimidation": "cha",
+        "medicine": "wis",
+        "nature": "wis",
+        "occultism": "int",
+        "performance": "cha",
+        "religion": "wis",
+        "society": "int",
+        "stealth": "dex",
+        "survival": "wis",
+        "thievery": "dex",
     }
     skill_item_bonuses = character.get("skillItemBonuses") or {}
     skills = {
@@ -1947,8 +2051,13 @@ def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
             }
 
     return {
-        "ac": ac, "saves": saves, "perception": perception, "skills": skills,
-        "class_dc": class_dc, "hp": hp, "spellcasting": spellcasting,
+        "ac": ac,
+        "saves": saves,
+        "perception": perception,
+        "skills": skills,
+        "class_dc": class_dc,
+        "hp": hp,
+        "spellcasting": spellcasting,
     }
 
 
@@ -1988,8 +2097,7 @@ _HEIGHTEN_INTERVAL_RE = re.compile(r"Heightened \(\+(\d+)\)")
 _HEIGHTEN_FIXED_RE = re.compile(r"Heightened \((\d+)(?:st|nd|rd|th)\)")
 
 
-def _heightening(system: dict[str, Any], description: str,
-                 base_rank: int) -> dict[str, Any] | None:
+def _heightening(system: dict[str, Any], description: str, base_rank: int) -> dict[str, Any] | None:
     """How a spell heightens, as `{"type": "interval", "interval": n}` or
     `{"type": "fixed", "ranks": [...]}`, or None if it gains nothing from
     being cast in a higher slot.
@@ -2015,15 +2123,13 @@ def _heightening(system: dict[str, Any], description: str,
     interval = _HEIGHTEN_INTERVAL_RE.search(description or "")
     if interval:
         return {"type": "interval", "interval": int(interval.group(1))}
-    fixed = sorted({int(m) for m in _HEIGHTEN_FIXED_RE.findall(description or "")
-                    if int(m) > base_rank})
+    fixed = sorted({int(m) for m in _HEIGHTEN_FIXED_RE.findall(description or "") if int(m) > base_rank})
     if fixed:
         return {"type": "fixed", "ranks": fixed}
     return None
 
 
-def _useful_ranks(base_rank: int, heightening: dict[str, Any] | None,
-                  cap: int) -> list[int]:
+def _useful_ranks(base_rank: int, heightening: dict[str, Any] | None, cap: int) -> list[int]:
     """Every rank up to `cap` at which casting this spell gains something over
     casting it at the rank below.
 
@@ -2129,8 +2235,7 @@ def list_available_spells(
 
     rows = _fetchall(
         "SELECT id, name, level, traits, description, raw_json FROM entries "
-        "WHERE pack = 'spells' AND level <= ?"
-        + licensing.legacy_filter_sql(include_legacy),
+        "WHERE pack = 'spells' AND level <= ?" + licensing.legacy_filter_sql(include_legacy),
         (cap,),
     )
     matches = []
@@ -2142,14 +2247,15 @@ def list_available_spells(
         is_cantrip = "cantrip" in traits
         heightening = _heightening(system, r["description"] or "", r["level"])
         spell = {
-            "id": r["id"], "name": r["name"], "rank": r["level"],
+            "id": r["id"],
+            "name": r["name"],
+            "rank": r["level"],
             "is_cantrip": is_cantrip,
             "heightening": heightening,
             # A cantrip auto-heightens to half the caster's level and never
             # occupies a slot, so "which slots is it worth preparing in" is
             # not a question that applies to it.
-            "useful_ranks": ([] if is_cantrip
-                             else _useful_ranks(r["level"], heightening, cap)),
+            "useful_ranks": ([] if is_cantrip else _useful_ranks(r["level"], heightening, cap)),
         }
         if slot_rank is not None:
             if is_cantrip or slot_rank not in spell["useful_ranks"]:
@@ -2243,6 +2349,7 @@ def get_level_up_choices(
             "top of any normal class-feat slot (GM Core p.84)."
         )
 
+    gradual_boosts = "gradual-ability-boosts" in _variant_rule_set(raw_variant_rules)
     return {
         "level": target_level,
         "unlocks": {
@@ -2253,7 +2360,11 @@ def get_level_up_choices(
             "general_feat": target_level in json.loads(c["general_feat_levels"]),
             "skill_feat": target_level in json.loads(c["skill_feat_levels"]),
             "skill_increase": target_level in json.loads(c["skill_increase_levels"]),
-            "ability_boosts": target_level in ABILITY_BOOST_LEVELS,
+            "ability_boosts": (
+                target_level in _GRADUAL_BOOST_MILESTONES
+                if gradual_boosts
+                else target_level in ABILITY_BOOST_LEVELS
+            ),
         },
         "auto_granted_features": [g for g in granted if g["level"] == target_level],
         "variant_rule_notes": notes,
