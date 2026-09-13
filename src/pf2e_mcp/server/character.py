@@ -210,8 +210,7 @@ def _registry() -> Registry:
     themselves do.
     """
     resources = [
-        (schema["$id"], Resource.from_contents(schema))
-        for schema in (load_schema(), chronicle.load_schema())
+        (schema["$id"], Resource.from_contents(schema)) for schema in (load_schema(), chronicle.load_schema())
     ]
     return Registry().with_resources(resources)
 
@@ -285,29 +284,41 @@ def _check_plan_shape(document: dict[str, Any]) -> list[dict[str, Any]]:
     seen: set[int] = set()
     for index, level in enumerate(levels):
         if level in seen:
-            issues.append(_issue(
-                "error", "duplicate_level", f"/plan/{index}",
-                f"Level {level} appears more than once in the plan.",
-            ))
+            issues.append(
+                _issue(
+                    "error",
+                    "duplicate_level",
+                    f"/plan/{index}",
+                    f"Level {level} appears more than once in the plan.",
+                )
+            )
         seen.add(level)
 
     if levels != sorted(levels):
-        issues.append(_issue(
-            "error", "plan_order", "/plan",
-            "Plan levels are not in ascending order.",
-        ))
+        issues.append(
+            _issue(
+                "error",
+                "plan_order",
+                "/plan",
+                "Plan levels are not in ascending order.",
+            )
+        )
 
     current = (document.get("identity") or {}).get("currentLevel")
     if isinstance(current, int):
         missing = [n for n in range(1, current + 1) if n not in seen]
         if missing:
-            issues.append(_issue(
-                "warning", "plan_gap", "/plan",
-                f"The character is level {current} but the plan has no entry for "
-                f"level{'s' if len(missing) > 1 else ''} "
-                f"{', '.join(str(n) for n in missing)}. Their state at the "
-                f"current level cannot be fully derived.",
-            ))
+            issues.append(
+                _issue(
+                    "warning",
+                    "plan_gap",
+                    "/plan",
+                    f"The character is level {current} but the plan has no entry for "
+                    f"level{'s' if len(missing) > 1 else ''} "
+                    f"{', '.join(str(n) for n in missing)}. Their state at the "
+                    f"current level cannot be fully derived.",
+                )
+            )
     return issues
 
 
@@ -320,6 +331,14 @@ def _check_boost_sources(document: dict[str, Any]) -> list[dict[str, Any]]:
     boosts recorded at a level that has none.
     """
     issues: list[dict[str, Any]] = []
+    variant_rules = {
+        str(rule).replace("_", "-").lower()
+        for rule in ((document.get("build") or {}).get("variantRules") or [])
+    }
+    gradual = "gradualabilityboosts" in variant_rules or "gradual-ability-boosts" in variant_rules
+    gradual_levels = (2, 3, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18, 19, 20)
+    gradual_sets = ((2, 3, 4, 5), (7, 8, 9, 10), (12, 13, 14, 15), (17, 18, 19, 20))
+    set_boosts: dict[tuple[int, ...], list[str]] = {group: [] for group in gradual_sets}
     for index, entry in enumerate(document.get("plan") or []):
         boosts = entry.get("attributeBoosts")
         if not boosts:
@@ -336,31 +355,73 @@ def _check_boost_sources(document: dict[str, Any]) -> list[dict[str, Any]]:
         ):
             duplicates = {v for v in values if values.count(v) > 1}
             if duplicates:
-                issues.append(_issue(
-                    "error", "same_source_boost", f"{path}/{group}",
-                    f"{', '.join(sorted(duplicates))} boosted twice by the same "
-                    f"source ({group}). A single source's boosts must go to "
-                    f"different attributes.",
-                ))
+                issues.append(
+                    _issue(
+                        "error",
+                        "same_source_boost",
+                        f"{path}/{group}",
+                        f"{', '.join(sorted(duplicates))} boosted twice by the same "
+                        f"source ({group}). A single source's boosts must go to "
+                        f"different attributes.",
+                    )
+                )
 
-        if level not in (1, 5, 10, 15, 20) and boosts.get("free"):
-            issues.append(_issue(
-                "error", "boosts_off_milestone", f"{path}/free",
-                f"Free attribute boosts recorded at level {level}; they are "
-                f"granted only at 1st, 5th, 10th, 15th and 20th.",
-            ))
+        allowed_levels = (1, *gradual_levels) if gradual else (1, 5, 10, 15, 20)
+        if level not in allowed_levels and boosts.get("free"):
+            issues.append(
+                _issue(
+                    "error",
+                    "boosts_off_milestone",
+                    f"{path}/free",
+                    f"Free attribute boosts recorded at level {level}; they are "
+                    + (
+                        "granted at 1st level and once at each level in the gradual "
+                        "boost sets (2-5, 7-10, 12-15 and 17-20)."
+                        if gradual
+                        else "granted only at 1st, 5th, 10th, 15th and 20th."
+                    ),
+                )
+            )
+        if gradual and level in gradual_levels:
+            chosen = list(boosts.get("free") or [])
+            if len(chosen) > 1:
+                issues.append(
+                    _issue(
+                        "error",
+                        "gradual_boost_count",
+                        f"{path}/free",
+                        f"Gradual Attribute Boosts grant only one free attribute " f"boost at level {level}.",
+                    )
+                )
+            group = next(group for group in gradual_sets if level in group)
+            set_boosts[group].extend(chosen)
         if level != 1 and (ancestry or boosts.get("background") or boosts.get("class")):
-            issues.append(_issue(
-                "error", "creation_boosts_off_level_one", path,
-                f"Ancestry, background or class boosts recorded at level "
-                f"{level}; those are applied once, at character creation.",
-            ))
+            issues.append(
+                _issue(
+                    "error",
+                    "creation_boosts_off_level_one",
+                    path,
+                    f"Ancestry, background or class boosts recorded at level "
+                    f"{level}; those are applied once, at character creation.",
+                )
+            )
+    if gradual:
+        for group, chosen in set_boosts.items():
+            duplicates = sorted({attribute for attribute in chosen if chosen.count(attribute) > 1})
+            if duplicates:
+                issues.append(
+                    _issue(
+                        "error",
+                        "gradual_boost_repeat",
+                        "/plan",
+                        f"Gradual Attribute Boosts repeat {', '.join(duplicates)} "
+                        f"within the level-{group[0]}-{group[-1]} boost set.",
+                    )
+                )
     return issues
 
 
-def _check_languages(
-    document: dict[str, Any], conn: sqlite3.Connection
-) -> list[dict[str, Any]]:
+def _check_languages(document: dict[str, Any], conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Every Intelligence increase owes a language, and they are easy to miss.
 
     Player Core p. 29 grants "an additional skill and language" whenever a
@@ -380,21 +441,20 @@ def _check_languages(
 
     gains = character_replay.int_gain_levels(plan, current)
     for level in gains:
-        index = next(
-            (i for i, e in enumerate(plan) if e.get("level") == level), None
-        )
+        index = next((i for i, e in enumerate(plan) if e.get("level") == level), None)
         if index is None:
             continue
-        taken = any(
-            c.get("slot") == "language" and c.get("pick")
-            for c in plan[index].get("choices") or []
-        )
+        taken = any(c.get("slot") == "language" and c.get("pick") for c in plan[index].get("choices") or [])
         if not taken:
-            issues.append(_issue(
-                "warning", "unspent_language", f"/plan/{index}/choices",
-                f"The Intelligence modifier rises at level {level}, which grants "
-                f"a skill and a language. No 'language' choice is recorded here.",
-            ))
+            issues.append(
+                _issue(
+                    "warning",
+                    "unspent_language",
+                    f"/plan/{index}/choices",
+                    f"The Intelligence modifier rises at level {level}, which grants "
+                    f"a skill and a language. No 'language' choice is recorded here.",
+                )
+            )
 
     ancestry = (document.get("build") or {}).get("ancestry")
     if not ancestry:
@@ -415,17 +475,19 @@ def _check_languages(
 
     recorded = len((document.get("build") or {}).get("languages") or [])
     if recorded < expected:
-        issues.append(_issue(
-            "warning", "missing_starting_languages", "/build/languages",
-            f"{recorded} language(s) recorded, but the ancestry and a starting "
-            f"Intelligence modifier grant {expected} at 1st level.",
-        ))
+        issues.append(
+            _issue(
+                "warning",
+                "missing_starting_languages",
+                "/build/languages",
+                f"{recorded} language(s) recorded, but the ancestry and a starting "
+                f"Intelligence modifier grant {expected} at 1st level.",
+            )
+        )
     return issues
 
 
-def _resolve_slugs(
-    document: dict[str, Any], conn: sqlite3.Connection
-) -> list[dict[str, Any]]:
+def _resolve_slugs(document: dict[str, Any], conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Every slug in the file resolves to a real rules entry.
 
     A slug that does not resolve is the failure mode this format exists to make
@@ -442,8 +504,7 @@ def _resolve_slugs(
     """
     checks: list[tuple[Any, str, tuple[str, ...] | None, str]] = []
 
-    def check(slug: Any, path: str, packs: tuple[str, ...] | None,
-              level: str = "error") -> None:
+    def check(slug: Any, path: str, packs: tuple[str, ...] | None, level: str = "error") -> None:
         checks.append((slug, path, packs, level))
 
     build = document.get("build") or {}
@@ -477,17 +538,13 @@ def _resolve_slugs(
             check(slug, f"/plan/{index}/automatic/{a_index}", None, level="warning")
 
     for index, item in enumerate((document.get("gear") or {}).get("carried") or []):
-        check(item.get("item"), f"/gear/carried/{index}/item", ("equipment",),
-              level="warning")
+        check(item.get("item"), f"/gear/carried/{index}/item", ("equipment",), level="warning")
         for r_index, rune in enumerate(item.get("runes") or []):
-            check(rune, f"/gear/carried/{index}/runes/{r_index}", ("equipment",),
-                  level="warning")
+            check(rune, f"/gear/carried/{index}/runes/{r_index}", ("equipment",), level="warning")
         if item.get("runesFrom"):
-            check(item["runesFrom"], f"/gear/carried/{index}/runesFrom",
-                  ("equipment",), level="warning")
+            check(item["runesFrom"], f"/gear/carried/{index}/runesFrom", ("equipment",), level="warning")
         for o_index, rune in enumerate(item.get("ownRunes") or []):
-            check(rune, f"/gear/carried/{index}/ownRunes/{o_index}",
-                  ("equipment",), level="warning")
+            check(rune, f"/gear/carried/{index}/ownRunes/{o_index}", ("equipment",), level="warning")
 
     for l_index, entry in enumerate(document.get("ledger") or []):
         item = entry.get("item")
@@ -498,8 +555,7 @@ def _resolve_slugs(
     for e_index, entry in enumerate(spellcasting.get("entries") or []):
         for rank, spells in (entry.get("spells") or {}).items():
             for s_index, slug in enumerate(spells or []):
-                check(slug, f"/spellcasting/entries/{e_index}/spells/{rank}/{s_index}",
-                      ("spells",))
+                check(slug, f"/spellcasting/entries/{e_index}/spells/{rank}/{s_index}", ("spells",))
     for f_index, slug in enumerate(spellcasting.get("focusSpells") or []):
         check(slug, f"/spellcasting/focusSpells/{f_index}", ("spells",))
 
@@ -523,13 +579,19 @@ def _resolve_slugs(
             continue
         hint = ""
         if packs and existing:
-            hint = (" It exists, but not as "
-                    + ("a " + packs[0].rstrip("s") if len(packs) == 1
-                       else "one of " + ", ".join(packs)) + ".")
-        issues.append(_issue(
-            level, "unknown_slug", path,
-            f"No rules entry with slug {slug!r}.{hint}",
-        ))
+            hint = (
+                " It exists, but not as "
+                + ("a " + packs[0].rstrip("s") if len(packs) == 1 else "one of " + ", ".join(packs))
+                + "."
+            )
+        issues.append(
+            _issue(
+                level,
+                "unknown_slug",
+                path,
+                f"No rules entry with slug {slug!r}.{hint}",
+            )
+        )
     return issues
 
 
@@ -559,18 +621,102 @@ def _check_dependencies(document: dict[str, Any]) -> list[dict[str, Any]]:
             for d_index, needed in enumerate(choice.get("dependsOn") or []):
                 path = f"/plan/{index}/choices/{c_index}/dependsOn/{d_index}"
                 if needed not in at_level:
-                    issues.append(_issue(
-                        "warning", "dangling_dependency", path,
-                        f"This choice depends on {needed!r}, which the plan does "
-                        f"not contain. If it was retrained away, this choice may "
-                        f"no longer have a reason to be here.",
-                    ))
+                    issues.append(
+                        _issue(
+                            "warning",
+                            "dangling_dependency",
+                            path,
+                            f"This choice depends on {needed!r}, which the plan does "
+                            f"not contain. If it was retrained away, this choice may "
+                            f"no longer have a reason to be here.",
+                        )
+                    )
                 elif isinstance(level, int) and at_level[needed] > level:
-                    issues.append(_issue(
-                        "error", "dependency_ordering", path,
-                        f"This choice at level {level} depends on {needed!r}, "
-                        f"which is not taken until level {at_level[needed]}.",
-                    ))
+                    issues.append(
+                        _issue(
+                            "error",
+                            "dependency_ordering",
+                            path,
+                            f"This choice at level {level} depends on {needed!r}, "
+                            f"which is not taken until level {at_level[needed]}.",
+                        )
+                    )
+    return issues
+
+
+def _check_skill_grants(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Check provenance recorded for non-increase skill training choices."""
+    issues: list[dict[str, Any]] = []
+    feat_levels: dict[str, int] = {}
+    for entry in document.get("plan") or []:
+        level = entry.get("level")
+        if not isinstance(level, int):
+            continue
+        for choice in entry.get("choices") or []:
+            if choice.get("slot") not in {
+                "classFeat",
+                "ancestryFeat",
+                "generalFeat",
+                "skillFeat",
+                "archetypeFeat",
+            }:
+                continue
+            picks = choice.get("pick")
+            for pick in picks if isinstance(picks, list) else [picks]:
+                if isinstance(pick, str):
+                    feat_levels.setdefault(pick, level)
+
+    for index, entry in enumerate(document.get("plan") or []):
+        level = entry.get("level")
+        if not isinstance(level, int):
+            continue
+        boosts = entry.get("attributeBoosts") or {}
+        has_int_boost = any(
+            "int" in (values or [])
+            for values in (
+                boosts.get("background"),
+                boosts.get("class"),
+                boosts.get("free"),
+            )
+        )
+        for c_index, choice in enumerate(entry.get("choices") or []):
+            if choice.get("slot") != "skillTraining":
+                continue
+            source = choice.get("grantedBy")
+            if not source:
+                continue
+            path = f"/plan/{index}/choices/{c_index}/grantedBy"
+            if source == "intelligence":
+                if not has_int_boost:
+                    issues.append(
+                        _issue(
+                            "warning",
+                            "stale_skill_grant",
+                            path,
+                            f"This skill training at level {level} is attributed to "
+                            "Intelligence, but that level has no Intelligence boost.",
+                        )
+                    )
+            elif source not in feat_levels:
+                issues.append(
+                    _issue(
+                        "warning",
+                        "stale_skill_grant",
+                        path,
+                        f"This skill training is attributed to {source!r}, but that "
+                        "feat is not present in the plan.",
+                    )
+                )
+            elif feat_levels[source] > level:
+                issues.append(
+                    _issue(
+                        "error",
+                        "skill_grant_before_source",
+                        path,
+                        f"This skill training at level {level} is attributed to "
+                        f"{source!r}, which is not taken until level {feat_levels[source]}.",
+                    )
+                )
     return issues
 
 
@@ -581,10 +727,14 @@ def _check_overrides(document: dict[str, Any]) -> list[dict[str, Any]]:
     for name, override in (document.get("proficiencyOverrides") or {}).items():
         rank = (override or {}).get("rank")
         if rank not in known:
-            issues.append(_issue(
-                "error", "bad_rank", f"/proficiencyOverrides/{name}/rank",
-                f"{rank!r} is not a proficiency rank.",
-            ))
+            issues.append(
+                _issue(
+                    "error",
+                    "bad_rank",
+                    f"/proficiencyOverrides/{name}/rank",
+                    f"{rank!r} is not a proficiency rank.",
+                )
+            )
     return issues
 
 
@@ -605,23 +755,29 @@ def _check_organized_play(document: dict[str, Any]) -> list[dict[str, Any]]:
     current = identity.get("currentLevel")
     starting = op.get("startingLevel", 1)
     if isinstance(current, int) and isinstance(starting, int) and current < starting:
-        issues.append(_issue(
-            "error", "level_below_start", "/identity/currentLevel",
-            f"The character is recorded at level {current} but was created at "
-            f"level {starting}. A character cannot be below their starting level.",
-        ))
+        issues.append(
+            _issue(
+                "error",
+                "level_below_start",
+                "/identity/currentLevel",
+                f"The character is recorded at level {current} but was created at "
+                f"level {starting}. A character cannot be below their starting level.",
+            )
+        )
 
     entries = op.get("chronicles") or []
     if entries:
-        highest = max(
-            (e.get("characterLevel") or 0) for e in entries
-        )
+        highest = max((e.get("characterLevel") or 0) for e in entries)
         if isinstance(current, int) and highest > current:
-            issues.append(_issue(
-                "warning", "chronicle_above_level", "/organizedPlay/chronicles",
-                f"A chronicle records play at level {highest}, above the "
-                f"character's recorded level of {current}.",
-            ))
+            issues.append(
+                _issue(
+                    "warning",
+                    "chronicle_above_level",
+                    "/organizedPlay/chronicles",
+                    f"A chronicle records play at level {highest}, above the "
+                    f"character's recorded level of {current}.",
+                )
+            )
 
         # The ledger is the authority on money: every chronicle's award and
         # every purchase runs through it, and the running balance is derived
@@ -639,13 +795,17 @@ def _check_organized_play(document: dict[str, Any]) -> list[dict[str, Any]]:
             )
             ledger_cp = chronicle.to_cp(ledger)
             if purse_cp != ledger_cp:
-                issues.append(_issue(
-                    "warning", "currency_disagrees_with_ledger", "/gear/currency",
-                    f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
-                    f"but the chronicle ledger ends at "
-                    f"{chronicle.format_currency(ledger_cp)}. The ledger is the "
-                    f"authority; update the purse to match it.",
-                ))
+                issues.append(
+                    _issue(
+                        "warning",
+                        "currency_disagrees_with_ledger",
+                        "/gear/currency",
+                        f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
+                        f"but the chronicle ledger ends at "
+                        f"{chronicle.format_currency(ledger_cp)}. The ledger is the "
+                        f"authority; update the purse to match it.",
+                    )
+                )
     return issues
 
 
@@ -666,24 +826,36 @@ def _check_ledger(document: dict[str, Any]) -> list[dict[str, Any]]:
 
     levels = [e.get("level") for e in ledger if isinstance(e.get("level"), int)]
     if levels != sorted(levels):
-        issues.append(_issue(
-            "warning", "ledger_order", "/ledger",
-            "Ledger entries are not in non-decreasing level order.",
-        ))
+        issues.append(
+            _issue(
+                "warning",
+                "ledger_order",
+                "/ledger",
+                "Ledger entries are not in non-decreasing level order.",
+            )
+        )
 
     kinds = [e.get("kind") for e in ledger]
     if kinds.count("starting") > 1:
-        issues.append(_issue(
-            "warning", "duplicate_starting_entry", "/ledger",
-            "More than one ledger entry is kind 'starting' -- a character has "
-            "exactly one starting purse.",
-        ))
+        issues.append(
+            _issue(
+                "warning",
+                "duplicate_starting_entry",
+                "/ledger",
+                "More than one ledger entry is kind 'starting' -- a character has "
+                "exactly one starting purse.",
+            )
+        )
     if kinds and kinds[0] != "starting":
-        issues.append(_issue(
-            "warning", "ledger_missing_start", "/ledger/0",
-            "The ledger's first entry is not kind 'starting'. Without it the "
-            "running balance has no anchor to count up from.",
-        ))
+        issues.append(
+            _issue(
+                "warning",
+                "ledger_missing_start",
+                "/ledger/0",
+                "The ledger's first entry is not kind 'starting'. Without it the "
+                "running balance has no anchor to count up from.",
+            )
+        )
 
     ledger_cp = sum(chronicle.to_cp(e.get("gp")) for e in ledger)
     coins = (document.get("gear") or {}).get("currency")
@@ -695,19 +867,21 @@ def _check_ledger(document: dict[str, Any]) -> list[dict[str, Any]]:
             + coins.get("cp", 0)
         )
         if purse_cp != ledger_cp:
-            issues.append(_issue(
-                "warning", "currency_disagrees_with_ledger", "/gear/currency",
-                f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
-                f"but the ledger sums to {chronicle.format_currency(ledger_cp)}. "
-                f"The ledger is the authority; update the purse to match it, or "
-                f"add the missing entry that explains the difference.",
-            ))
+            issues.append(
+                _issue(
+                    "warning",
+                    "currency_disagrees_with_ledger",
+                    "/gear/currency",
+                    f"Coins on hand come to {chronicle.format_currency(purse_cp)}, "
+                    f"but the ledger sums to {chronicle.format_currency(ledger_cp)}. "
+                    f"The ledger is the authority; update the purse to match it, or "
+                    f"add the missing entry that explains the difference.",
+                )
+            )
     return issues
 
 
-def validate_document(
-    document: Any, conn: sqlite3.Connection | None = None
-) -> dict[str, Any]:
+def validate_document(document: Any, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """Check a character file, structurally and then semantically.
 
     Returns `{valid, errors, warnings, issues}`, where `issues` carries the
@@ -729,6 +903,7 @@ def validate_document(
         issues += _check_boost_sources(plain)
         issues += _check_overrides(plain)
         issues += _check_dependencies(plain)
+        issues += _check_skill_grants(plain)
         issues += _check_organized_play(plain)
         issues += _check_ledger(plain)
         if conn is not None:
@@ -884,5 +1059,6 @@ def check_collisions(documents: dict[str, Any]) -> list[dict[str, Any]]:
                 f"as the build it varies from."
             ),
         }
-        for path, keys in sorted(seen.items()) if len(keys) > 1
+        for path, keys in sorted(seen.items())
+        if len(keys) > 1
     ]

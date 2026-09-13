@@ -79,9 +79,22 @@ from . import pf2e_math as m
 
 #: The sixteen skills, which is a fixed list in the Remaster.
 SKILLS = (
-    "acrobatics", "arcana", "athletics", "crafting", "deception", "diplomacy",
-    "intimidation", "medicine", "nature", "occultism", "performance",
-    "religion", "society", "stealth", "survival", "thievery",
+    "acrobatics",
+    "arcana",
+    "athletics",
+    "crafting",
+    "deception",
+    "diplomacy",
+    "intimidation",
+    "medicine",
+    "nature",
+    "occultism",
+    "performance",
+    "religion",
+    "society",
+    "stealth",
+    "survival",
+    "thievery",
 )
 
 #: Feats granting +1 Hit Point per level. Their rule elements are FlatModifiers
@@ -98,8 +111,12 @@ HP_PER_LEVEL_FEATS = {
 #: Property runes are not here: they stay in the `runes` list, which is where
 #: the sheet reads them from.
 _POTENCY = {
-    "weapon-potency-1": 1, "weapon-potency-2": 2, "weapon-potency-3": 3,
-    "armor-potency-1": 1, "armor-potency-2": 2, "armor-potency-3": 3,
+    "weapon-potency-1": 1,
+    "weapon-potency-2": 2,
+    "weapon-potency-3": 3,
+    "armor-potency-1": 1,
+    "armor-potency-2": 2,
+    "armor-potency-3": 3,
 }
 _STRIKING = {"striking": 1, "striking-greater": 2, "striking-major": 3}
 
@@ -108,8 +125,7 @@ _STRIKING = {"striking": 1, "striking-greater": 2, "striking-major": 3}
 #: and major striking come back out as plain striking -- a die or two of damage
 #: lost on the way to the sheet. Pathbuilder itself carries a graded rune by
 #: name in the `runes` list alongside the boolean, and so does this.
-_STRIKING_NAMES = {"striking-greater": "greater striking",
-                   "striking-major": "major striking"}
+_STRIKING_NAMES = {"striking-greater": "greater striking", "striking-major": "major striking"}
 
 
 def _graded_striking(runes: list[str]) -> list[str]:
@@ -118,6 +134,8 @@ def _graded_striking(runes: list[str]) -> list[str]:
     if not graded:
         return []
     return [_STRIKING_NAMES[max(graded, key=lambda r: _STRIKING[r])]]
+
+
 _RESILIENT = {
     "resilient": "resilient",
     "resilient-greater": "greater resilient",
@@ -128,11 +146,26 @@ _RESILIENT = {
 #: lowercase, no spaces. Used only to recognise a worn item's `FlatModifier`
 #: rule as a skill bonus rather than one of the many other things a selector
 #: can name (a save, a weapon category, a resistance).
-_SKILL_SELECTORS = frozenset({
-    "acrobatics", "arcana", "athletics", "crafting", "deception", "diplomacy",
-    "intimidation", "medicine", "nature", "occultism", "performance",
-    "religion", "society", "stealth", "survival", "thievery",
-})
+_SKILL_SELECTORS = frozenset(
+    {
+        "acrobatics",
+        "arcana",
+        "athletics",
+        "crafting",
+        "deception",
+        "diplomacy",
+        "intimidation",
+        "medicine",
+        "nature",
+        "occultism",
+        "performance",
+        "religion",
+        "society",
+        "stealth",
+        "survival",
+        "thievery",
+    }
+)
 
 
 def _active_item_flat_modifiers(system: dict[str, Any], active: bool) -> list[dict[str, Any]]:
@@ -165,8 +198,10 @@ def _active_item_flat_modifiers(system: dict[str, Any], active: bool) -> list[di
     if not active:
         return []
     return [
-        rule for rule in (system.get("rules") or [])
-        if rule.get("key") == "FlatModifier" and rule.get("type") in (None, "", "item")
+        rule
+        for rule in (system.get("rules") or [])
+        if rule.get("key") == "FlatModifier"
+        and rule.get("type") in (None, "", "item")
         and not rule.get("predicate")
     ]
 
@@ -238,23 +273,27 @@ def _feat_flat_bonus(conn: sqlite3.Connection, feat_slugs: set, selector: str) -
     total = 0
     for slug in feat_slugs:
         entry = _one(
-            conn, "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'feats'",
+            conn,
+            "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'feats'",
             (slug,),
         )
         if not entry:
             continue
         system = json.loads(entry["raw_json"]).get("system", {})
         for rule in system.get("rules") or []:
-            if (rule.get("key") != "FlatModifier"
-                    or str(rule.get("selector") or "").lower() != selector
-                    or rule.get("predicate")
-                    or rule.get("type") not in (None, "")):
+            if (
+                rule.get("key") != "FlatModifier"
+                or str(rule.get("selector") or "").lower() != selector
+                or rule.get("predicate")
+                or rule.get("type") not in (None, "")
+            ):
                 continue
             try:
                 total += int(rule.get("value") or 0)
             except (TypeError, ValueError):
                 continue
     return total
+
 
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
 _SIZES = {
@@ -328,9 +367,7 @@ def _entry(conn: sqlite3.Connection, slug: str, pack: str | None = None) -> dict
             "SELECT id, name, slug, pack, level FROM entries WHERE slug = ? AND pack = ?",
             (slug, pack),
         )
-    return _one(
-        conn, "SELECT id, name, slug, pack, level FROM entries WHERE slug = ?", (slug,)
-    )
+    return _one(conn, "SELECT id, name, slug, pack, level FROM entries WHERE slug = ?", (slug,))
 
 
 def _name_of(conn: sqlite3.Connection, slug: str, pack: str | None = None) -> str:
@@ -349,9 +386,7 @@ def _name_of(conn: sqlite3.Connection, slug: str, pack: str | None = None) -> st
 # ------------------------------------------------------------ attributes
 
 
-def _replay_attributes(
-    plan: list[dict], level: int
-) -> tuple[dict[str, int], dict[str, Any], list[str]]:
+def _replay_attributes(plan: list[dict], level: int) -> tuple[dict[str, int], dict[str, Any], list[str]]:
     """Attribute scores at `level`, plus the `breakdown` the sheet expects.
 
     The breakdown is emitted in the shape `_boost_abilities` and
@@ -402,9 +437,7 @@ def _replay_attributes(
         if free:
             for attribute in free:
                 scores[attribute] = _apply_boost(scores[attribute])
-            breakdown["mapLevelledBoosts"][str(entry_level)] = [
-                a.capitalize() for a in free
-            ]
+            breakdown["mapLevelledBoosts"][str(entry_level)] = [a.capitalize() for a in free]
             # A boost that raised a score to an odd number bought no modifier.
             # Harmless before 20th -- the next milestone finishes it, a level
             # earlier than an even score would have -- but worth surfacing.
@@ -422,9 +455,7 @@ def _replay_attributes(
 # ---------------------------------------------------------- proficiencies
 
 
-def _class_baseline(
-    progression: dict, class_slug: str
-) -> dict[str, int]:
+def _class_baseline(progression: dict, class_slug: str) -> dict[str, int]:
     """The class's proficiency ranks at 1st level."""
     proficiencies: dict[str, int] = {
         "perception": _rank_to_project(progression.get("perception_rank")),
@@ -444,9 +475,7 @@ def _class_baseline(
     return proficiencies
 
 
-def _granted_features(
-    conn: sqlite3.Connection, progression: dict, level: int
-) -> list[dict[str, Any]]:
+def _granted_features(conn: sqlite3.Connection, progression: dict, level: int) -> list[dict[str, Any]]:
     """Class features granted automatically at or below `level`, in level order."""
     features = []
     for item in json.loads(progression.get("granted_items") or "[]"):
@@ -454,11 +483,13 @@ def _granted_features(
         if item_level > level:
             continue
         entry_id = (item.get("uuid") or "").split(".")[-1]
-        features.append({
-            "level": item_level,
-            "name": item.get("name"),
-            "entry_id": entry_id,
-        })
+        features.append(
+            {
+                "level": item_level,
+                "name": item.get("name"),
+                "entry_id": entry_id,
+            }
+        )
     return sorted(features, key=lambda f: (f["level"], f["name"] or ""))
 
 
@@ -577,18 +608,22 @@ def _replay_skills(
             continue
         for choice in entry.get("choices") or []:
             slot = choice.get("slot")
-            if slot not in ("skillTraining", "skillIncrease"):
+            picks = choice.get("pick") if slot in ("skillTraining", "skillIncrease") else []
+            parameter = choice.get("parameter")
+            if isinstance(parameter, list):
+                picks = list(picks) if isinstance(picks, list) else ([picks] if picks else [])
+                picks.extend(parameter)
+            if not picks:
                 continue
-            picks = choice.get("pick")
             picks = picks if isinstance(picks, list) else [picks]
             for pick in picks:
                 if not isinstance(pick, str):
                     continue
                 if pick in SKILLS:
-                    if slot == "skillTraining":
-                        proficiencies[pick] = max(proficiencies.get(pick, 0), 2)
-                    else:
+                    if slot == "skillIncrease":
                         proficiencies[pick] = max(proficiencies.get(pick, 0) + 2, 2)
+                    else:
+                        proficiencies[pick] = max(proficiencies.get(pick, 0), 2)
                     trace.append(f"L{entry_level} {slot}: {pick}")
                 else:
                     name = _lore_key(pick)
@@ -645,9 +680,7 @@ def int_gain_levels(plan: list[dict], through: int = 20) -> list[int]:
     return levels
 
 
-def _replay_languages(
-    document: dict, plan: list[dict], level: int
-) -> tuple[list[str], list[str]]:
+def _replay_languages(document: dict, plan: list[dict], level: int) -> tuple[list[str], list[str]]:
     """Languages known at `level`, in the order they were learned.
 
     `build.languages` is the 1st-level set; everything after it is a
@@ -677,8 +710,7 @@ def _replay_languages(
                     trace.append(f"L{entry_level} language: {pick.lower()}")
 
     owed = len(int_gain_levels(plan, level))
-    unspent = [lv for lv in int_gain_levels(plan, level)
-               if not _language_taken_at(plan, lv)]
+    unspent = [lv for lv in int_gain_levels(plan, level) if not _language_taken_at(plan, lv)]
     if unspent:
         trace.append(
             f"Intelligence rose at {', '.join(str(lv) for lv in unspent)} without a "
@@ -701,9 +733,7 @@ def _language_taken_at(plan: list[dict], level: int) -> bool:
 # ------------------------------------------------------------------ feats
 
 
-def _background_feats(
-    conn: sqlite3.Connection, background_slug: str
-) -> list[list[Any]]:
+def _background_feats(conn: sqlite3.Connection, background_slug: str) -> list[list[Any]]:
     """The feat a background hands over at 1st level, as a legacy tuple.
 
     Nearly every background grants one -- Student of the Canon, Alchemical
@@ -729,7 +759,8 @@ def _background_feats(
         uuid = str(grant.get("uuid") or "")
         if uuid:
             entry = _one(
-                conn, "SELECT name FROM entries WHERE id = ?",
+                conn,
+                "SELECT name FROM entries WHERE id = ?",
                 (uuid.rsplit(".", 1)[-1],),
             )
         name = (entry or {}).get("name") or grant.get("name")
@@ -739,8 +770,7 @@ def _background_feats(
         # `build_tools._feat_slot_bucket` already knows to exclude from the
         # feat-slot schedule -- a background's feat is a gift, not a slot the
         # character spent.
-        out.append([name, None, "Awarded Feat", grant.get("level") or 1,
-                    "Background Feat"])
+        out.append([name, None, "Awarded Feat", grant.get("level") or 1, "Background Feat"])
     return out
 
 
@@ -767,6 +797,20 @@ def _heritage_feats(conn: sqlite3.Connection, heritage_slug: str) -> list[list[A
         (heritage["id"],),
     ).fetchall()
     return [[row["name"], None, "Awarded Feat", 1, "Heritage Feat"] for row in rows]
+
+
+def _feat_grants(conn: sqlite3.Connection, feat_slug: str, level: int) -> list[list[Any]]:
+    """Unconditional feats granted by a chosen feat."""
+    feat = _entry(conn, feat_slug)
+    if not feat:
+        return []
+    rows = conn.execute(
+        "SELECT e.name FROM item_grants ig JOIN entries e ON e.id = ig.granted_id "
+        "WHERE ig.granter_id = ? AND e.type = 'feat' "
+        "AND (ig.predicate IS NULL OR ig.predicate = '')",
+        (feat["id"],),
+    ).fetchall()
+    return [[row["name"], None, "Awarded Feat", level, "Granted Feat"] for row in rows]
 
 
 def _replay_feats(
@@ -799,8 +843,7 @@ def _replay_feats(
             name = _name_of(conn, pick, "class-features")
             if len(picks) > 1:
                 specials.append(
-                    f"{'Primary' if index == 0 else 'Attuned'} "
-                    f"{tag.split('-')[-1].capitalize()}: {name}"
+                    f"{'Primary' if index == 0 else 'Attuned'} " f"{tag.split('-')[-1].capitalize()}: {name}"
                 )
             else:
                 specials.append(name)
@@ -815,10 +858,15 @@ def _replay_feats(
                 picks = choice.get("pick")
                 picks = picks if isinstance(picks, list) else [picks]
                 for pick in picks:
-                    feats.append([
-                        _lore_key(str(pick)), choice.get("note"),
-                        skill_category, entry_level, skill_category,
-                    ])
+                    feats.append(
+                        [
+                            _lore_key(str(pick)),
+                            choice.get("note"),
+                            skill_category,
+                            entry_level,
+                            skill_category,
+                        ]
+                    )
                 continue
             category = _FEAT_CATEGORIES.get(choice.get("slot"))
             if not category:
@@ -830,12 +878,18 @@ def _replay_feats(
                 if choice.get("parameter"):
                     name = f"{name} ({choice['parameter']})"
                 slot_name = (
-                    "Archetype Feat" if choice.get("slot") == "archetypeFeat"
-                    else f"{category} {entry_level}"
+                    "Archetype Feat" if choice.get("slot") == "archetypeFeat" else f"{category} {entry_level}"
                 )
-                feats.append([
-                    name, choice.get("note"), category, entry_level, slot_name,
-                ])
+                feats.append(
+                    [
+                        name,
+                        choice.get("note"),
+                        category,
+                        entry_level,
+                        slot_name,
+                    ]
+                )
+                feats.extend(_feat_grants(conn, pick, entry_level))
 
     return feats, specials
 
@@ -876,72 +930,78 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
         item_type = (kind or {}).get("type")
 
         if item_type == "weapon":
-            weapons.append({
-                "name": name,
-                "qty": quantity,
-                "prof": (system.get("category") or "simple"),
-                "die": (system.get("damage") or {}).get("die") or "d4",
-                "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
-                # Pathbuilder's own home for the striking tier: the rune's
-                # name, not the `increasedDice` boolean beside it.
-                "str": next((_STRIKING_NAMES.get(r, "striking")
-                             for r in sorted(runes, key=lambda x: -_STRIKING.get(x, 0))
-                             if r in _STRIKING), ""),
-                "mat": None,
-                "display": name,
-                "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING]
-                         + _graded_striking(runes),
-                "increasedDice": any(r in _STRIKING for r in runes),
-                "damageType": ((system.get("damage") or {}).get("damageType") or "B")[:1].upper(),
-                "damageBonus": 0,
-                "extraDamage": [],
-                "isInventor": False,
-                "grade": item.get("grade") or "",
-                # Not a Pathbuilder field. Doubling rings copy runes onto the
-                # off-hand weapon, and the sheet has to know the difference
-                # between a rune this weapon carries and one it borrows -- the
-                # first was paid for and the second was not. Pathbuilder
-                # ignores keys it does not know.
-                "runesFrom": item.get("runesFrom") or None,
-                # Also not a Pathbuilder field -- see the schema's own
-                # `ownRunes` description. Plain doubling rings copy fundamental
-                # runes only; a property rune etched directly on this weapon
-                # is genuinely bought even while `runesFrom` is set, and this
-                # says which ones so the inventory doesn't price them at zero
-                # along with the borrowed fundamentals.
-                "ownRunes": item.get("ownRunes") or None,
-                # Also not a Pathbuilder field. `pot` above is the *effective*
-                # potency -- correct for the Strikes table, which is what a
-                # doubling ring actually hits with -- but the Inventory table
-                # needs the weapon's own, genuinely-etched tier when the two
-                # differ, or it prints a rune that was never bought.
-                "ownPotency": item.get("ownPotency"),
-                "priceOverride": item.get("priceOverride"),
-            })
+            weapons.append(
+                {
+                    "name": name,
+                    "qty": quantity,
+                    "prof": (system.get("category") or "simple"),
+                    "die": (system.get("damage") or {}).get("die") or "d4",
+                    "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
+                    # Pathbuilder's own home for the striking tier: the rune's
+                    # name, not the `increasedDice` boolean beside it.
+                    "str": next(
+                        (
+                            _STRIKING_NAMES.get(r, "striking")
+                            for r in sorted(runes, key=lambda x: -_STRIKING.get(x, 0))
+                            if r in _STRIKING
+                        ),
+                        "",
+                    ),
+                    "mat": None,
+                    "display": name,
+                    "runes": [r for r in runes if r not in _POTENCY and r not in _STRIKING]
+                    + _graded_striking(runes),
+                    "increasedDice": any(r in _STRIKING for r in runes),
+                    "damageType": ((system.get("damage") or {}).get("damageType") or "B")[:1].upper(),
+                    "damageBonus": 0,
+                    "extraDamage": [],
+                    "isInventor": False,
+                    "grade": item.get("grade") or "",
+                    # Not a Pathbuilder field. Doubling rings copy runes onto the
+                    # off-hand weapon, and the sheet has to know the difference
+                    # between a rune this weapon carries and one it borrows -- the
+                    # first was paid for and the second was not. Pathbuilder
+                    # ignores keys it does not know.
+                    "runesFrom": item.get("runesFrom") or None,
+                    # Also not a Pathbuilder field -- see the schema's own
+                    # `ownRunes` description. Plain doubling rings copy fundamental
+                    # runes only; a property rune etched directly on this weapon
+                    # is genuinely bought even while `runesFrom` is set, and this
+                    # says which ones so the inventory doesn't price them at zero
+                    # along with the borrowed fundamentals.
+                    "ownRunes": item.get("ownRunes") or None,
+                    # Also not a Pathbuilder field. `pot` above is the *effective*
+                    # potency -- correct for the Strikes table, which is what a
+                    # doubling ring actually hits with -- but the Inventory table
+                    # needs the weapon's own, genuinely-etched tier when the two
+                    # differ, or it prints a rune that was never bought.
+                    "ownPotency": item.get("ownPotency"),
+                    "priceOverride": item.get("priceOverride"),
+                }
+            )
         elif item_type == "armor":
             worn = bool(item.get("worn"))
             for selector, value in _item_skill_bonuses(system, active=worn).items():
                 skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
             hp_item_bonus = max(hp_item_bonus, _item_flat_bonus(system, "hp", worn))
-            speed_item_bonus = max(speed_item_bonus,
-                                    _item_flat_bonus(system, "land-speed", worn))
-            armor.append({
-                "name": name,
-                "qty": quantity,
-                "prof": system.get("category") or "light",
-                "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
-                "res": next((_RESILIENT[r] for r in runes if r in _RESILIENT), ""),
-                "mat": None,
-                "display": name,
-                "worn": worn,
-                "runes": [
-                    r for r in runes if r not in _POTENCY and r not in _RESILIENT
-                ],
-                "grade": item.get("grade") or "",
-                "runesFrom": item.get("runesFrom") or None,
-                "ownRunes": item.get("ownRunes") or None,
-                "priceOverride": item.get("priceOverride"),
-            })
+            speed_item_bonus = max(speed_item_bonus, _item_flat_bonus(system, "land-speed", worn))
+            armor.append(
+                {
+                    "name": name,
+                    "qty": quantity,
+                    "prof": system.get("category") or "light",
+                    "pot": max((_POTENCY[r] for r in runes if r in _POTENCY), default=0),
+                    "res": next((_RESILIENT[r] for r in runes if r in _RESILIENT), ""),
+                    "mat": None,
+                    "display": name,
+                    "worn": worn,
+                    "runes": [r for r in runes if r not in _POTENCY and r not in _RESILIENT],
+                    "grade": item.get("grade") or "",
+                    "runesFrom": item.get("runesFrom") or None,
+                    "ownRunes": item.get("ownRunes") or None,
+                    "priceOverride": item.get("priceOverride"),
+                }
+            )
         else:
             invested = bool(item.get("invested"))
             # Not every worn magic item needs a daily investiture slot to
@@ -950,23 +1010,20 @@ def _replay_gear(conn: sqlite3.Connection, document: dict) -> dict[str, Any]:
             # alike on `invested` would silently drop the belt's +4 HP for
             # any character who (correctly) never marks a non-investable
             # item invested.
-            needs_investiture = "invested" in (
-                (system.get("traits") or {}).get("value") or []
-            )
+            needs_investiture = "invested" in ((system.get("traits") or {}).get("value") or [])
             active = invested if needs_investiture else True
             for selector, value in _item_skill_bonuses(system, active=active).items():
                 skill_item_bonuses[selector] = max(skill_item_bonuses.get(selector, 0), value)
             hp_item_bonus = max(hp_item_bonus, _item_flat_bonus(system, "hp", active))
-            speed_item_bonus = max(speed_item_bonus,
-                                    _item_flat_bonus(system, "land-speed", active))
+            speed_item_bonus = max(speed_item_bonus, _item_flat_bonus(system, "land-speed", active))
             price_override = item.get("priceOverride")
             if price_override is not None:
                 # A dict row, not the bare Pathbuilder-shaped list -- the only
                 # way to carry a manual price alongside the invested flag.
                 # `_inventory` already accepts either shape for `equipment`.
-                equipment.append({"name": name, "qty": quantity,
-                                   "invested": invested,
-                                   "priceOverride": price_override})
+                equipment.append(
+                    {"name": name, "qty": quantity, "invested": invested, "priceOverride": price_override}
+                )
                 continue
             row: list[Any] = [name, quantity]
             if invested:
@@ -1003,29 +1060,29 @@ def _replay_spellcasting(
     for entry in spellcasting.get("entries") or []:
         tradition = entry.get("tradition")
         spells = []
-        for rank, slugs in sorted(
-            (entry.get("spells") or {}).items(), key=lambda kv: int(kv[0])
-        ):
-            spells.append({
-                "spellLevel": int(rank),
-                "list": [_name_of(conn, s, "spells") for s in slugs or []],
-            })
-        casters.append({
-            "name": entry.get("name"),
-            "magicTradition": tradition,
-            "spellcastingType": entry.get("type"),
-            "ability": entry.get("ability") or "int",
-            "proficiency": proficiencies.get(_CASTING_KEYS.get(tradition, ""), 0),
-            "focusPoints": 0,
-            "innate": entry.get("type") == "innate",
-            "spells": spells,
-            "prepared": [],
-            "blendedSpells": [],
-        })
+        for rank, slugs in sorted((entry.get("spells") or {}).items(), key=lambda kv: int(kv[0])):
+            spells.append(
+                {
+                    "spellLevel": int(rank),
+                    "list": [_name_of(conn, s, "spells") for s in slugs or []],
+                }
+            )
+        casters.append(
+            {
+                "name": entry.get("name"),
+                "magicTradition": tradition,
+                "spellcastingType": entry.get("type"),
+                "ability": entry.get("ability") or "int",
+                "proficiency": proficiencies.get(_CASTING_KEYS.get(tradition, ""), 0),
+                "focusPoints": 0,
+                "innate": entry.get("type") == "innate",
+                "spells": spells,
+                "prepared": [],
+                "blendedSpells": [],
+            }
+        )
 
-    focus_spells = [
-        _name_of(conn, s, "spells") for s in spellcasting.get("focusSpells") or []
-    ]
+    focus_spells = [_name_of(conn, s, "spells") for s in spellcasting.get("focusSpells") or []]
     focus: dict[str, Any] = {}
     if focus_spells:
         # Pathbuilder keys the focus block by tradition; use the first caster's.
@@ -1037,9 +1094,7 @@ def _replay_spellcasting(
 # ------------------------------------------------------------------ main
 
 
-def at_level(
-    document: Any, level: int | None, conn: sqlite3.Connection
-) -> dict[str, Any]:
+def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict[str, Any]:
     """Replay a character file into their state at `level`.
 
     Returns a Pathbuilder-shaped build dict -- the same shape
@@ -1065,20 +1120,20 @@ def at_level(
         raise ValueError(f"level must be between 1 and 20, got {level!r}")
 
     class_slug = build.get("class") or ""
-    progression = _one(
-        conn, "SELECT * FROM class_progression WHERE class_slug = ?", (class_slug,)
-    )
+    progression = _one(conn, "SELECT * FROM class_progression WHERE class_slug = ?", (class_slug,))
     if progression is None:
         raise ValueError(
-            f"No class progression for {class_slug!r}. "
-            f"The build's `class` must be a class slug."
+            f"No class progression for {class_slug!r}. " f"The build's `class` must be a class slug."
         )
 
-    ancestry_row = _one(
-        conn,
-        "SELECT hp, size, vision FROM ancestry_boosts WHERE ancestry_slug = ?",
-        (build.get("ancestry") or "",),
-    ) or {}
+    ancestry_row = (
+        _one(
+            conn,
+            "SELECT hp, size, vision FROM ancestry_boosts WHERE ancestry_slug = ?",
+            (build.get("ancestry") or "",),
+        )
+        or {}
+    )
     # Speed is not in ancestry_boosts; it lives in the ancestry entry itself.
     # It matters more than it looks: a dwarf's 20 feet changes what a turn can
     # reach, and defaulting every ancestry to 25 would be silently wrong for
@@ -1088,9 +1143,7 @@ def at_level(
         "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'ancestries'",
         (build.get("ancestry") or "",),
     )
-    ancestry_system = (
-        json.loads(ancestry_entry["raw_json"])["system"] if ancestry_entry else {}
-    )
+    ancestry_system = json.loads(ancestry_entry["raw_json"])["system"] if ancestry_entry else {}
     # A heritage can override ancestry Hit Points -- Hold-Scarred Orc takes an
     # orc from 10 to 12. Foundry expresses that as an ActiveEffectLike on
     # `system.attributes.ancestryhp`, which the ingestion does capture.
@@ -1130,13 +1183,9 @@ def at_level(
 
     proficiencies = _class_baseline(progression, class_slug)
     features = _granted_features(conn, progression, level)
-    prof_trace = _apply_feature_proficiencies(
-        conn, proficiencies, features, class_slug, tradition
-    )
+    prof_trace = _apply_feature_proficiencies(conn, proficiencies, features, class_slug, tradition)
     languages, language_trace = _replay_languages(document, plan, level)
-    lores, skill_trace = _replay_skills(
-        conn, document, progression, plan, level, proficiencies
-    )
+    lores, skill_trace = _replay_skills(conn, document, progression, plan, level, proficiencies)
 
     redundant: list[str] = []
     for name, override in (document.get("proficiencyOverrides") or {}).items():
@@ -1168,22 +1217,16 @@ def at_level(
 
     feat_slugs = {
         pick
-        for entry in plan if (entry.get("level") or 21) <= level
+        for entry in plan
+        if (entry.get("level") or 21) <= level
         for choice in entry.get("choices") or []
-        for pick in (
-            choice.get("pick") if isinstance(choice.get("pick"), list)
-            else [choice.get("pick")]
-        )
+        for pick in (choice.get("pick") if isinstance(choice.get("pick"), list) else [choice.get("pick")])
     }
-    hp_per_level = sum(
-        bonus for slug, bonus in HP_PER_LEVEL_FEATS.items() if slug in feat_slugs
-    )
+    hp_per_level = sum(bonus for slug, bonus in HP_PER_LEVEL_FEATS.items() if slug in feat_slugs)
     speed_feat_bonus = _feat_flat_bonus(conn, feat_slugs, "land-speed")
 
     gear = _replay_gear(conn, document)
-    casters, focus, focus_points = _replay_spellcasting(
-        conn, document, proficiencies
-    )
+    casters, focus, focus_points = _replay_spellcasting(conn, document, proficiencies)
 
     # A class offering a choice -- Ranger, Fighter, Monk and Champion all key
     # Strength *or* Dexterity -- has no single right answer in the rules data,
@@ -1201,14 +1244,12 @@ def at_level(
         "level": level,
         "xp": 0,
         "ancestry": _name_of(conn, build.get("ancestry"), "ancestries"),
-        "heritage": _name_of(conn, build.get("heritage"), "heritages")
-        if build.get("heritage") else None,
+        "heritage": _name_of(conn, build.get("heritage"), "heritages") if build.get("heritage") else None,
         "background": _name_of(conn, build.get("background"), "backgrounds"),
         "alignment": "N",
         "gender": "Not set",
         "age": "Not set",
-        "deity": _name_of(conn, build.get("deity"), "deities")
-        if build.get("deity") else None,
+        "deity": _name_of(conn, build.get("deity"), "deities") if build.get("deity") else None,
         "size": _SIZES.get(ancestry_row.get("size") or "med", (2, "Medium"))[0],
         "sizeName": _SIZES.get(ancestry_row.get("size") or "med", (2, "Medium"))[1],
         "keyability": key_ability,
@@ -1233,8 +1274,7 @@ def at_level(
             # this project does not), so neither a worn item's flat Speed
             # bonus (Boots of Bounding) nor a feat's (Fleet, via
             # `_feat_flat_bonus`) would otherwise reach the printed total.
-            "speed": (ancestry_system.get("speed") or 25)
-                     + gear["speedItemBonus"] + speed_feat_bonus,
+            "speed": (ancestry_system.get("speed") or 25) + gear["speedItemBonus"] + speed_feat_bonus,
             "speedBonus": 0,
         },
         "proficiencies": proficiencies,
@@ -1245,7 +1285,10 @@ def at_level(
         "equipmentContainers": {},
         "equipment": gear["equipment"],
         "specificProficiencies": {
-            "trained": [], "expert": [], "master": [], "legendary": [],
+            "trained": [],
+            "expert": [],
+            "master": [],
+            "legendary": [],
         },
         "weapons": gear["weapons"],
         "money": gear["money"],
@@ -1255,10 +1298,7 @@ def at_level(
         # by `level` -- the same "a sheet for an earlier level shows less"
         # rule `plan` itself follows -- rather than always showing the whole
         # history regardless of which level is being viewed.
-        "ledger": [
-            e for e in (document.get("ledger") or [])
-            if (e.get("level") or 1) <= level
-        ],
+        "ledger": [e for e in (document.get("ledger") or []) if (e.get("level") or 1) <= level],
         "spellCasters": casters,
         "focusPoints": focus_points,
         "focus": focus,
@@ -1271,12 +1311,8 @@ def at_level(
             "proficiency_grants": prof_trace,
             "skill_grants": skill_trace,
             "language_grants": language_trace,
-            "automatic_features": [
-                f"L{f['level']} {f['name']}" for f in features
-            ],
-            "hp_per_level_feats": [
-                slug for slug in HP_PER_LEVEL_FEATS if slug in feat_slugs
-            ],
+            "automatic_features": [f"L{f['level']} {f['name']}" for f in features],
+            "hp_per_level_feats": [slug for slug in HP_PER_LEVEL_FEATS if slug in feat_slugs],
             "redundant_overrides": redundant,
             "notes": notes,
         },

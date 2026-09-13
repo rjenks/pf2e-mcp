@@ -162,7 +162,7 @@
           "default": []
         },
         "variantRules": {
-          "description": "Optional rules the table uses that change the build's budget. 'freeArchetype' grants an archetype feat at every even level; 'ancestryParagon' grants an ancestry feat at every odd level. Organized Play uses neither.",
+          "description": "Optional rules the table uses that change the build's budget or progression. 'freeArchetype' grants an archetype feat at every even level; 'ancestryParagon' grants an ancestry feat at every odd level; 'gradualAbilityBoosts' spreads the four attribute-boost sets across levels 2-5, 7-10, 12-15 and 17-20. Organized Play uses none of these.",
           "type": "array",
           "items": {
             "type": "string",
@@ -531,6 +531,17 @@
         },
         "parameter": {
           "description": "The option chosen inside a feat that takes one: the skill for Assurance, the craft for Specialty Crafting, the weapon group for a weapon-training feat. Recorded separately from the slug because it is a second choice, and because the rules database has no entry for 'Assurance (Medicine)' as such.",
+          "type": [
+            "string",
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "grantedBy": {
+          "description": "Deterministic provenance for a skillTraining choice. Use a feat slug when the feat grants it, or 'intelligence' for the additional skill granted when an Intelligence modifier increases.",
           "type": [
             "string",
             "null"

@@ -11,7 +11,6 @@ from jsonschema import Draft202012Validator
 
 from pf2e_mcp.server import character, chronicle
 
-
 # ------------------------------------------------------------------ schema
 
 
@@ -32,9 +31,13 @@ def test_check_structure_reads_each_schema_file_once_per_process(monkeypatch):
     cleared again after so it does not leave a monkeypatched `read_text`
     baked into a cache later tests rely on.
     """
-    for cache in (character._cached_schema, character._registry,
-                  character._character_validator, character._chronicle_validator,
-                  chronicle._cached_schema):
+    for cache in (
+        character._cached_schema,
+        character._registry,
+        character._character_validator,
+        character._chronicle_validator,
+        chronicle._cached_schema,
+    ):
         cache.cache_clear()
     calls: list[str] = []
     real_read_text = character.SCHEMA_PATH.__class__.read_text
@@ -48,9 +51,13 @@ def test_check_structure_reads_each_schema_file_once_per_process(monkeypatch):
         for _ in range(3):
             character.check_structure({"schemaVersion": 1})
     finally:
-        for cache in (character._cached_schema, character._registry,
-                      character._character_validator, character._chronicle_validator,
-                      chronicle._cached_schema):
+        for cache in (
+            character._cached_schema,
+            character._registry,
+            character._character_validator,
+            character._chronicle_validator,
+            chronicle._cached_schema,
+        ):
             cache.cache_clear()
     assert sorted(calls) == sorted([character.SCHEMA_PATH.name, chronicle.SCHEMA_PATH.name])
 
@@ -99,13 +106,15 @@ def test_cross_file_refs_resolve():
     assert "chronicle_schema.json#/$defs/chronicle" in raw
     assert "chronicle_schema.json#/$defs/purchase" in raw
     # Resolvable, not merely present.
-    character.check_structure({
-        "schemaVersion": 1,
-        "identity": {"name": "X", "currentLevel": 1},
-        "build": {"ancestry": "dwarf", "background": "field-medic", "class": "animist"},
-        "plan": [],
-        "organizedPlay": {"chronicles": []},
-    })
+    character.check_structure(
+        {
+            "schemaVersion": 1,
+            "identity": {"name": "X", "currentLevel": 1},
+            "build": {"ancestry": "dwarf", "background": "field-medic", "class": "animist"},
+            "plan": [],
+            "organizedPlay": {"chronicles": []},
+        }
+    )
 
 
 # ---------------------------------------------------------------- YAML I/O
@@ -235,12 +244,14 @@ def test_same_source_double_boost_is_an_error(minimal):
     cannot spend the free boost on Constitution to reach +2 from ancestry
     alone.
     """
-    minimal["plan"] = [{
-        "level": 1,
-        "attributeBoosts": {
-            "ancestry": {"boosts": ["con", "wis"], "free": ["con"], "flaw": ["cha"]},
-        },
-    }]
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "attributeBoosts": {
+                "ancestry": {"boosts": ["con", "wis"], "free": ["con"], "flaw": ["cha"]},
+            },
+        }
+    ]
     result = character.validate_document(minimal)
     assert not result["valid"]
     assert any(i["code"] == "same_source_boost" for i in result["issues"])
@@ -253,32 +264,66 @@ def test_background_double_boost_is_an_error(minimal):
 
 
 def test_legal_boost_spread_passes(minimal):
-    minimal["plan"] = [{
-        "level": 1,
-        "attributeBoosts": {
-            "ancestry": {"boosts": ["con", "wis"], "free": ["dex"], "flaw": ["cha"]},
-            "background": ["wis", "con"],
-            "class": ["wis"],
-            "free": ["con", "dex", "int", "wis"],
-        },
-    }]
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "attributeBoosts": {
+                "ancestry": {"boosts": ["con", "wis"], "free": ["dex"], "flaw": ["cha"]},
+                "background": ["wis", "con"],
+                "class": ["wis"],
+                "free": ["con", "dex", "int", "wis"],
+            },
+        }
+    ]
     assert character.validate_document(minimal)["valid"]
 
 
 def test_free_boosts_off_a_milestone_are_an_error(minimal):
     minimal["identity"]["currentLevel"] = 4
-    minimal["plan"] = [
-        {"level": n} for n in (1, 2, 3)
-    ] + [{"level": 4, "attributeBoosts": {"free": ["str", "dex", "con", "int"]}}]
+    minimal["plan"] = [{"level": n} for n in (1, 2, 3)] + [
+        {"level": 4, "attributeBoosts": {"free": ["str", "dex", "con", "int"]}}
+    ]
     result = character.validate_document(minimal)
     assert any(i["code"] == "boosts_off_milestone" for i in result["issues"])
 
 
+def test_gradual_boost_levels_are_accepted(minimal):
+    minimal["build"]["variantRules"] = ["gradualAbilityBoosts"]
+    minimal["identity"]["currentLevel"] = 5
+    minimal["plan"] = [{"level": 1}] + [
+        {"level": level, "attributeBoosts": {"free": [attribute]}}
+        for level, attribute in ((2, "str"), (3, "dex"), (4, "con"), (5, "int"))
+    ]
+    assert character.validate_document(minimal)["valid"]
+
+
+def test_gradual_boosts_cannot_repeat_an_attribute_within_a_set(minimal):
+    minimal["build"]["variantRules"] = ["gradualAbilityBoosts"]
+    minimal["identity"]["currentLevel"] = 3
+    minimal["plan"] = [
+        {"level": 1},
+        {"level": 2, "attributeBoosts": {"free": ["str"]}},
+        {"level": 3, "attributeBoosts": {"free": ["str"]}},
+    ]
+    result = character.validate_document(minimal)
+    assert not result["valid"]
+    assert any(i["code"] == "gradual_boost_repeat" for i in result["issues"])
+
+
+def test_gradual_boosts_allow_only_one_at_each_level(minimal):
+    minimal["build"]["variantRules"] = ["gradualAbilityBoosts"]
+    minimal["identity"]["currentLevel"] = 2
+    minimal["plan"] = [{"level": 1}, {"level": 2, "attributeBoosts": {"free": ["str", "dex"]}}]
+    result = character.validate_document(minimal)
+    assert not result["valid"]
+    assert any(i["code"] == "gradual_boost_count" for i in result["issues"])
+
+
 def test_creation_boosts_after_level_one_are_an_error(minimal):
     minimal["identity"]["currentLevel"] = 5
-    minimal["plan"] = [
-        {"level": n} for n in (1, 2, 3, 4)
-    ] + [{"level": 5, "attributeBoosts": {"class": ["wis"], "free": ["con"]}}]
+    minimal["plan"] = [{"level": n} for n in (1, 2, 3, 4)] + [
+        {"level": 5, "attributeBoosts": {"class": ["wis"], "free": ["con"]}}
+    ]
     result = character.validate_document(minimal)
     assert any(i["code"] == "creation_boosts_off_level_one" for i in result["issues"])
 
@@ -289,10 +334,20 @@ def test_override_without_a_source_is_rejected(minimal):
     assert character.check_structure(minimal)
 
 
+def test_skill_training_grant_source_is_checked(minimal):
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "choices": [{"slot": "skillTraining", "pick": "crafting", "grantedBy": "orc-lore"}],
+        }
+    ]
+    result = character.validate_document(minimal)
+    assert result["valid"]
+    assert any(i["code"] == "stale_skill_grant" for i in result["issues"])
+
+
 def test_override_with_a_bad_rank_is_rejected(minimal):
-    minimal["proficiencyOverrides"] = {
-        "religion": {"rank": "proficient", "source": "fighter-dedication"}
-    }
+    minimal["proficiencyOverrides"] = {"religion": {"rank": "proficient", "source": "fighter-dedication"}}
     assert character.check_structure(minimal)
 
 
@@ -308,12 +363,14 @@ def test_chronicle_above_current_level_warns(minimal):
     minimal["identity"]["currentLevel"] = 2
     minimal["organizedPlay"] = {
         "startingLevel": 1,
-        "chronicles": [{
-            "adventure": "8-02",
-            "characterLevel": 5,
-            "xp": {"start": 0, "gained": 4, "end": 4},
-            "currency": {"start": 15, "gained": 10, "spent": 0, "end": 25},
-        }],
+        "chronicles": [
+            {
+                "adventure": "8-02",
+                "characterLevel": 5,
+                "xp": {"start": 0, "gained": 4, "end": 4},
+                "currency": {"start": 15, "gained": 10, "spent": 0, "end": 25},
+            }
+        ],
     }
     result = character.validate_document(minimal)
     assert any(i["code"] == "chronicle_above_level" for i in result["issues"])
@@ -372,13 +429,22 @@ def test_slug_resolution_batches_into_one_query_regardless_of_repeats(minimal, c
     Same rune slug on three different gear items here, plus one on the
     ledger, forces four occurrences of one slug: the whole point of batching
     is that this must not cost four round trips."""
-    minimal["gear"] = {"carried": [
-        {"item": "light-hammer", "runes": ["returning"]},
-        {"item": "light-hammer", "runes": ["returning"]},
-        {"item": "gauntlet", "runes": ["returning"]},
-    ]}
-    minimal["ledger"] = [{"level": 1, "kind": "purchase", "gp": -55, "item": "returning",
-                          "note": "The rune, for the test fixture."}]
+    minimal["gear"] = {
+        "carried": [
+            {"item": "light-hammer", "runes": ["returning"]},
+            {"item": "light-hammer", "runes": ["returning"]},
+            {"item": "gauntlet", "runes": ["returning"]},
+        ]
+    }
+    minimal["ledger"] = [
+        {
+            "level": 1,
+            "kind": "purchase",
+            "gp": -55,
+            "item": "returning",
+            "note": "The rune, for the test fixture.",
+        }
+    ]
 
     calls = {"n": 0}
     counting = _CountingConn(conn, "SELECT SLUG, PACK", calls)
@@ -400,8 +466,7 @@ def test_ambiguous_feat_name_does_not_resolve(minimal, conn):
 
     minimal["plan"] = [{"level": 1, "automatic": ["spirit-familiar-animist"]}]
     assert not [
-        i for i in character.validate_document(minimal, conn)["issues"]
-        if i["code"] == "unknown_slug"
+        i for i in character.validate_document(minimal, conn)["issues"] if i["code"] == "unknown_slug"
     ]
 
 
@@ -429,12 +494,14 @@ def test_well_formed_chronicle_still_validates(conn):
         "character": "Test Subject",
         "startingLevel": 1,
         "startingCurrency": 15,
-        "chronicles": [{
-            "adventure": "8-02",
-            "characterLevel": 1,
-            "xp": {"start": 0, "gained": 4, "end": 4},
-            "currency": {"start": 15, "gained": 10, "spent": 0, "end": 25},
-        }],
+        "chronicles": [
+            {
+                "adventure": "8-02",
+                "characterLevel": 1,
+                "xp": {"start": 0, "gained": 4, "end": 4},
+                "currency": {"start": 15, "gained": 10, "spent": 0, "end": 25},
+            }
+        ],
     }
     assert not character.check_chronicle_structure(log)
     assert chronicle.validate_chronicle_log(log, conn)["errors"] == 0
@@ -445,19 +512,23 @@ def test_well_formed_chronicle_still_validates(conn):
 
 def test_a_choice_can_record_why_it_exists(minimal):
     """The four homes for reasoning, all on one choice."""
-    minimal["plan"] = [{
-        "level": 1,
-        "note": "The level the build comes online.",
-        "choices": [{
-            "slot": "ancestryFeat",
-            "pick": "stonemasons-eye",
-            "role": "support",
-            "note": "Reads a wall the way other people read a page.",
-            "alternatives": [
-                {"pick": "sheltering-slab", "note": "Not available in Pathbuilder."},
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "note": "The level the build comes online.",
+            "choices": [
+                {
+                    "slot": "ancestryFeat",
+                    "pick": "stonemasons-eye",
+                    "role": "support",
+                    "note": "Reads a wall the way other people read a page.",
+                    "alternatives": [
+                        {"pick": "sheltering-slab", "note": "Not available in Pathbuilder."},
+                    ],
+                }
             ],
-        }],
-    }]
+        }
+    ]
     assert character.validate_document(minimal)["valid"]
 
 
@@ -465,25 +536,46 @@ def test_a_dependency_names_what_a_pick_exists_to_serve(minimal):
     minimal["identity"]["currentLevel"] = 4
     minimal["plan"] = [
         {"level": 1},
-        {"level": 2, "choices": [{
-            "slot": "classFeat", "pick": "fighter-dedication",
-            "role": "prerequisite",
-        }]},
+        {
+            "level": 2,
+            "choices": [
+                {
+                    "slot": "classFeat",
+                    "pick": "fighter-dedication",
+                    "role": "prerequisite",
+                }
+            ],
+        },
         {"level": 3},
-        {"level": 4, "choices": [{
-            "slot": "classFeat", "pick": "basic-maneuver",
-            "role": "core", "dependsOn": ["fighter-dedication"],
-        }]},
+        {
+            "level": 4,
+            "choices": [
+                {
+                    "slot": "classFeat",
+                    "pick": "basic-maneuver",
+                    "role": "core",
+                    "dependsOn": ["fighter-dedication"],
+                }
+            ],
+        },
     ]
     assert character.validate_document(minimal)["valid"]
 
 
 def test_a_dependency_on_a_pick_not_in_the_plan_warns(minimal):
     """Usually means the depended-on pick was retrained away."""
-    minimal["plan"] = [{"level": 1, "choices": [{
-        "slot": "classFeat", "pick": "basic-maneuver",
-        "dependsOn": ["fighter-dedication"],
-    }]}]
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "choices": [
+                {
+                    "slot": "classFeat",
+                    "pick": "basic-maneuver",
+                    "dependsOn": ["fighter-dedication"],
+                }
+            ],
+        }
+    ]
     result = character.validate_document(minimal)
     assert result["valid"], "a dangling dependency is a warning, not an error"
     assert any(i["code"] == "dangling_dependency" for i in result["issues"])
@@ -493,10 +585,17 @@ def test_depending_on_a_later_pick_is_an_error(minimal):
     """An ordering the prose could state without anyone noticing it is impossible."""
     minimal["identity"]["currentLevel"] = 4
     minimal["plan"] = [
-        {"level": 1}, {"level": 2, "choices": [{
-            "slot": "skillFeat", "pick": "titan-wrestler",
-            "dependsOn": ["basic-maneuver"],
-        }]},
+        {"level": 1},
+        {
+            "level": 2,
+            "choices": [
+                {
+                    "slot": "skillFeat",
+                    "pick": "titan-wrestler",
+                    "dependsOn": ["basic-maneuver"],
+                }
+            ],
+        },
         {"level": 3},
         {"level": 4, "choices": [{"slot": "classFeat", "pick": "basic-maneuver"}]},
     ]
@@ -512,9 +611,14 @@ def test_only_the_forward_direction_is_stored(minimal):
 
 
 def test_role_is_constrained_to_the_vocabulary(minimal):
-    minimal["plan"] = [{"level": 1, "choices": [
-        {"slot": "classFeat", "pick": "power-attack", "role": "linchpin"},
-    ]}]
+    minimal["plan"] = [
+        {
+            "level": 1,
+            "choices": [
+                {"slot": "classFeat", "pick": "power-attack", "role": "linchpin"},
+            ],
+        }
+    ]
     assert character.check_structure(minimal)
 
 
@@ -565,11 +669,13 @@ def test_two_builds_of_one_character_collide_and_are_reported():
     write must check for this rather than discover it afterwards.
     """
     rogue = {"ancestry": "human", "class": "rogue"}
-    collisions = character.check_collisions({
-        "base": {"identity": {"name": "Sable"}, "build": rogue},
-        "variant": {"identity": {"name": "Sable"}, "build": rogue},
-        "other": {"identity": {"name": "Vex"}, "build": rogue},
-    })
+    collisions = character.check_collisions(
+        {
+            "base": {"identity": {"name": "Sable"}, "build": rogue},
+            "variant": {"identity": {"name": "Sable"}, "build": rogue},
+            "other": {"identity": {"name": "Vex"}, "build": rogue},
+        }
+    )
     assert len(collisions) == 1
     assert collisions[0]["code"] == "storage_collision"
     assert "base" in collisions[0]["message"] and "variant" in collisions[0]["message"]
@@ -577,7 +683,9 @@ def test_two_builds_of_one_character_collide_and_are_reported():
 
 def test_a_distinct_name_resolves_a_collision():
     rogue = {"ancestry": "human", "class": "rogue"}
-    assert not character.check_collisions({
-        "base": {"identity": {"name": "Sable"}, "build": rogue},
-        "variant": {"identity": {"name": "Sable (Solo)"}, "build": rogue},
-    })
+    assert not character.check_collisions(
+        {
+            "base": {"identity": {"name": "Sable"}, "build": rogue},
+            "variant": {"identity": {"name": "Sable (Solo)"}, "build": rogue},
+        }
+    )

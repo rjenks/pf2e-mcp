@@ -37,7 +37,9 @@ def dwarf_animist() -> dict:
                 "level": 1,
                 "attributeBoosts": {
                     "ancestry": {
-                        "boosts": ["con", "wis"], "free": ["dex"], "flaw": ["cha"],
+                        "boosts": ["con", "wis"],
+                        "free": ["dex"],
+                        "flaw": ["cha"],
                     },
                     "background": ["wis", "con"],
                     "class": ["wis"],
@@ -78,11 +80,7 @@ def dwarf_animist() -> dict:
 def test_attribute_boosts_replay_in_order(dwarf_animist, conn):
     """Str +0, Dex +2, Con +3, Int +1, Wis +4, Cha -1."""
     build = character_replay.at_level(dwarf_animist, 1, conn)
-    mods = {
-        key: (value - 10) // 2
-        for key, value in build["abilities"].items()
-        if key != "breakdown"
-    }
+    mods = {key: (value - 10) // 2 for key, value in build["abilities"].items() if key != "breakdown"}
     assert mods == {"str": 0, "dex": 2, "con": 3, "int": 1, "wis": 4, "cha": -1}
 
 
@@ -98,12 +96,14 @@ def test_flaw_is_applied_before_boosts(conn):
         "schemaVersion": 1,
         "identity": {"name": "X", "currentLevel": 1},
         "build": {"ancestry": "dwarf", "background": "field-medic", "class": "animist"},
-        "plan": [{
-            "level": 1,
-            "attributeBoosts": {
-                "ancestry": {"boosts": ["con", "wis"], "free": ["cha"], "flaw": ["cha"]},
-            },
-        }],
+        "plan": [
+            {
+                "level": 1,
+                "attributeBoosts": {
+                    "ancestry": {"boosts": ["con", "wis"], "free": ["cha"], "flaw": ["cha"]},
+                },
+            }
+        ],
     }
     build = character_replay.at_level(document, 1, conn)
     assert build["abilities"]["cha"] == 10
@@ -114,6 +114,23 @@ def test_boost_is_worth_one_modifier_point_above_eighteen(conn):
     assert character_replay._apply_boost(16) == 18
     assert character_replay._apply_boost(18) == 19
     assert character_replay._apply_boost(19) == 20
+
+    def test_gradual_boosts_replay_at_each_recorded_level(dwarf_animist, conn):
+        dwarf_animist["build"]["variantRules"] = ["gradualAbilityBoosts"]
+        dwarf_animist["identity"]["currentLevel"] = 5
+        dwarf_animist["plan"].extend(
+            [
+                {"level": 4, "attributeBoosts": {"free": ["str"]}},
+                {"level": 5, "attributeBoosts": {"free": ["dex"]}},
+            ]
+        )
+
+        at_three = character_replay.at_level(dwarf_animist, 3, conn)
+        at_five = character_replay.at_level(dwarf_animist, 5, conn)
+
+        assert at_three["abilities"]["str"] == 10
+        assert at_five["abilities"]["str"] == 12
+        assert at_five["abilities"]["dex"] == 20
 
 
 def test_proficiency_rises_with_the_class_feature_that_grants_it(dwarf_animist, conn):
@@ -136,10 +153,30 @@ def test_skill_increase_raises_one_step(dwarf_animist, conn):
     assert character_replay.at_level(dwarf_animist, 3, conn)["proficiencies"]["medicine"] == 4
 
 
+def test_skill_valued_feat_parameters_grant_training(dwarf_animist, conn):
+    """Structured alternate skill choices are part of the replayed plan."""
+    dwarf_animist["plan"][0]["choices"].append(
+        {
+            "slot": "ancestryFeat",
+            "pick": "orc-lore",
+            "parameter": ["deception", "diplomacy"],
+        }
+    )
+    build = character_replay.at_level(dwarf_animist, 1, conn)
+    assert build["proficiencies"]["deception"] == 2
+    assert build["proficiencies"]["diplomacy"] == 2
+
+
+def test_chosen_feat_grants_are_replayed(dwarf_animist, conn):
+    """Fixed feat grants come from the structured item-grant relationship."""
+    dwarf_animist["plan"][0]["choices"].append({"slot": "ancestryFeat", "pick": "orc-lore"})
+    feats = character_replay.at_level(dwarf_animist, 1, conn)["feats"]
+    assert ["Additional Lore", None, "Awarded Feat", 1, "Granted Feat"] in feats
+
+
 def test_feats_appear_only_at_and_below_the_replayed_level(dwarf_animist, conn):
     def names(level):
-        return {feat[0] for feat in character_replay.at_level(
-            dwarf_animist, level, conn)["feats"]}
+        return {feat[0] for feat in character_replay.at_level(dwarf_animist, level, conn)["feats"]}
 
     assert "Soul Warden Dedication" not in names(1)
     assert "Soul Warden Dedication" in names(2)
@@ -224,9 +261,7 @@ def test_an_override_does_not_apply_before_its_granting_level(dwarf_animist, con
 
 
 def test_hp_per_level_feats_are_counted(dwarf_animist, conn):
-    dwarf_animist["plan"][2]["choices"].append(
-        {"slot": "generalFeat", "pick": "toughness"}
-    )
+    dwarf_animist["plan"][2]["choices"].append({"slot": "generalFeat", "pick": "toughness"})
     build = character_replay.at_level(dwarf_animist, 3, conn)
     assert build["attributes"]["bonushpPerLevel"] == 1
     assert build["_derivation"]["hp_per_level_feats"] == ["toughness"]
