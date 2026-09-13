@@ -881,6 +881,105 @@ def _check_ledger(document: dict[str, Any]) -> list[dict[str, Any]]:
     return issues
 
 
+_QUICKREF_CORE_SKILLS = frozenset(
+    {
+        "athletics",
+        "acrobatics",
+        "arcana",
+        "crafting",
+        "deception",
+        "diplomacy",
+        "intimidation",
+        "medicine",
+        "nature",
+        "occultism",
+        "performance",
+        "religion",
+        "society",
+        "stealth",
+        "survival",
+        "thievery",
+    }
+)
+_QUICKREF_ATTRIBUTES = frozenset({"str", "dex", "con", "int", "wis", "cha"})
+_QUICKREF_SAVES = frozenset({"fortitude", "reflex", "will", "fort", "ref"})
+_QUICKREF_STATS = frozenset(
+    {"ac", "hp", "speed", "level", "perception", "init", "initiative", "class_dc", "spell_dc"}
+)
+
+
+def is_valid_quickref_token(token: str) -> bool:
+    """Whether a token name inside `{...}` in quickReference is valid for interpolation."""
+    t = token.strip().lower()
+    if not t:
+        return False
+    if (
+        t in _QUICKREF_CORE_SKILLS
+        or t in _QUICKREF_ATTRIBUTES
+        or t in _QUICKREF_SAVES
+        or t in _QUICKREF_STATS
+    ):
+        return True
+    if t.startswith("modifier:") or t.startswith("mod:"):
+        attr = t.split(":", 1)[1]
+        return attr in _QUICKREF_ATTRIBUTES
+    if t.startswith("save:"):
+        save = t.split(":", 1)[1]
+        return save in _QUICKREF_SAVES
+    if t.startswith("dc:"):
+        rest = t[3:]
+        if rest in ("class", "spell", "perception", "fortitude", "reflex", "will", "fort", "ref"):
+            return True
+        if rest in _QUICKREF_CORE_SKILLS:
+            return True
+        if rest.startswith("spell:") and rest[6:] in ("arcane", "divine", "occult", "primal"):
+            return True
+        if rest.startswith("lore:") and len(rest) > 5 and re.match(r"^[a-z0-9-]+$", rest[5:]):
+            return True
+        return False
+    if t.startswith("lore:") and len(t) > 5 and re.match(r"^[a-z0-9-]+$", t[5:]):
+        return True
+    if t in ("spell:attack", "attack:spell"):
+        return True
+    return False
+
+
+def _check_quick_reference(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate all interpolation tokens in the quickReference block."""
+    issues: list[dict[str, Any]] = []
+    qr = document.get("quickReference")
+    if not qr or not isinstance(qr, dict):
+        return issues
+
+    token_re = re.compile(r"\{([^{}]+)\}")
+
+    def check_node(node: Any, path: str):
+        if isinstance(node, str):
+            for match in token_re.finditer(node):
+                token = match.group(1).strip()
+                if not is_valid_quickref_token(token):
+                    issues.append(
+                        _issue(
+                            "error",
+                            "invalid_quickref_token",
+                            path,
+                            f"Unrecognized interpolation token '{{{token}}}'. Valid tokens include "
+                            f"skills ({{athletics}}), DCs ({{dc:class}}, {{dc:athletics}}), saves "
+                            f"({{save:fortitude}}), attributes ({{modifier:str}} or {{str}}), and "
+                            f"core stats ({{ac}}, {{hp}}, {{speed}}).",
+                        )
+                    )
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                check_node(v, f"{path}/{k}")
+        elif isinstance(node, list):
+            for idx, item in enumerate(node):
+                check_node(item, f"{path}/{idx}")
+
+    check_node(qr, "/quickReference")
+    return issues
+
+
 def validate_document(document: Any, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """Check a character file, structurally and then semantically.
 
@@ -906,6 +1005,7 @@ def validate_document(document: Any, conn: sqlite3.Connection | None = None) -> 
         issues += _check_skill_grants(plain)
         issues += _check_organized_play(plain)
         issues += _check_ledger(plain)
+        issues += _check_quick_reference(plain)
         if conn is not None:
             issues += _resolve_slugs(plain, conn)
             issues += _check_languages(plain, conn)

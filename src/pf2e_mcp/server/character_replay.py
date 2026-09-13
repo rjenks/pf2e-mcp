@@ -1299,6 +1299,11 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
         # rule `plan` itself follows -- rather than always showing the whole
         # history regardless of which level is being viewed.
         "ledger": [e for e in (document.get("ledger") or []) if (e.get("level") or 1) <= level],
+        # Tactical quick reference is authored for the character at their
+        # current active level, and omitted when previewing other levels.
+        "quickReference": (
+            document.get("quickReference") if level == (identity.get("currentLevel") or 1) else None
+        ),
         "spellCasters": casters,
         "focusPoints": focus_points,
         "focus": focus,

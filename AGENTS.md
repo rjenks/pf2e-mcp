@@ -6,6 +6,14 @@ This project can also be used to build characters which should be stored in path
 
 Please rely on the guides referenced from Zenith Games Guide to the Guides and don't always trust RPGBOT. https://zenithgames.blogspot.com/2019/09/pathfinder-2nd-edition-guide-to-guides.html
 
+# Running Tests
+
+Always use `uv run` to execute pytest:
+
+```bash
+uv run pytest
+```
+
 # Track bugs and gaps as GitHub issues, not a markdown file
 
 Known bugs, ingestion gaps, and deferred work belong in this repo's
@@ -20,8 +28,8 @@ output, `enhancement` for missing coverage/deferred scope, or
 `documentation` for a caveat worth recording so it doesn't get
 rediscovered as a "bug" later.
 
-**Every commit ties back to at least one GitHub issue, so the *why* stays
-attached to the code and not just the *what*.** A diff already says what
+**Every commit ties back to at least one GitHub issue, so the _why_ stays
+attached to the code and not just the _what_.** A diff already says what
 changed; the issue is what says why it was worth changing — what was
 broken, what gap it closed, who'd hit it. Before committing:
 
@@ -32,7 +40,7 @@ broken, what gap it closed, who'd hit it. Before committing:
   instead if the commit only partially addresses it or the issue should
   stay open for follow-up.
 - If no issue exists yet — a new feature, a refactor, a fix for something
-  noticed mid-task — file one first (see above) describing the *why*, then
+  noticed mid-task — file one first (see above) describing the _why_, then
   reference it the same way. This is true even for small changes; a
   one-line issue body beats no record of the motivation at all.
 - Routine maintenance with no real "why" beyond the obvious (a dependency
@@ -58,7 +66,7 @@ No `sqlite3` on the command line, no `import sqlite3` in a throwaway script, no
 reading `raw_json` out of `entries` to answer a rules question. Use the
 `rules_*`, `build_*` and `pfs_*` tools.
 
-The reason is not tidiness. A direct query answers the question for *you* and
+The reason is not tidiness. A direct query answers the question for _you_ and
 for nobody else:
 
 - **It hides gaps.** Every question answered by reaching around the server is a
@@ -113,7 +121,7 @@ mistakes:
   not "Dex 18 becomes 19, which is still +4".
 - **Half-steps become obvious.** In modifier terms there is nothing to notice:
   a boost either raises the modifier or it doesn't, where "19" hides it.
-  A half-step is only a *mistake* at 20th, though -- earlier it is half a step
+  A half-step is only a _mistake_ at 20th, though -- earlier it is half a step
   that completes at the next milestone, and arrives a milestone sooner than an
   even score would. When a 20th-level array does have one, redirect the
   20th-level boost, since that is the one with nothing after it to finish it.
@@ -124,14 +132,14 @@ Artwork for character sheets comes from Paizo's Community Use Package. The
 package page (https://paizo.com/community/communityuse/package) requires a
 Paizo sign-in, but the archives themselves are downloadable directly:
 
-| Pack | URL |
-| --- | --- |
-| Logos & Branding | https://downloads.paizo.com/Logos_and_Branding.zip |
-| Pathfinder Religious Symbols | https://downloads.paizo.com/Pathfinder_Religious_Symbols.zip |
-| Pathfinder Organizations | https://downloads.paizo.com/Pathfinder_Organizations.zip |
-| Pathfinder Regional Symbols | https://downloads.paizo.com/Pathfinder_Regional_Symbols.zip |
-| Pathfinder Runes | https://downloads.paizo.com/Pathfinder_Runes.zip |
-| Pathfinder Maps | https://downloads.paizo.com/Pathfinder_Maps.zip |
+| Pack                         | URL                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| Logos & Branding             | https://downloads.paizo.com/Logos_and_Branding.zip                                |
+| Pathfinder Religious Symbols | https://downloads.paizo.com/Pathfinder_Religious_Symbols.zip                      |
+| Pathfinder Organizations     | https://downloads.paizo.com/Pathfinder_Organizations.zip                          |
+| Pathfinder Regional Symbols  | https://downloads.paizo.com/Pathfinder_Regional_Symbols.zip                       |
+| Pathfinder Runes             | https://downloads.paizo.com/Pathfinder_Runes.zip                                  |
+| Pathfinder Maps              | https://downloads.paizo.com/Pathfinder_Maps.zip                                   |
 | PF2e Iconic Heroes Portraits | https://downloads.paizo.com/Pathfinder_Second_Edition_Iconic_Heroes_Portraits.zip |
 
 Extracted assets live under `.data/logos/`, which is gitignored — the same

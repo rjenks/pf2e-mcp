@@ -967,28 +967,14 @@ def _rules_html(raw: str, spell_rank: int | None = None) -> str:
 
 
 def _glyph(spec: str) -> str:
-    """Action-cost glyph: a filled lozenge per action, an open lozenge for a
-    free action, a hooked arrow for a reaction."""
+    """Action-cost glyph using Pathfinder2eActions font."""
     spec = str(spec).strip().lower()
-    filled = '<path d="M5 0.6 L9.4 5 L5 9.4 L0.6 5 Z" fill="currentColor"/>'
-    hollow = (
-        '<path d="M5 0.9 L9.1 5 L5 9.1 L0.9 5 Z" fill="none" ' 'stroke="currentColor" stroke-width="1.5"/>'
-    )
-    arrow = (
-        '<path d="M8.6 2.2 A3.9 3.9 0 1 0 5 8.9" fill="none" '
-        'stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
-        '<path d="M8.9 0.1 L8.9 3.6 L5.5 1.9 Z" fill="currentColor"/>'
-    )
-
-    def svg(inner: str) -> str:
-        return f'<svg class="glyph" viewBox="0 0 10 10" aria-hidden="true">{inner}</svg>'
-
-    if spec == "r":
-        return svg(arrow)
-    if spec == "f":
-        return svg(hollow)
+    if spec in ("r", "reaction"):
+        return '<span class="action-glyph">R</span>'
+    if spec in ("f", "free", "0"):
+        return '<span class="action-glyph">F</span>'
     if spec.isdigit():
-        return "".join(svg(filled) for _ in range(min(int(spec), 3)))
+        return f'<span class="action-glyph">{spec}</span>'
     return ""
 
 
@@ -1002,12 +988,17 @@ def _cost(spec: Any) -> str:
             f'{_glyph("1")}<span class="cost-txt" style="margin:0 3px">to</span>'
             f'{_glyph("3")}<span class="cost-txt">1 to 3 actions</span>'
         )
+    if s == "1 or 2":
+        return (
+            f'{_glyph("1")}<span class="cost-txt" style="margin:0 3px">or</span>'
+            f'{_glyph("2")}<span class="cost-txt">1 or 2 actions</span>'
+        )
     if s.isdigit():
         word = "action" if s == "1" else "actions"
         return f'{_glyph(s)}<span class="cost-txt">{s} {word}</span>'
-    if s.lower() == "reaction":
+    if s.lower() in ("reaction", "r"):
         return f'{_glyph("r")}<span class="cost-txt">reaction</span>'
-    if s.lower() == "free":
+    if s.lower() in ("free", "f", "0"):
         return f'{_glyph("f")}<span class="cost-txt">free action</span>'
     return f'<span class="cost-txt">{html.escape(s)}</span>'
 
@@ -1017,7 +1008,7 @@ def _cost_glyphs(spec: Any) -> str:
 
     `_cost` spells the cost out in words as well, which is right for a stat
     block's heading but not for a column standing beside Range and Duration --
-    "2 actions" is three times the width of the two lozenges that say the same
+    "2 actions" is three times the width of the glyph that says the same
     thing, and the column has a header telling the reader what it is. Costs
     that have no glyph (Vital Beacon's "1 minute") still fall back to text,
     since there is nothing else to draw.
@@ -1026,11 +1017,15 @@ def _cost_glyphs(spec: Any) -> str:
         return "&mdash;"
     s = str(spec).strip()
     if s == "1 to 3":
-        return f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">to' f'</span>{_glyph("3")}'
+        return f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">to</span>{_glyph("3")}'
+    if s == "1 or 2":
+        return f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">or</span>{_glyph("2")}'
     if s.isdigit():
         return _glyph(s)
-    if s.lower() in ("reaction", "free"):
-        return _glyph("r" if s.lower() == "reaction" else "f")
+    if s.lower() in ("reaction", "r"):
+        return _glyph("r")
+    if s.lower() in ("free", "f", "0"):
+        return _glyph("f")
     return f'<span class="cost-txt">{html.escape(s)}</span>'
 
 
@@ -1882,12 +1877,28 @@ def _spellcasting(character: dict[str, Any], level: int, lib: _Library) -> list[
 # --------------------------------------------------------------------------
 
 
-def _stylesheet(paper: str) -> str:
+def _get_actions_font(conn) -> str | None:
+    """Load the base64 WOFF2 action font from the meta table if available."""
+    if conn is None:
+        return None
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = 'actions_font_woff2_b64'").fetchone()
+        return str(row[0]) if row and row[0] else None
+    except Exception:
+        return None
+
+
+def _stylesheet(paper: str, actions_font_b64: str | None = None) -> str:
     faces = "".join(
         "@font-face{font-family:'%s';font-style:%s;font-weight:100 900;"
         "font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2');}" % (family, style, b64)
         for family, style, b64 in FACES.values()
     )
+    if actions_font_b64:
+        faces += (
+            "@font-face{font-family:'Pathfinder2eActions';font-style:normal;font-weight:normal;"
+            f"font-display:swap;src:url(data:font/woff2;base64,{actions_font_b64}) format('woff2');}}"
+        )
     return faces + r"""
 :root{
   --ink:#201d24; --ink-soft:#4a4550; --muted:#736c78; --faint:#9a939f;
@@ -1929,6 +1940,9 @@ div.sub{font-family:'SheetSans',sans-serif;font-weight:650;font-size:7.2pt;
   letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
   margin:13px 0 6px;break-after:avoid;}
 div.sub:first-child{margin-top:0;}
+.action-glyph{font-family:'Pathfinder2eActions',sans-serif;font-weight:normal;font-style:normal;
+  font-size:1.15em;line-height:1;vertical-align:0;display:inline-block;margin-right:2px;
+  color:var(--accent);}
 .glyph{width:.72em;height:.72em;vertical-align:-.02em;margin-right:1.5px;
   color:var(--accent);}
 .cost-txt{font-family:'SheetSans',sans-serif;font-size:6.6pt;font-weight:650;
@@ -2416,6 +2430,108 @@ table.grid td.du .sust{font-family:'SheetSans',sans-serif;font-size:5.6pt;
 .toolbar .picks label{display:inline-flex;align-items:center;gap:4px;
   cursor:pointer;}
 .page.off{display:none;}
+/* Quick reference tactical pages */
+.quickref{
+  --qr-ink:#201d24; --qr-soft:#4a4550; --qr-rule:#c9c2b8;
+  --qr-surface:#fffefb; --qr-surface2:#f7f4ee;
+  --qr-ruby:#8c3a3a; --qr-ruby-ink:#5e1420; --qr-ruby-wash:#f6ecec;
+  --qr-jade:#3f6b5e; --qr-jade-wash:#e1e7e2;
+  --qr-gold:#8a6a1c; --qr-gold-wash:#f0e6c8;
+  --qr-accent:#4d3f6d; --qr-accent-wash:#efecf5;
+  --qr-chip-ink:#fffefb;
+  font-family:'SheetSerif',Georgia,serif;color:var(--qr-ink);
+  font-variant-numeric:tabular-nums;
+}
+.quickref *{box-sizing:border-box;}
+.quickref h1,.quickref h2,.quickref b{font-weight:700;}
+.qr-head{
+  display:flex;justify-content:space-between;align-items:flex-end;
+  gap:12px;padding-bottom:5px;border-bottom:2px solid var(--accent);
+  margin-bottom:7px;flex-wrap:wrap;
+}
+.qr-eyebrow{
+  font-family:'SheetSans',Helvetica,Arial,sans-serif;font-size:6.4pt;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  margin:0 0 1px;
+}
+.qr-head h1{font-size:18pt;letter-spacing:.01em;line-height:1;margin:0;color:var(--accent);}
+.qr-who{
+  text-align:right;font-family:'SheetSans',monospace,sans-serif;font-size:7.5pt;
+  color:var(--ink-soft);line-height:1.4;
+}
+.qr-who b{color:var(--ink);}
+.qr-lede{font-size:7.6pt;color:var(--ink-soft);margin:0 0 8px;line-height:1.3;}
+.qr-legend{
+  display:flex;gap:14px;flex-wrap:wrap;margin:0 0 8px;padding:5px 8px;
+  background:var(--warm);border:.8px solid var(--rule);
+  font-size:6.6pt;color:var(--ink-soft);line-height:1.3;
+}
+.qr-legend b{color:var(--ink);}
+.qr-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;align-items:start;}
+.qr-col{display:flex;flex-direction:column;gap:8px;}
+.qr-card{
+  break-inside:avoid;margin:0 0 8px;border:.8px solid var(--rule);
+  background:var(--paper);overflow:hidden;
+}
+.qr-col .qr-card{margin:0;}
+.qr-card-hd{padding:3px 8px;background:var(--warm);border-bottom:.8px solid var(--rule);}
+.qr-card-hd .qr-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px;}
+.qr-tag{
+  font-family:'SheetSans',Helvetica,Arial,sans-serif;font-weight:700;font-size:5.6pt;
+  letter-spacing:.07em;color:var(--qr-chip-ink);text-transform:uppercase;
+  padding:1.5px 6px;white-space:nowrap;flex:none;background:var(--muted);
+}
+.qr-when{font-size:6.2pt;color:var(--muted);font-style:italic;text-align:right;flex:1;min-width:0;}
+.qr-card-hd h2{
+  font-family:'SheetSans',Helvetica,Arial,sans-serif;font-weight:700;font-size:8pt;
+  letter-spacing:.01em;text-transform:uppercase;margin:1px 0 0;width:100%;color:var(--ink);
+}
+.qr-card[data-k="open"] .qr-tag, .qr-card[data-k="gold"] .qr-tag, .qr-card[data-k="bell"] .qr-tag, .qr-card[data-k="bottle"] .qr-tag{background:var(--qr-gold);}
+.qr-card[data-k="flourish"] .qr-tag, .qr-card[data-k="ruby"] .qr-tag, .qr-card[data-k="follow"] .qr-tag, .qr-card[data-k="ko"] .qr-tag{background:var(--qr-ruby);}
+.qr-card[data-k="press"] .qr-tag, .qr-card[data-k="jade"] .qr-tag, .qr-card[data-k="guard"] .qr-tag{background:var(--qr-jade);}
+.qr-card[data-k="reaction"] .qr-tag, .qr-card[data-k="ink"] .qr-tag{background:var(--ink);}
+.qr-card[data-k="accent"] .qr-tag{background:var(--accent);}
+.qr-card[data-k="other"] .qr-tag, .qr-card[data-k="soft"] .qr-tag, .qr-card[data-k="clinch"] .qr-tag{background:var(--muted);}
+.qr-moves{padding:0 8px 3px;}
+.qr-move{display:flex;justify-content:space-between;gap:8px;padding:3.5px 0;border-top:.7px solid var(--hair);}
+.qr-move:first-child{border-top:none;}
+.qr-move .qr-txt{min-width:0;}
+.qr-move .qr-txt b{font-size:7.4pt;color:var(--ink);}
+.qr-move .qr-txt p{margin:0;font-size:7pt;line-height:1.22;color:var(--ink-soft);}
+.qr-chip{
+  flex:none;align-self:flex-start;font-family:'SheetSans',monospace,sans-serif;
+  font-weight:700;font-size:6.5pt;padding:2px 5px;white-space:nowrap;
+}
+.qr-chip.ruby{background:var(--qr-ruby-wash);color:var(--qr-ruby-ink);}
+.qr-chip.jade{background:var(--qr-jade-wash);color:var(--qr-jade);}
+.qr-chip.gold{background:var(--qr-gold-wash);color:var(--qr-gold);}
+.qr-chip.accent{background:var(--qr-accent-wash);color:var(--accent);}
+.qr-chip.soft{background:var(--warm);color:var(--ink-soft);}
+.qr-chip.ink{background:var(--ink);color:var(--paper);}
+.qr-trait{
+  display:inline-block;font-family:'SheetSans',Helvetica,Arial,sans-serif;font-weight:700;
+  font-size:5.1pt;letter-spacing:.05em;text-transform:uppercase;
+  padding:1px 4px;margin-left:5px;vertical-align:1px;white-space:nowrap;
+}
+.qr-trait.flourish{background:var(--qr-ruby-wash);color:var(--qr-ruby-ink);}
+.qr-trait.press{background:var(--qr-jade-wash);color:var(--qr-jade);}
+.qr-ko{margin-bottom:8px;}
+.qr-ko-table{width:100%;border-collapse:collapse;}
+.qr-ko-table th{font-family:'SheetSans',sans-serif;font-weight:700;font-size:6.2pt;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);text-align:left;padding:3px 4px;border-bottom:.8px solid var(--rule);}
+.qr-ko-table td{padding:3px 4px;border-top:.7px solid var(--hair);font-size:7.2pt;vertical-align:top;}
+.qr-ko-table tr:first-child td{border-top:none;}
+.qr-ko-table td.qr-wpn{
+  font-family:'SheetSans',Helvetica,Arial,sans-serif;font-weight:700;text-transform:uppercase;
+  font-size:6.6pt;letter-spacing:.02em;width:6.2em;color:var(--ink);padding-top:4px;
+}
+.qr-ko-table td.qr-wpn .qr-sub{display:block;color:var(--muted);font-weight:400;text-transform:none;font-size:6pt;}
+.qr-ko-table .qr-eff p{margin:1px 0 0;color:var(--ink-soft);font-size:6.8pt;line-height:1.25;}
+.qr-ko-table .qr-eff p:first-child{margin-top:0;}
+.qr-ko-table .qr-eff b{color:var(--ink);}
+.qr-foot{
+  margin-top:8px;padding-top:5px;border-top:.7px solid var(--rule);
+  font-size:6.2pt;color:var(--muted);line-height:1.35;
+}
 @media print{
   body{background:#fff;}
   .toolbar{display:none !important;}
@@ -4417,6 +4533,261 @@ def _page_ledger(ctx: dict[str, Any]) -> str:
 </section>"""
 
 
+def _interpolate_quickref(text: str, ctx: dict[str, Any]) -> str:
+    """Resolve `{token}` placeholders in quick-reference text against derived stats."""
+    if not text or "{" not in text:
+        return text
+
+    derived = ctx.get("derived") or {}
+    abilities = ctx.get("abilities") or {}
+    skills = derived.get("skills") or {}
+    saves = derived.get("saves") or {}
+    spellcasting = derived.get("spellcasting") or {}
+    level = ctx.get("level") or 1
+    speed = ctx.get("speed") or 25
+    ac = derived.get("ac") or 10
+    hp = derived.get("hp") or 10
+    class_dc = derived.get("class_dc") or 10
+    perception = derived.get("perception") or 0
+
+    def _format_mod(n: int) -> str:
+        return f"+{n}" if n >= 0 else str(n)
+
+    skill_rows = ctx.get("skills") or []
+    lore_totals: dict[str, int] = {}
+    for row in skill_rows:
+        name_clean = row["name"].lower().replace(" ", "-")
+        lore_totals[name_clean] = row["total"]
+        if name_clean.endswith("-lore"):
+            lore_totals[name_clean.removesuffix("-lore")] = row["total"]
+
+    def replace_token(match: re.Match) -> str:
+        raw_token = match.group(1).strip()
+        t = raw_token.lower()
+
+        # Attribute modifiers
+        if (
+            t in ("str", "dex", "con", "int", "wis", "cha")
+            or t.startswith("modifier:")
+            or t.startswith("mod:")
+        ):
+            attr = t.split(":", 1)[1] if ":" in t else t
+            if attr in abilities:
+                return _format_mod(m.ability_mod(abilities[attr]))
+
+        # Core stats
+        if t == "ac":
+            return str(ac)
+        if t == "hp":
+            return str(hp)
+        if t == "speed":
+            return str(speed)
+        if t == "level":
+            return str(level)
+        if t in ("perception", "init", "initiative"):
+            return _format_mod(perception)
+        if t == "dc:perception":
+            return str(10 + perception)
+
+        # Saves & Save DCs
+        save_aliases = {
+            "fortitude": "fortitude",
+            "fort": "fortitude",
+            "reflex": "reflex",
+            "ref": "reflex",
+            "will": "will",
+        }
+        if t.startswith("save:"):
+            s_name = save_aliases.get(t[5:], t[5:])
+            if s_name in saves:
+                return _format_mod(saves[s_name])
+        if t in save_aliases:
+            return _format_mod(saves[save_aliases[t]])
+        if t.startswith("dc:"):
+            s_name = save_aliases.get(t[3:], t[3:])
+            if s_name in saves:
+                return str(10 + saves[s_name])
+
+        # Class & Spell DCs
+        if t in ("dc:class", "class_dc"):
+            return str(class_dc)
+        if t in ("dc:spell", "spell_dc"):
+            if spellcasting:
+                max_dc = max(entry["dc"] for entry in spellcasting.values())
+                return str(max_dc)
+            return str(class_dc)
+        if t.startswith("dc:spell:"):
+            trad = t[9:]
+            if trad in spellcasting:
+                return str(spellcasting[trad]["dc"])
+        if t in ("spell:attack", "attack:spell"):
+            if spellcasting:
+                max_atk = max(entry["attack"] for entry in spellcasting.values())
+                return _format_mod(max_atk)
+            return "+0"
+
+        # Skills & Skill DCs
+        if t in skills:
+            return _format_mod(skills[t])
+        if t.startswith("dc:"):
+            sk = t[3:]
+            if sk in skills:
+                return str(10 + skills[sk])
+
+        # Lore skills & Lore DCs
+        if t.startswith("lore:"):
+            lore_slug = t[5:]
+            if lore_slug in lore_totals:
+                return _format_mod(lore_totals[lore_slug])
+            if lore_slug.removesuffix("-lore") in lore_totals:
+                return _format_mod(lore_totals[lore_slug.removesuffix("-lore")])
+        if t.startswith("dc:lore:"):
+            lore_slug = t[8:]
+            if lore_slug in lore_totals:
+                return str(10 + lore_totals[lore_slug])
+            if lore_slug.removesuffix("-lore") in lore_totals:
+                return str(10 + lore_totals[lore_slug.removesuffix("-lore")])
+
+        return match.group(0)
+
+    res = re.sub(r"\{([^{}]+)\}", replace_token, text)
+    res = re.sub(r"\+\+", "+", res)
+    return res
+
+
+def _page_quick_reference(ctx: dict[str, Any]) -> str:
+    """Render structured quick-reference / tactical cards as printable HTML pages."""
+    qr = ctx.get("quick_reference")
+    if not qr or not isinstance(qr, dict):
+        return ""
+
+    pages_def = qr.get("pages")
+    if not pages_def or not isinstance(pages_def, list):
+        pages_def = [qr]
+
+    out_pages: list[str] = []
+    for p_def in pages_def:
+        title = _interpolate_quickref(p_def.get("title") or qr.get("title") or "Tactical Reference", ctx)
+        eyebrow = _interpolate_quickref(p_def.get("eyebrow") or qr.get("eyebrow") or "Quick Reference", ctx)
+        subtitle = _interpolate_quickref(
+            p_def.get("subtitle")
+            or qr.get("subtitle")
+            or f"<b>{_esc(ctx['name'])}</b> &middot; {_esc(str(ctx['character'].get('ancestry') or ''))} {_esc(str(ctx['character'].get('class') or ''))} {ctx['level']}",
+            ctx,
+        )
+        lede = _interpolate_quickref(p_def.get("lede") or (qr.get("lede") if p_def is qr else "") or "", ctx)
+        legend = p_def.get("legend") or (qr.get("legend") if p_def is qr else []) or []
+        tables = p_def.get("tables") or (qr.get("tables") if p_def is qr else []) or []
+        groups = p_def.get("groups") or (qr.get("groups") if p_def is qr else []) or []
+        footer = _interpolate_quickref(
+            p_def.get("footer") or (qr.get("footer") if p_def is qr else "") or "", ctx
+        )
+
+        legend_html = ""
+        if legend:
+            items_html = " ".join(
+                f'<span><b>{_esc(item["label"])}</b> &mdash; {_esc(_interpolate_quickref(item.get("note") or "", ctx))}</span>'
+                for item in legend
+            )
+            legend_html = f'<div class="qr-legend">{items_html}</div>'
+
+        tables_html = ""
+        for tbl in tables:
+            t_title = _interpolate_quickref(tbl.get("title") or "", ctx)
+            headers = tbl.get("headers") or []
+            h_html = ""
+            if headers:
+                th_cells = "".join(f"<th>{_esc(h)}</th>" for h in headers)
+                h_html = f"<tr>{th_cells}</tr>"
+            rows_html = ""
+            for r in tbl.get("rows") or []:
+                r_label = _interpolate_quickref(r.get("label") or "", ctx)
+                r_sub = _interpolate_quickref(r.get("sub") or "", ctx)
+                sub_span = f'<span class="qr-sub">{_esc(r_sub)}</span>' if r_sub else ""
+                r_detail = _interpolate_quickref(r.get("detail") or "", ctx)
+                rows_html += f'<tr><td class="qr-wpn">{_esc(r_label)}{sub_span}</td><td class="qr-eff"><p>{_esc(r_detail)}</p></td></tr>'
+            tables_html += f'<div class="qr-card qr-ko"><div class="qr-card-hd"><h2>{_esc(t_title)}</h2></div><table class="qr-ko-table">{h_html}{rows_html}</table></div>'
+
+        col1_groups, col2_groups = [], []
+        for i, g in enumerate(groups):
+            if i % 2 == 0:
+                col1_groups.append(g)
+            else:
+                col2_groups.append(g)
+
+        def _render_col(g_list: list[dict[str, Any]]) -> str:
+            cards = []
+            for g in g_list:
+                cat = g.get("category") or "other"
+                badge = _interpolate_quickref(g.get("badge") or "", ctx)
+                when = _interpolate_quickref(g.get("when") or "", ctx)
+                g_title = _interpolate_quickref(g.get("title") or "", ctx)
+                top_bits = []
+                if badge:
+                    top_bits.append(f'<span class="qr-tag">{_esc(badge)}</span>')
+                if when:
+                    top_bits.append(f'<span class="qr-when">{_esc(when)}</span>')
+                top_html = f'<div class="qr-top">{"".join(top_bits)}</div>' if top_bits else ""
+                header_html = f'<div class="qr-card-hd">{top_html}<h2>{_esc(g_title)}</h2></div>'
+
+                moves_html = []
+                for m_item in g.get("moves") or []:
+                    m_name = _interpolate_quickref(m_item.get("name") or "", ctx)
+                    m_cost = m_item.get("cost")
+                    cost_html = _cost_glyphs(m_cost) if m_cost is not None else ""
+                    traits = m_item.get("traits") or []
+                    traits_html = "".join(
+                        f'<span class="qr-trait {_esc(t)}">{_esc(t)}</span>' for t in traits
+                    )
+                    m_text = _interpolate_quickref(m_item.get("text") or "", ctx)
+                    m_chip = _interpolate_quickref(m_item.get("chip") or "", ctx)
+                    chip_tone = m_item.get("chipTone") or "gold"
+                    chip_html = (
+                        f'<span class="qr-chip {_esc(chip_tone)}">{_esc(m_chip)}</span>' if m_chip else ""
+                    )
+
+                    moves_html.append(
+                        f'<div class="qr-move"><div class="qr-txt">'
+                        f"<b>{cost_html}{_esc(m_name)}</b>{traits_html}"
+                        f"<p>{_esc(m_text)}</p></div>{chip_html}</div>"
+                    )
+                moves_block = f'<div class="qr-moves">{"".join(moves_html)}</div>' if moves_html else ""
+                cards.append(f'<div class="qr-card" data-k="{_esc(cat)}">{header_html}{moves_block}</div>')
+            return f'<div class="qr-col">{"".join(cards)}</div>'
+
+        cols_html = (
+            f'<div class="qr-cols">{_render_col(col1_groups)}{_render_col(col2_groups)}</div>'
+            if groups
+            else ""
+        )
+        lede_html = f'<p class="qr-lede">{_esc(lede)}</p>' if lede else ""
+        foot_html = f'<p class="qr-foot">{_esc(footer)}</p>' if footer else ""
+
+        page_content = f"""
+<section class="page" data-sec="quick-reference">
+<div class="quickref">
+  <div class="qr-head">
+    <div>
+      <p class="qr-eyebrow">{_esc(eyebrow)}</p>
+      <h1>{_esc(title)}</h1>
+    </div>
+    <div class="qr-who">
+      {subtitle}
+    </div>
+  </div>
+  {lede_html}
+  {legend_html}
+  {tables_html}
+  {cols_html}
+  {foot_html}
+</div>
+{_foot(ctx['name'], "Quick Reference")}
+</section>"""
+        out_pages.append(page_content)
+
+    return "".join(out_pages)
+
+
 def _page_equipment(ctx: dict[str, Any]) -> str:
     if not ctx["item_rules"]:
         return ""
@@ -4681,11 +5052,12 @@ def _page_legal(ctx: dict[str, Any]) -> str:
     {deity_note}
     <h4>Artwork and typography</h4>
     <p>Every ornament and icon on this sheet &mdash; the spiral section marks,
-    the action-cost lozenges, the proficiency boxes &mdash; is original inline
+    the proficiency boxes &mdash; is original inline
     SVG generated by this software. No publisher&rsquo;s artwork, logo, map or
     layout file is embedded. Typography is Noto Serif, Noto Serif Italic and
     Noto Sans, embedded as subsetted WOFF2 and licensed under the SIL Open Font
-    License 1.1, reproduced in full below.</p>
+    License 1.1, reproduced in full below. Action glyphs use the community-created
+    Pathfinder2eActions font by u/baughberick (via the PF2e for Foundry VTT system).</p>
     <p>{_esc(_OFL_COPYRIGHT)}</p>
     {ogl_section}
     <h4>SIL Open Font License Version 1.1</h4>
@@ -4867,6 +5239,7 @@ def _build_context(
         ),
         "ancestry_stats": ancestry_stats,
         "ledger": character.get("ledger") or [],
+        "quick_reference": character.get("quickReference"),
         "variant_rules": variant_rules or [],
     }
 
@@ -5136,12 +5509,14 @@ def render_character_sheet(
         # table off its spell descriptions, and the inventory off its item
         # text, is what makes that possible: as one section each, the tables
         # were stranded on top of a dozen pages nobody re-reads.
+        qr_pages = _page_quick_reference(ctx)
         pages = (
             _page_core(ctx)
             + _page_advancement(ctx)
             + _page_spell_slots(ctx)
             + _page_inventory(ctx)
             + _page_ledger(ctx)
+            + qr_pages
             + _page_skill_actions(ctx)
             + _page_spells(ctx)
             + _page_features(ctx)
@@ -5165,6 +5540,8 @@ def render_character_sheet(
         sections.append("inventory")
         if ctx["ledger"]:
             sections.append("ledger")
+        if qr_pages or extra_pages:
+            sections.append("quick-reference")
         if ctx["skill_actions"]:
             sections.append("skill-actions")
         if ctx["spellcasting"]:
@@ -5172,17 +5549,16 @@ def render_character_sheet(
         sections.append("features")
         if ctx["item_rules"]:
             sections.append("item-rules")
-        if extra_pages:
-            sections.append("quick-reference")
         sections += ["notes", "attribution"]
 
+        actions_font_b64 = _get_actions_font(conn)
         doc = (
             '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{_esc(ctx["name"])} &mdash; '
             f'{_esc(character.get("ancestry") or "")} '
             f'{_esc(character.get("class") or "")} {ctx["level"]}</title>\n'
-            f"<style>{_stylesheet(paper)}</style>\n</head>\n<body>\n"
+            f"<style>{_stylesheet(paper, actions_font_b64=actions_font_b64)}</style>\n</head>\n<body>\n"
             f'{_toolbar(sections)}<div class="sheet">{pages}</div>\n'
             f"{_TOGGLE_SCRIPT}</body>\n</html>\n"
         )

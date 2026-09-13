@@ -134,3 +134,25 @@ def fetch_source_file(tag: str, repo_path: str, cache_dir: Path) -> str | None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(resp.text)
     return resp.text
+
+
+def fetch_source_bytes(tag: str, repo_path: str, cache_dir: Path) -> bytes | None:
+    """Fetch a single binary file from the `foundryvtt/pf2e` repo's source,
+    pinned to the exact same release tag being ingested. Cached under
+    `cache_dir/<tag>/source-files/` so rebuilds against the same tag don't
+    re-download. Returns None on network error."""
+    dest = cache_dir / tag / "source-files" / repo_path
+    if dest.exists():
+        return dest.read_bytes()
+
+    url = f"{RAW_CONTENT_BASE}/{tag}/{repo_path}"
+    try:
+        resp = httpx.get(url, timeout=30, follow_redirects=True)
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        return None
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(resp.content)
+    return resp.content
+

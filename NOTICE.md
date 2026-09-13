@@ -122,6 +122,14 @@ not vendored or redistributed by this repository -- it happens fresh on the
 end user's own machine, from foundryvtt/pf2e's own public GitHub releases,
 each time the build step is run.
 
+At build time, this project also downloads the community-created action icon
+font **`Pathfinder2eActions`** (`pathfinder-2e-actions.woff2`) from the
+`foundryvtt/pf2e` repository. The font was originally created by Reddit user
+**u/baughberick** (https://www.reddit.com/user/baughberick/) and contributed
+to the PF2e for Foundry VTT system for community use. Like the game data,
+the font binary is not stored or vendored in this git repository; it is
+downloaded on the end user's machine at build time.
+
 This project's own tools (`rules_search`, `rules_get_entry`, and the rest of
 the `rules_*`/`build_*` tool surface) then serve pieces of that downloaded
 content back to whoever is using this software. That is a real act of

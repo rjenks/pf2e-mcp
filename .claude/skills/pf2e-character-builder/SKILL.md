@@ -26,7 +26,7 @@ answering a rules or eligibility question from memory.**
   answers "what can this character do".
 - `build_character_*` (`build_character_schema`, `build_validate_character`,
   `build_character_at_level`, `build_import_pathbuilder`,
-  `build_export_pathbuilder`): the character *file* -- its shape, its
+  `build_export_pathbuilder`): the character _file_ -- its shape, its
   validity, and conversion in and out of Pathbuilder.
 - `pfs_*`: Organized Play adventure lookup and chronicle validation.
 
@@ -50,7 +50,7 @@ specification, not this document.
 Four things about the format change how you work:
 
 - **The plan is the source of truth and state is derived from it.** The file
-  records the *choices* made at each level from 1st to 20th and nothing about
+  records the _choices_ made at each level from 1st to 20th and nothing about
   their consequences -- no proficiency ranks, no Hit Points, no attribute
   scores. `build_character_at_level` replays the plan and computes those. So
   never write a derived number into the file, and never ask the user to
@@ -65,12 +65,12 @@ Four things about the format change how you work:
   and the validator rejects one where a slug belongs.
 - **Reasoning is a field, not a separate document.** See step 12.
 
-Two settings are *not* in the file and must be held across the conversation and
+Two settings are _not_ in the file and must be held across the conversation and
 passed explicitly, because they describe the table rather than the character:
 `pfs_legal_only` on `build_validate_build`, and `include_legacy` on every
 discovery tool (defaults to `False`, Remaster-only -- pass `True` for the whole
 rest of the build once the user asks for legacy content, don't ask per call).
-Variant rules *are* in the file, at `build.variantRules`, but
+Variant rules _are_ in the file, at `build.variantRules`, but
 `build_validate_build` and `build_get_level_up_choices` still take them as an
 argument -- pass what the file says.
 
@@ -82,15 +82,14 @@ argument -- pass what the file says.
    rules, legacy/remastered content toggles, Mythic, Automatic Bonus
    Progression, Legacy GMG variants, and a pile of app-level settings this
    project has no equivalent for) -- asking through all of that up front is
-   exactly the friction to avoid. Say something like: *"I'll default to
+   exactly the friction to avoid. Say something like: _"I'll default to
    Remaster-only content, no variant rules, and not PFS-restricted unless
    you tell me otherwise -- want to keep those defaults, or customize
-   anything first?"* Only drill into specifics (which variant rule, PFS
+   anything first?"_ Only drill into specifics (which variant rule, PFS
    yes/no, legacy content yes/no) if the user actually says they want to
    customize. This covers three independent preferences, all held across
    the conversation and threaded into every relevant tool call for the rest
    of the build (see "Tool namespaces" above for which calls take which):
-
    - **Legacy content.** Default `include_legacy=False` (Remaster/ORC
      content only). If the user wants legacy included, switch to `True` for
      the rest of the build. Worth knowing before it comes up: `False`
@@ -102,7 +101,7 @@ argument -- pass what the file says.
      legacy content included rather than concluding it doesn't exist.
    - **Variant/optional rules.** Default none. If the user wants to
      customize, call `rules_list_variant_rules(category=
-     'character-building')` and offer the list -- most commonly Free
+'character-building')` and offer the list -- most commonly Free
      Archetype and/or Ancestry Paragon, but the full list also includes
      Automatic Bonus Progression, Proficiency without Level, Gradual
      Attribute Boosts, Stamina, Mythic Characters, and Level 0 Characters.
@@ -166,8 +165,8 @@ argument -- pass what the file says.
    (`rules_search`/`rules_get_entry`/`build_check_prerequisite`) before
    committing -- a guide can be pre-errata, pre-remaster, or simply wrong
    about current game state; this project's ingested data is the current
-   source of truth for *legality* even when a guide is the better source
-   for *strategy*. Present the build-around to the user as part of the
+   source of truth for _legality_ even when a guide is the better source
+   for _strategy_. Present the build-around to the user as part of the
    concept conversation, so they can redirect before mechanics start rather
    than discovering the anchor after the fact.
 
@@ -188,7 +187,7 @@ argument -- pass what the file says.
    boost is unrestricted in either case). Don't reason about which
    ability a background/ancestry's free boost "should" hit from memory or
    in a table -- call `build_list_ability_boost_options(character,
-   source=...)` for that source, record the chosen ability into
+source=...)` for that source, record the chosen ability into
    `character.abilities.breakdown` immediately, then call it again for
    that same source's second boost before offering it -- the second call
    will correctly exclude whatever the first one just used. This applies
@@ -197,7 +196,7 @@ argument -- pass what the file says.
    milestone) -- a later source can still boost an ability an earlier
    source already touched (e.g. class key ability landing on the same
    ability ancestry already boosted, exactly how Str reaches +4 at 1st in
-   a typical Str-primary build), it's only *within* one source that a
+   a typical Str-primary build), it's only _within_ one source that a
    repeat is illegal.
 
    **Say attribute modifiers, never scores: `+4`, not `18`.** The Remaster
@@ -206,7 +205,7 @@ argument -- pass what the file says.
    reads the modifier. The 10-to-20 score is legacy notation that survives
    because Pathbuilder's export stores it. The character file records boosts,
    not scores, so there is nowhere for a score to hide in it -- a Pathbuilder
-   *export* still carries the `abilities` dict, and that is the file format, so
+   _export_ still carries the `abilities` dict, and that is the file format, so
    don't "fix" it there. Keep scores out of everything you say to the user. See
    AGENTS.md.
 
@@ -217,7 +216,7 @@ argument -- pass what the file says.
 
    **Half-steps only matter at 20th.** A boost that doesn't move the modifier
    looks wasted, but below 20th it is half a step that completes at the next
-   milestone -- and it gets there one milestone *sooner* than an even score
+   milestone -- and it gets there one milestone _sooner_ than an even score
    would, so it is usually good. Only at 20th is there nothing left to
    complete it. Don't tell a mid-career character their odd score is a
    mistake; `build_validate_build` deliberately reports this at 20th alone.
@@ -282,7 +281,7 @@ argument -- pass what the file says.
    level-10 "fully optimized" Magus was equipped with a Composite Longbow
    purely on "biggest die, best range" reasoning, without reading its
    traits. Two things only the traits reveal: `propulsive` adds half your
-   *Strength* modifier to damage -- worthless on a Dex-based build with
+   _Strength_ modifier to damage -- worthless on a Dex-based build with
    Str +0, making the Composite version pure wasted gold over a plain
    Longbow; and Longbow/Composite Longbow both carry `volley 30`, a -2
    penalty to attack rolls against anything within 30 feet, which taxes
@@ -297,7 +296,7 @@ argument -- pass what the file says.
    -- action-economy traits (`reload`, `manipulate`, `concentrate`),
    conditional-penalty traits (`volley`, `propulsive`, `nonlethal`),
    and interaction traits (`attack`, `incapacitation`, `finesse`) all
-   change whether something is actually good for *this* character, not
+   change whether something is actually good for _this_ character, not
    just whether it sounds good. This applies to every recommendation, not
    only weapons -- a spell's or feat's traits are exactly as load-bearing
    as an item's.
@@ -323,9 +322,9 @@ argument -- pass what the file says.
    `alternatives` with a note, rather than deleting the history.
 
 10. **Derived stats are always computed, never eyeballed.** Use
-   `build_calculate_derived_stats` for AC/saves/Perception/skills/HP/class DC/
-   spell DC rather than doing the arithmetic yourself -- PF2e's
-   untrained-vs-trained proficiency stacking is easy to get subtly wrong.
+    `build_calculate_derived_stats` for AC/saves/Perception/skills/HP/class DC/
+    spell DC rather than doing the arithmetic yourself -- PF2e's
+    untrained-vs-trained proficiency stacking is easy to get subtly wrong.
 
 11. **Leveling up**: call `build_get_level_up_choices` for the target level
     -- passing `variant_rules` per step 0's answer -- to see what actually
@@ -344,14 +343,13 @@ argument -- pass what the file says.
 
     What goes in a `note` is **why this pick, for this character** -- what it
     combines with, what it is instead of, what breaks without it. What does
-    *not* go in is what the feat does: that is in the rules database, it will
+    _not_ go in is what the feat does: that is in the rules database, it will
     be re-read from there whenever a sheet is rendered, and a copy in the
     character file goes stale at the next errata.
 
     Three neighbouring fields carry the rest of the argument:
-
     - **`alternatives`** on a choice: options considered and rejected, each
-      with a note. The reason a build did *not* take the obvious feat is
+      with a note. The reason a build did _not_ take the obvious feat is
       exactly what gets re-litigated when it is picked up again months later.
     - **`dependsOn`**: other picks this one exists to serve. "The dedication is
       only here to reach Combat Grab at 4th" is the single most common thing a
@@ -371,13 +369,32 @@ argument -- pass what the file says.
     `backstory`, `introduction` (written to be read aloud to a new party),
     `roleplaying`, `appearance`.
 
-    **Notes about the *tools* do not go in the character file at all.** A
+    **Tactical quick-reference cards (`quickReference`)**: Combat flow reminders,
+    action economy budgets ("One Action Left", "Open the Round", "Follow a Hit"),
+    reaction triggers, and critical specialization summaries go in
+    `quickReference`. Always author this section catered to the character's
+    active `identity.currentLevel`.
+    - **Use dynamic interpolation tokens instead of hardcoded numbers**:
+      e.g. `{athletics}`, `{intimidation}`, `{dc:class}`, `{dc:spell}`,
+      `{save:fortitude}`, `{dc:fortitude}`, `{modifier:str}`, `{ac}`, `{hp}`,
+      `{speed}`, `{level}`. Tokens resolve dynamically at render time against
+      the replayed stats, so numbers never drift out of sync when gear or
+      proficiency changes.
+    - **Keep it maintained as the character levels up or retrains**: When
+      advancing `identity.currentLevel`, review `quickReference` to ensure
+      the tactical reminders reflect the character's newly available feats,
+      stances, reactions, and combos.
+    - **Level gating is automatic**: `build_render_character_sheet`
+      renders `quickReference` pages when generating a sheet for the active
+      `currentLevel`, and omits it when previewing other levels.
+
+    **Notes about the _tools_ do not go in the character file at all.** A
     calculator that got something wrong or a gap in the rules data belongs in
     this repo's GitHub issues, where it can be fixed and closed. See AGENTS.md.
 
 13. **Validate the file, not just the build.** `build_validate_build` checks
-    the *rules* -- prerequisites, feat budgets, skill caps.
-    `build_validate_character` checks the *file*: schema conformance, plan
+    the _rules_ -- prerequisites, feat budgets, skill caps.
+    `build_validate_character` checks the _file_: schema conformance, plan
     levels in order and covering the current level, no two boosts from one
     source landing on the same attribute, every slug resolving to a real
     entry, dependencies that still point at something. Run both. Findings from
@@ -386,7 +403,6 @@ argument -- pass what the file says.
 
 14. **Sheets and exports are outputs, generated on demand.** Nothing needs
     storing per level any more:
-
     - `build_render_character_sheet` takes a `level`, so one file produces the
       sheet the character had at 1st, has now, or will have at 20th. Write it
       into the character's own folder.
@@ -437,7 +453,7 @@ argument -- pass what the file says.
   eligible archetype/dedication feat but doesn't let you browse "only this
   one archetype's feats" -- chaining still works correctly (e.g. a feat
   requiring "Medic Dedication" only shows as available once you've taken
-  it), you just can't filter the *browse* to one archetype by name yet.
+  it), you just can't filter the _browse_ to one archetype by name yet.
 - `build_list_available_spells` now resolves max rank and actual per-rank
   spell slot counts (`spell_slots` in the result) from each caster class's
   real level-by-level table, correct for Magus/Summoner's genuinely

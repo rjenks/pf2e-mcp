@@ -261,6 +261,10 @@
         }
       }
     },
+    "quickReference": {
+      "description": "Tactical quick-reference cards, action reminders, and combat flow summaries authored for this character at their current level. Structured into groups of actions/reactions and optional reference tables, with dynamic token interpolation (e.g. `{athletics}`, `{dc:class}`) resolved against derived stats at render time. Rendered as printable quick-reference pages on the character sheet for the active `currentLevel`.",
+      "$ref": "#/$defs/quickReferenceBlock"
+    },
     "story": {
       "description": "Narrative material. None of this has any mechanical effect, and all of it is what a player actually needs at a table.",
       "type": "object",
@@ -1063,6 +1067,268 @@
         "body": {
           "description": "The note itself. Markdown.",
           "type": "string"
+        }
+      }
+    },
+    "quickReferenceBlock": {
+      "title": "Tactical quick reference",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "Top-level section heading (e.g. 'Tactical Reference' or 'Combat Reference'). Defaults to 'Tactical Reference'.",
+          "type": "string"
+        },
+        "eyebrow": {
+          "description": "Small header eyebrow label above the section title.",
+          "type": "string"
+        },
+        "subtitle": {
+          "description": "Optional secondary heading or character role summary.",
+          "type": "string"
+        },
+        "lede": {
+          "description": "Introductory note or tactical summary paragraph.",
+          "type": "string"
+        },
+        "legend": {
+          "description": "Legend entries explaining card tags and traits (e.g. Flourish vs Press limits).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefLegendItem"
+          },
+          "default": []
+        },
+        "tables": {
+          "description": "Summary reference tables (e.g. Critical Specialization, weapon comparison, aura radiuses).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefTable"
+          },
+          "default": []
+        },
+        "groups": {
+          "description": "Thematic card groups (e.g. 'Open the Round', 'In the Clinch', 'Reactions', 'Focus Spells').",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefGroup"
+          },
+          "default": []
+        },
+        "pages": {
+          "description": "Multi-page tactical guide: an array of individual quick-reference pages, each containing its own title, lede, tables, groups, and footer.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefPage"
+          },
+          "default": []
+        },
+        "footer": {
+          "description": "Footnote or cross-reference reminder.",
+          "type": "string"
+        }
+      }
+    },
+    "quickRefPage": {
+      "title": "One quick-reference page",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "Page heading.",
+          "type": "string"
+        },
+        "eyebrow": {
+          "description": "Small header eyebrow label above the page title.",
+          "type": "string"
+        },
+        "subtitle": {
+          "description": "Page subtitle or who/role line.",
+          "type": "string"
+        },
+        "lede": {
+          "description": "Introductory note or tactical summary paragraph for this page.",
+          "type": "string"
+        },
+        "legend": {
+          "description": "Legend entries for this page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefLegendItem"
+          },
+          "default": []
+        },
+        "tables": {
+          "description": "Summary reference tables on this page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefTable"
+          },
+          "default": []
+        },
+        "groups": {
+          "description": "Card groups on this page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefGroup"
+          },
+          "default": []
+        },
+        "footer": {
+          "description": "Footer note for this page.",
+          "type": "string"
+        }
+      }
+    },
+    "quickRefLegendItem": {
+      "title": "Legend item",
+      "type": "object",
+      "required": [
+        "label",
+        "note"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "Legend term or trait name (e.g. 'Flourish', 'Press').",
+          "type": "string"
+        },
+        "note": {
+          "description": "Rule explanation or usage constraint.",
+          "type": "string"
+        }
+      }
+    },
+    "quickRefTable": {
+      "title": "Quick reference table",
+      "type": "object",
+      "required": [
+        "title",
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "Table heading.",
+          "type": "string"
+        },
+        "headers": {
+          "description": "Column header titles.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "rows": {
+          "description": "Table rows.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefTableRow"
+          }
+        }
+      }
+    },
+    "quickRefTableRow": {
+      "title": "Quick reference table row",
+      "type": "object",
+      "required": [
+        "label",
+        "detail"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "Row subject or weapon/action name.",
+          "type": "string"
+        },
+        "sub": {
+          "description": "Optional sub-label or hand designation (e.g. 'main hand', 'off hand').",
+          "type": "string"
+        },
+        "detail": {
+          "description": "Effect details or critical hit summary. May include interpolation tokens like {dc:class}.",
+          "type": "string"
+        }
+      }
+    },
+    "quickRefGroup": {
+      "title": "Quick reference card group",
+      "type": "object",
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "Card title (e.g. 'Debuff & designate', 'The signature Strike', 'What\\'s ready to go off').",
+          "type": "string"
+        },
+        "category": {
+          "description": "Visual style or color key, e.g. 'open', 'flourish', 'press', 'reaction', 'guard', 'follow', 'clinch', 'bottle', 'ruby', 'jade', 'gold', 'accent', 'soft', 'ink', 'other'.",
+          "type": "string"
+        },
+        "badge": {
+          "description": "Header tag label (e.g. 'Open the Round', 'One Flourish, Pick One', 'Follow a Hit', 'Reactions').",
+          "type": "string"
+        },
+        "when": {
+          "description": "Timing or trigger hint (e.g. 'Setup — before or instead of a Strike', 'Must chain off a Strike that just landed').",
+          "type": "string"
+        },
+        "moves": {
+          "description": "Actions, reactions, or passive reminder entries within this card.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quickRefMove"
+          },
+          "default": []
+        }
+      }
+    },
+    "quickRefMove": {
+      "title": "Quick reference action / reminder move",
+      "type": "object",
+      "required": [
+        "name",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Action or feature name (e.g. 'Twin Takedown', 'Demoralize', 'Combat Grab').",
+          "type": "string"
+        },
+        "cost": {
+          "description": "Action cost: 1, 2, 3, 'free', 'reaction', or null.",
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "traits": {
+          "description": "Action traits, e.g. ['flourish'], ['press'].",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "text": {
+          "description": "Description of the action or effect. May include interpolation tokens like {athletics}, {dc:class}.",
+          "type": "string"
+        },
+        "chip": {
+          "description": "Badge/callout text (e.g. '+23 to hit', 'DC 32', 'flanked only', '1/day'). May include tokens like {intimidation}.",
+          "type": "string"
+        },
+        "chipTone": {
+          "description": "Color tone for chip badge ('ruby', 'jade', 'gold', 'soft', 'ink', 'accent').",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     }

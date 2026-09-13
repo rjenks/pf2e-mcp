@@ -11,6 +11,7 @@ in the repo rather than regenerated here.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import sqlite3
@@ -25,6 +26,7 @@ from .pfs_adventures import fetch_adventures
 from .prerequisites import _KNOWN_SKILLS, PrerequisiteParser, build_name_index
 from .source import (
     download_and_extract,
+    fetch_source_bytes,
     fetch_source_file,
     get_latest_release,
     prune_cache,
@@ -1103,6 +1105,12 @@ def build_database(output_path: Path, cache_dir: Path) -> None:
     _insert_ancestry_boosts(conn, packs)
     _insert_background_boosts(conn, packs)
     _insert_pfs_adventures(conn)
+
+    action_font_bytes = fetch_source_bytes(release.tag, "static/fonts/pathfinder-2e-actions.woff2", cache_dir)
+    if action_font_bytes:
+        font_b64 = base64.b64encode(action_font_bytes).decode("ascii")
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('actions_font_woff2_b64', ?)", (font_b64,))
+        print("Fetched action font (pathfinder-2e-actions.woff2) from source")
 
     conn.execute("INSERT OR REPLACE INTO meta VALUES ('data_version', ?)", (release.tag,))
     conn.execute(
