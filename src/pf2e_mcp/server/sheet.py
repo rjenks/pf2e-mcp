@@ -2764,6 +2764,69 @@ table.grid td.du .sust{font-family:'SheetSans',sans-serif;font-size:5.6pt;
   margin-top:8px;padding-top:5px;border-top:.7px solid var(--rule);
   font-size:6.2pt;color:var(--muted);line-height:1.35;
 }
+
+/* ---- tent card ----
+   Fixed height rather than the usual auto-growing page: the two panels are
+   flex children sized to exactly half, so a fold at the midpoint always lands
+   at the panel boundary regardless of how much either panel's content needs.
+   `.page.tent`'s own height/padding beat the generic `.page` rule in both
+   screen and print (equal-or-higher specificity, and set unconditionally
+   here rather than only inside @media print), which is what keeps the fold
+   centred once printed. No printed fold line or instructions -- a page that
+   is visibly two identical, oppositely-oriented halves says "fold here" on
+   its own. */
+.page.tent{height:10in;padding:0.2in 0.3in;display:flex;flex-direction:column;
+  overflow:hidden;}
+.tent-panel{flex:1 1 0;min-height:0;overflow:hidden;display:flex;}
+.tent-panel.tent-flip{transform:rotate(180deg);}
+/* Portrait right, full panel height -- everyone else at the table reads the
+   face first and the numbers second, so it gets the one dimension (height)
+   this half-page layout has plenty of. Every stat to its left is set as
+   large as the remaining width allows, since this card is read from across a
+   table rather than held in hand like page 1. */
+.tent-content{width:100%;height:100%;display:flex;align-items:stretch;gap:12px;}
+/* The body rule's line-height:1.42 is meant for paragraph text; left alone
+   here it made every label roughly 40% taller than its font-size, and at
+   these much larger tent-card sizes that slack added up to more than half an
+   inch -- enough to push the block past the panel's fixed height and get
+   clipped by `.tent-panel`'s overflow:hidden (the name at one edge, the
+   exploration row at the other). Tightened uniformly rather than chasing it
+   selector by selector; the two spans that already set line-height:1 for
+   their big numbers stay put, since a class selector beats a universal one. */
+.tent-data,.tent-data *{line-height:1.15;}
+.tent-data{flex:1 1 auto;min-width:0;height:100%;
+  display:flex;flex-direction:column;justify-content:center;gap:6px;}
+.tent-portrait-wrap{flex:none;height:100%;display:flex;align-items:center;}
+.tent-portrait{height:100%;width:auto;object-fit:cover;}
+.tent-portrait-blank{height:100%;width:2.3in;border:1.6px dashed var(--rule);
+  background:var(--warm);}
+.tent-name{border-bottom:2px solid var(--ink);padding-bottom:4px;}
+.tent-name h2{font-size:26pt;line-height:1;font-weight:700;}
+.tent-cls{margin-top:3px;font-size:13pt;font-weight:640;color:var(--accent);}
+.tent-cls small{display:block;font-family:'SheetSans',sans-serif;font-size:7.6pt;
+  font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  margin-top:2px;}
+.tent-bigrow{display:flex;gap:8px;}
+.tent-bigrow .tent-tile .n{font-size:27pt;}
+.tent-group-hd{font-family:'SheetSans',sans-serif;font-weight:700;font-size:8pt;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink);
+  border-bottom:1.2px solid var(--ink);padding-bottom:2px;margin-bottom:3px;}
+.tent-group-row{display:flex;flex-wrap:wrap;gap:8px;}
+.tent-tile{flex:1 1 0;min-width:1in;border:1.6px solid var(--ink);
+  background:var(--warm);text-align:center;padding:4px 2px;}
+.tent-tile .n{display:block;font-size:18pt;font-weight:700;line-height:1;}
+.tent-tile .k{display:block;font-family:'SheetSans',sans-serif;font-weight:700;
+  font-size:7.2pt;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  margin-top:2px;}
+.tent-exploration{display:flex;align-items:stretch;border:1.6px solid var(--rule);
+  margin-top:1px;}
+.tent-exploration .k{font-family:'SheetSans',sans-serif;font-size:8pt;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:5px 10px;
+  background:var(--warm);display:flex;align-items:center;
+  border-right:1.6px solid var(--rule);white-space:nowrap;}
+.tent-exploration .v{flex:1;padding:5px 10px;font-size:12pt;font-weight:650;
+  display:flex;align-items:center;}
+
 @media print{
   body{background:#fff;}
   .toolbar{display:none !important;}
@@ -3140,6 +3203,103 @@ def _page_core(ctx: dict[str, Any]) -> str:
 # 6pt footer -- an unbreakable box -- was enough to spill a dense build onto a
 # second sheet even when everything above it fit. The nameplate at the top of
 # the page already identifies the character and the section.
+
+
+_RECALL_KNOWLEDGE_SKILLS = ("Arcana", "Nature", "Occultism", "Religion")
+
+#: Exploration activity shown when the character record doesn't say -- Search
+#: is the one nobody has to think about (Perception vs. traps/secrets while
+#: moving at normal speed), so a table with no stated convention defaults to
+#: the same activity the core rules use as their own example.
+_DEFAULT_EXPLORATION_ACTIVITY = "Search"
+
+
+def _tent_tile(label: str, value: Any) -> str:
+    return f'<div class="tent-tile"><span class="n">{value}</span>' f'<span class="k">{label}</span></div>'
+
+
+def _tent_group(heading: str, tiles_html: str) -> str:
+    return f'<div class="tent-group"><div class="tent-group-hd">{heading}</div>' f'<div class="tent-group-row">{tiles_html}</div></div>'
+
+
+def _tent_panel_html(ctx: dict[str, Any]) -> str:
+    """One half of the tent card -- see `_page_tent_card`. Built once and
+    reused for both panels: the top one is rotated 180deg in CSS so the same
+    markup reads right-side up from both sides of the fold, rather than
+    generating two copies that could drift out of sync.
+    """
+    ch, d = ctx["character"], ctx["derived"]
+
+    portrait_uri = ctx.get("portrait_uri")
+    portrait_html = (
+        f'<img class="tent-portrait" src="{portrait_uri}" alt="{_esc(ctx["name"])}">'
+        if portrait_uri
+        else '<div class="tent-portrait tent-portrait-blank"></div>'
+    )
+
+    saves_html = "".join(
+        _tent_tile(label, _mod(d["saves"][key]))
+        for key, label in (("fortitude", "Fort"), ("reflex", "Ref"), ("will", "Will"))
+    )
+    class_dc_html = "".join(_tent_tile(_esc(cd["label"]), cd["dc"]) for cd in ctx["class_dcs"])
+    skills_by_name = {r["name"]: r for r in ctx["skills"]}
+    recall_html = "".join(
+        _tent_tile(name, _mod(skills_by_name[name]["total"]))
+        for name in _RECALL_KNOWLEDGE_SKILLS
+        if name in skills_by_name
+    )
+
+    activity = ctx.get("exploration_activity") or _DEFAULT_EXPLORATION_ACTIVITY
+
+    return f"""
+    <div class="tent-content">
+      <div class="tent-data">
+        <div class="tent-name">
+          <h2>{_esc(ctx['name'])}</h2>
+          <div class="tent-cls">{_esc(ch.get('class') or '')} {ctx['level']}
+            <small>{_esc(ctx['subclass_label'])}</small></div>
+        </div>
+        <div class="tent-bigrow">
+          {_tent_tile("AC", d['ac'])}
+          {_tent_tile("Perception", _mod(d['perception']))}
+          {_tent_tile("Speed", f"{ctx['speed']} ft")}
+        </div>
+        {_tent_group("Saves", saves_html)}
+        {_tent_group("Class DC", class_dc_html)}
+        {_tent_group("Recall Knowledge", recall_html)}
+        <div class="tent-exploration">
+          <span class="k">Exploration Activity</span>
+          <span class="v">{_esc(activity)}</span>
+        </div>
+      </div>
+      <div class="tent-portrait-wrap">{portrait_html}</div>
+    </div>"""
+
+
+def _page_tent_card(ctx: dict[str, Any]) -> str:
+    """A fold-in-half table tent: the character's portrait and at-a-glance
+    combat stats, printed twice on one physical page so it stands up in front
+    of the player readable from both sides.
+
+    Fold along the middle. One panel is rotated 180deg in the flat HTML so
+    that once folded, both panels read right-side up from their own side of
+    the table, even though only one side of the paper is ever printed.
+
+    The portrait runs the full height of each panel on the right, since it is
+    what lets the rest of the table recognise the character at a glance; every
+    number to its left -- AC, Perception, Speed, saving throws, every Class
+    DC, the four recall-knowledge skills (Arcana, Nature, Occultism,
+    Religion), and the character's exploration activity -- is set as large as
+    the panel allows, since this card is read from across a table rather than
+    held in hand like page 1.
+    """
+    panel_html = _tent_panel_html(ctx)
+    return f"""
+<section class="page tent" data-sec="tent-card">
+  <div class="tent-panel tent-flip">{panel_html}</div>
+  <div class="tent-panel">{panel_html}</div>
+</section>"""
+
 
 
 def _spell_cells(spell: dict[str, Any]) -> str:
@@ -5546,6 +5706,7 @@ def _build_context(
         "warnings": warnings,
         "skills": _skill_rows(character, abilities, level, hidden_lores),
         "class_dcs": _class_dcs(character, abilities, level, prof, derived, conn),
+        "exploration_activity": character.get("explorationActivity"),
         "skill_actions": _skill_actions(character, lib, conn),
         "apparitions": apparitions,
         "wandering": _wandering_feats(character, apparitions, conn),
@@ -5578,6 +5739,7 @@ _OPTIONAL_SECTIONS = [
     ("features", "Features"),
     ("item-rules", "Item rules"),
     ("quick-reference", "Quick reference"),
+    ("tent-card", "Tent card"),
     ("notes", "Sheet notes"),
     ("attribution", "Notices"),
 ]
@@ -5659,12 +5821,13 @@ def render_character_sheet(
     dialog (enable background graphics).
 
     A toolbar above the sheet, hidden when printing, carries a checkbox per
-    optional section: skill actions, spells, features, item rules, sheet notes
-    and notices, each on by default and each shown only when the character has
-    that section. Unchecking one hides it on screen and leaves it out of the
-    print, so a player who keeps the rules to hand can print the statistics
-    page and the two quick-reference tables alone. The statistics page,
-    spellcasting slots and inventory have no switch: they are the sheet.
+    optional section: skill actions, spells, features, item rules, the tent
+    card, sheet notes and notices, each on by default and each shown only
+    when the character has that section. Unchecking one hides it on screen
+    and leaves it out of the print, so a player who keeps the rules to hand
+    can print the statistics page and the two quick-reference tables alone.
+    The statistics page, spellcasting slots and inventory have no switch:
+    they are the sheet.
     Nothing is removed from the file itself -- notably the licence text, which
     has to travel with what the sheet carries and still does. The switches are
     the file's only script, some twenty lines inline; with scripting off every
@@ -5695,6 +5858,12 @@ def render_character_sheet(
       ancestry, heritage, background, level-appropriate auto-granted class
       features, any detected subclass, and every feat.
     * `item-rules` -- full text for the carried gear, in inventory order.
+    * `tent-card` -- a fold-in-half table tent: portrait, AC, Perception,
+      Speed, saves, every Class DC, the four recall-knowledge skills (Arcana,
+      Nature, Occultism, Religion) and the character's exploration activity
+      (`story.explorationActivity` on a native document; defaults to
+      "Search" for anything else), printed twice on one page so it stands up
+      readable from both sides once folded. Always one physical page.
     * `notes` -- how each number was derived.
     * `attribution` -- only the sourcebooks actually quoted.
 
@@ -5865,6 +6034,7 @@ def render_character_sheet(
             + _page_spells(ctx)
             + _page_features(ctx)
             + _page_equipment(ctx)
+            + _page_tent_card(ctx)
             + _page_notes(ctx)
         )
         if extra_pages:
@@ -5893,7 +6063,7 @@ def render_character_sheet(
         sections.append("features")
         if ctx["item_rules"]:
             sections.append("item-rules")
-        sections += ["notes", "attribution"]
+        sections += ["tent-card", "notes", "attribution"]
 
         actions_font_b64 = _get_actions_font(conn)
         doc = (

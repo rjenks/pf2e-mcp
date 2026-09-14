@@ -305,6 +305,13 @@
             "null"
           ]
         },
+        "explorationActivity": {
+          "description": "What the character does while the party travels between encounters, e.g. 'Search', 'Scout 60 feet ahead', 'Detect Magic', 'Avoid Notice'. Free text rather than an enum, since an exploration activity can be a feat-granted one (Ranger's Warden's Step) or a house convention this table uses. Printed on the tent card so the GM and other players know without asking each time exploration mode starts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "hooks": {
           "description": "Loose threads a GM can pull -- unfinished business, people owed, questions the character has not answered.",
           "type": "array",
