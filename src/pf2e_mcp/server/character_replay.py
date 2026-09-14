@@ -1059,6 +1059,20 @@ def _replay_spellcasting(
     casters: list[dict[str, Any]] = []
     for entry in spellcasting.get("entries") or []:
         tradition = entry.get("tradition")
+        # Class-progression-derived proficiency lands under the
+        # `_CASTING_KEYS` form ("castingDivine"), but a `proficiencyOverride`
+        # -- the only way a Cleric's spellcasting proficiency reaches trained
+        # today, since derivation itself doesn't yet grant it -- is written
+        # under the bare tradition name ("divine"), matching the schema's own
+        # "keys are the proficiency's name" convention and the two forms
+        # `build_tools.calculate_derived_stats` already checks. Missing this
+        # fallback here left every override-sourced casting proficiency
+        # invisible to the sheet's Spell DC/attack, which reads this field
+        # rather than recomputing it.
+        casting_proficiency = max(
+            proficiencies.get(_CASTING_KEYS.get(tradition, ""), 0),
+            proficiencies.get(tradition or "", 0),
+        )
         spells = []
         for rank, slugs in sorted((entry.get("spells") or {}).items(), key=lambda kv: int(kv[0])):
             spells.append(
@@ -1073,7 +1087,7 @@ def _replay_spellcasting(
                 "magicTradition": tradition,
                 "spellcastingType": entry.get("type"),
                 "ability": entry.get("ability") or "int",
-                "proficiency": proficiencies.get(_CASTING_KEYS.get(tradition, ""), 0),
+                "proficiency": casting_proficiency,
                 "focusPoints": 0,
                 "innate": entry.get("type") == "innate",
                 "spells": spells,

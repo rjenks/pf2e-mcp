@@ -260,6 +260,32 @@ def test_an_override_does_not_apply_before_its_granting_level(dwarf_animist, con
     assert late["proficiencies"]["society"] == 2
 
 
+def test_spellcasting_proficiency_override_reaches_the_spell_caster_block(dwarf_animist, conn):
+    """A `proficiencyOverride` keyed by the bare tradition name ('occult') must
+    still reach `spellCasters[].proficiency` -- the field the rendered sheet's
+    Spell DC/attack actually reads.
+
+    Derivation itself has no class-progression path that grants a caster's
+    spellcasting proficiency yet, so a `proficiencyOverride` is the only way
+    one reaches trained today. It's written under the tradition's own name,
+    matching the schema's generic "keys are the proficiency's name"
+    convention and the two forms `build_tools.calculate_derived_stats`
+    already checks (`'occult'` or `'castingOccult'`) -- confirmed live on a
+    Cleric whose sheet showed a spell DC 5 points low because this path only
+    checked the `'castingX'` form.
+    """
+    dwarf_animist["spellcasting"] = {
+        "entries": [
+            {"name": "Animist", "tradition": "occult", "type": "prepared", "ability": "wis", "spells": {}},
+        ]
+    }
+    dwarf_animist["proficiencyOverrides"] = {
+        "occult": {"rank": "trained", "source": "pathbuilder-import"},
+    }
+    build = character_replay.at_level(dwarf_animist, 1, conn)
+    assert build["spellCasters"][0]["proficiency"] == 2
+
+
 def test_hp_per_level_feats_are_counted(dwarf_animist, conn):
     dwarf_animist["plan"][2]["choices"].append({"slot": "generalFeat", "pick": "toughness"})
     build = character_replay.at_level(dwarf_animist, 3, conn)
