@@ -3021,42 +3021,6 @@ def _page_core(ctx: dict[str, Any]) -> str:
           <span class="k">Shield HP now</span><span class="box"></span>
         </div>"""
 
-    # A character can carry several spellcasting entries (an animist's
-    # apparitions, a dual-class build). Only the first gets a full tile;
-    # the rest are compact rows, so this block's height stays bounded and
-    # page 1 stays a single page.
-    cast_tile = ""
-    for i, block in enumerate(ctx["spellcasting"]):
-        key = abilities.get(block["ability"], 10)
-        rank = block["proficiency"] or 0
-        dc = 10 + m.total_bonus(key, rank, level)
-        attack = m.total_bonus(key, rank, level)
-        if i == 0:
-            slot_line = " &middot; ".join(
-                (
-                    f'Rank {r["rank"]}: <b>{r["slots"]}</b>'
-                    if r["rank"]
-                    else f'Cantrips <b>{len(r["spells"])}</b>'
-                )
-                for r in block["ranks"]
-                if r["slots"] or r["rank"] == 0
-            )
-            cast_tile += f"""
-        <div class="tile">
-          <div class="big"><div class="n">{dc}</div><div class="k">Spell DC</div></div>
-          <div class="body">Spell attack <b>{_mod(attack)}</b> &middot;
-            {_RANK_ABBR.get(rank, '?')}<br>
-            {_esc(block['tradition'])} {_esc(block['kind'])} &middot;
-            {_esc(block['ability']).upper()}<br>{slot_line}</div>
-        </div>"""
-        else:
-            cast_tile += (
-                f'<div class="statrow"><span class="nm" style="min-width:0">'
-                f'{_esc(block["name"])}</span>'
-                f'<span class="rk">{_esc(block["ability"]).upper()}</span>'
-                f'<span class="tot">{dc}</span></div>'
-            )
-
     conds = "".join(
         f'<div class="cond"><span class="box"></span>'
         f'<span class="cn">{_esc(n)}</span><span class="ce">{_esc(e)}</span></div>'
@@ -3128,10 +3092,13 @@ def _page_core(ctx: dict[str, Any]) -> str:
         </div>
         <div class="block">
           <div class="block-hd">Class DC</div>
-          <div class="statrow"><span class="nm">Class DC</span>
-            {_pips(prof.get('classDC', 0) or 0)}
-            <span class="rk">{_RANK_ABBR.get(prof.get('classDC', 0) or 0, '?')}</span>
-            <span class="tot">{d['class_dc']}</span></div>
+          {"".join(
+              f'<div class="statrow"><span class="nm">{_esc(cd["label"])}</span>'
+              f'{_pips(cd["rank"])}'
+              f'<span class="rk">{_RANK_ABBR.get(cd["rank"], "?")}</span>'
+              f'<span class="tot">{cd["dc"]}</span></div>'
+              for cd in ctx["class_dcs"]
+          )}
         </div>
       </div>
       <div class="block">
@@ -3155,7 +3122,6 @@ def _page_core(ctx: dict[str, Any]) -> str:
         <span class="hint">tick &middot; write N</span></div>
         <div class="conds">{conds}</div>
       </div>
-      {f'<div class="block"><div class="block-hd">Spellcasting</div>{cast_tile}</div>' if cast_tile else ""}
     </div>
   </div>
 
@@ -5341,6 +5307,62 @@ def _page_legal(ctx: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------
 
 
+def _class_dcs(
+    character: dict[str, Any],
+    abilities: dict[str, int],
+    level: int,
+    prof: dict[str, int],
+    derived: dict[str, Any],
+    conn,
+) -> list[dict[str, Any]]:
+    """Every class DC the character has: the primary class's own, plus one for
+    each multiclass archetype dedication that grants its own -- "you become
+    trained in [class] class DC" (Fighter Dedication's own printed text, and
+    the general pattern -- Ranger, Rogue, Barbarian and others' Dedications
+    read the same way). Confirmed on a real build multiclassing Ranger with
+    Fighter Dedication, which carries a literal `fighter` proficiency key
+    distinct from the primary `classDC` bucket:
+    `_apply_feature_proficiencies` only folds a grant keyed by the *primary*
+    class's own slug into `classDC`; a dedication's own class-slug grant
+    (belonging to a different class) is left as that literal key.
+
+    Each entry's DC reuses the character's own key ability -- this project has
+    nowhere a per-archetype key ability is chosen or recorded, so it is the
+    only available default; flag it if a build's secondary class DC disagrees
+    with Pathbuilder's own number for exactly this reason.
+    """
+    key_ability = character.get("keyability", "str")
+    key = abilities.get(key_ability, 10)
+    primary_name = character.get("class") or ""
+    primary_row = conn.execute(
+        "SELECT slug FROM entries WHERE pack = 'classes' AND name = ? COLLATE NOCASE", (primary_name,)
+    ).fetchone()
+    primary_slug = primary_row["slug"] if primary_row else primary_name.lower().replace(" ", "-")
+
+    entries = [
+        {
+            "label": f"{primary_name} DC" if primary_name else "Class DC",
+            "rank": prof.get("classDC", 0) or 0,
+            "dc": derived.get("class_dc") or 10,
+        }
+    ]
+    for row in conn.execute("SELECT slug, name FROM entries WHERE pack = 'classes'").fetchall():
+        if row["slug"] == primary_slug:
+            continue
+        rank = prof.get(row["slug"], 0) or 0
+        if rank <= 0:
+            continue
+        entries.append(
+            {
+                "label": f"{row['name']} DC",
+                "rank": rank,
+                "dc": 10 + m.total_bonus(key, rank, level),
+            }
+        )
+    return entries
+
+
+
 def _ancestry_stats(conn, ancestry_name: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT hp, size, vision FROM ancestry_boosts WHERE ancestry_slug = ?",
@@ -5523,6 +5545,7 @@ def _build_context(
         "strikes": strikes,
         "warnings": warnings,
         "skills": _skill_rows(character, abilities, level, hidden_lores),
+        "class_dcs": _class_dcs(character, abilities, level, prof, derived, conn),
         "skill_actions": _skill_actions(character, lib, conn),
         "apparitions": apparitions,
         "wandering": _wandering_feats(character, apparitions, conn),
