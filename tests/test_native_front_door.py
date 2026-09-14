@@ -126,3 +126,74 @@ def test_rendered_sheet_resolves_every_name(native, tmp_path):
         native, str(tmp_path / "sheet.html")
     )
     assert result["unresolved"] == []
+
+
+# --------------------------------------------------- a file path works too
+
+
+@pytest.fixture
+def native_path(native, tmp_path) -> str:
+    """`native`, written to disk -- what every tool below accepts as-is."""
+    path = tmp_path / "front-door.pf2e.yaml"
+    character.save(path, native)
+    return str(path)
+
+
+def test_resolve_input_loads_a_path(native_path, native):
+    assert character.resolve_input(native_path) == native
+    # A dict passed straight through is untouched, not round-tripped.
+    assert character.resolve_input(native) is native
+
+
+def test_resolve_input_rejects_no_file_at_that_path(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        character.resolve_input(str(tmp_path / "nope.pf2e.yaml"))
+
+
+def test_as_legacy_accepts_a_path(native_path, native):
+    assert character.as_legacy(native_path) == character.as_legacy(native)
+
+
+def test_derived_stats_accepts_a_path(native_path, conn):
+    derived = build_tools.calculate_derived_stats(native_path)
+    assert derived["hp"] == 52
+
+
+def test_validate_build_accepts_a_path(native_path):
+    result = build_tools.validate_build(native_path)
+    assert "errors" in result and "warnings" in result
+
+
+def test_level_up_choices_accepts_a_path(native_path):
+    assert build_tools.get_level_up_choices(native_path, 4)
+
+
+def test_pathbuilder_export_accepts_a_path(native_path):
+    exported = build_tools.to_pathbuilder_export(native_path)
+    assert exported["success"] is True
+
+
+def test_character_at_level_accepts_a_path(native_path, native):
+    from pf2e_mcp.server import character_tools
+
+    assert character_tools.character_at_level(native_path, 3) == character_tools.character_at_level(native, 3)
+
+
+def test_validate_character_accepts_a_path(native_path, native):
+    """`native` carries import's own `_import` report, so it doesn't validate
+    clean either way -- what matters here is that loading from a path gives
+    the same result as passing the document directly, not that it's valid."""
+    from pf2e_mcp.server import character_tools
+
+    assert character_tools.validate_character(native_path) == character_tools.validate_character(native)
+
+
+def test_export_pathbuilder_tool_accepts_a_path(native_path, native):
+    from pf2e_mcp.server import character_tools
+
+    assert character_tools.export_pathbuilder(native_path, 3) == character_tools.export_pathbuilder(native, 3)
+
+
+def test_sheet_renders_from_a_path(native_path, tmp_path):
+    result = sheet.render_character_sheet(native_path, str(tmp_path / "from-path.html"))
+    assert result["unresolved"] == []

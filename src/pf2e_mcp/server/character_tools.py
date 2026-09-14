@@ -83,7 +83,7 @@ def character_schema() -> dict[str, Any]:
     }
 
 
-def validate_character(character: dict[str, Any]) -> dict[str, Any]:
+def validate_character(character: dict[str, Any] | str) -> dict[str, Any]:
     """Check that a character file is well formed and internally consistent.
 
     Runs two layers. The **structural** layer checks the document against the
@@ -107,7 +107,8 @@ def validate_character(character: dict[str, Any]) -> dict[str, Any]:
 
     Args:
         character: A character document matching the schema returned by
-            `build_character_schema`.
+            `build_character_schema`, or a path to a `.pf2e.yaml` file
+            holding one.
 
     This checks the *file*, not the *build*. Whether the character's feats meet
     their prerequisites, whether they have spent more feats than their level
@@ -115,8 +116,9 @@ def validate_character(character: dict[str, Any]) -> dict[str, Any]:
     `build_validate_build`'s questions, asked against the state this document
     replays to.
     """
+    character = ch.resolve_input(character)
     if not isinstance(character, dict) or not character:
-        raise ValueError("character must be a non-empty character document")
+        raise ValueError("character must be a non-empty character document, or a path to one")
     conn = get_connection()
     try:
         return ch.validate_document(character, conn)
@@ -125,7 +127,7 @@ def validate_character(character: dict[str, Any]) -> dict[str, Any]:
 
 
 def character_at_level(
-    character: dict[str, Any], level: int | None = None
+    character: dict[str, Any] | str, level: int | None = None
 ) -> dict[str, Any]:
     """Work out what a character looks like at a given level.
 
@@ -150,14 +152,16 @@ def character_at_level(
     export, so this never leaks into a file meant for Pathbuilder.
 
     Args:
-        character: A character document matching `build_character_schema`.
+        character: A character document matching `build_character_schema`,
+            or a path to a `.pf2e.yaml` file holding one.
         level: Which level to replay to, 1-20. Defaults to the character's
             `identity.currentLevel`. A level beyond the plan's coverage is
             allowed and returns what the plan does cover, saying so in
             `_derivation.notes`.
     """
+    character = ch.resolve_input(character)
     if not isinstance(character, dict) or not character:
-        raise ValueError("character must be a non-empty character document")
+        raise ValueError("character must be a non-empty character document, or a path to one")
     conn = get_connection()
     try:
         return replay.at_level(character, level, conn)
@@ -210,7 +214,7 @@ def import_pathbuilder(export: dict[str, Any]) -> dict[str, Any]:
 
 
 def export_pathbuilder(
-    character: dict[str, Any], level: int | None = None
+    character: dict[str, Any] | str, level: int | None = None
 ) -> dict[str, Any]:
     """Render a character at a given level as a Pathbuilder export.
 
@@ -224,12 +228,14 @@ def export_pathbuilder(
     without keeping separate files for each.
 
     Args:
-        character: A character document matching `build_character_schema`.
+        character: A character document matching `build_character_schema`,
+            or a path to a `.pf2e.yaml` file holding one.
         level: Which level to export, 1-20. Defaults to the character's
             `identity.currentLevel`.
     """
+    character = ch.resolve_input(character)
     if not isinstance(character, dict) or not character:
-        raise ValueError("character must be a non-empty character document")
+        raise ValueError("character must be a non-empty character document, or a path to one")
     conn = get_connection()
     try:
         return imports.to_pathbuilder(character, level, conn)

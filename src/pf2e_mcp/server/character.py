@@ -1023,6 +1023,28 @@ def validate_document(document: Any, conn: sqlite3.Connection | None = None) -> 
 # --------------------------------------------------------------- front door
 
 
+def resolve_input(character: Any) -> Any:
+    """Whatever a caller passed as `character`, as an in-memory document.
+
+    Every public tool that takes a `character` parameter accepts either the
+    document itself (a dict -- the shape a prior tool call returned, or one
+    built up in conversation) or a string naming a `.pf2e.yaml` file on disk,
+    such as `characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml`. A string is
+    always treated as a path, never as a JSON- or YAML-encoded character --
+    loading it any other way would make a plain filename ambiguous with a
+    character named after one. This is the single place that distinction is
+    resolved, so no caller needs to read a character file and paste its
+    contents into a tool call just to point at a file that already exists.
+
+    The loaded document goes through `to_plain` immediately: `load` returns a
+    ruamel round-trip mapping, which behaves as a dict but does not survive a
+    JSON boundary, and every tool downstream of this expects a plain one.
+    """
+    if isinstance(character, (str, Path)):
+        return to_plain(load(character))
+    return character
+
+
 def is_native(character: Any) -> bool:
     """Whether a dict is a character document rather than a Pathbuilder build.
 
@@ -1037,6 +1059,8 @@ def as_legacy(
 ) -> dict[str, Any]:
     """Whatever a caller passed, as the Pathbuilder-shaped dict tools expect.
 
+    Accepts a file path too -- see `resolve_input`.
+
     A native character document is replayed to `level`; a Pathbuilder envelope
     is unwrapped; a bare build is returned as it came. This is the single
     adaptation point that lets every existing tool accept the new format
@@ -1045,6 +1069,7 @@ def as_legacy(
     Opens its own database connection when replaying and none is supplied,
     matching how the rest of `build_tools` handles a lookup.
     """
+    character = resolve_input(character)
     if is_native(character):
         from . import character_replay
 

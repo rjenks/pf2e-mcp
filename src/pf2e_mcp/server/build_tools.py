@@ -6,8 +6,9 @@ All tools are pure functions over a `character` dict shaped like
 Pathbuilder 2e's `build` export object (confirmed against the pathmuncher
 and foundry-pathbuilder2e-import importer source, not a bespoke schema --
 see the plan for why). The server holds no character state between calls;
-the caller (the agent) passes the character JSON each time and keeps it in
-conversation.
+the caller (the agent) passes the character document each time, either
+in-memory or as a path to a `.pf2e.yaml` file -- see
+`character.resolve_input`.
 
 Still deferred: multiclass feat-count-tracking flags (e.g.
 flags.system.barbarian.archetypeFeatCount), retraining/respec as a distinct
@@ -279,7 +280,7 @@ def list_equipment(
 
 
 def list_available_feats(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     feat_category: Literal["ancestry", "class", "general", "skill", "archetype"],
     level: int | None = None,
     include_legacy: bool = False,
@@ -425,7 +426,7 @@ def list_available_feats(
         conn.close()
 
 
-def check_prerequisite(character: dict[str, Any], feat_id: str) -> dict[str, Any]:
+def check_prerequisite(character: dict[str, Any] | str, feat_id: str) -> dict[str, Any]:
     """Narrow single-feat eligibility check -- use when sanity-checking one
     user-proposed choice rather than re-running full discovery."""
     character = _native.as_legacy(character)
@@ -465,7 +466,7 @@ def check_prerequisite(character: dict[str, Any], feat_id: str) -> dict[str, Any
 
 
 def list_ability_boost_options(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     source: Literal["ancestry", "background", "class", "free"],
 ) -> dict[str, Any]:
     """Eligible ability score boosts for the given source, respecting
@@ -529,7 +530,7 @@ def list_ability_boost_options(
     return {"source": "free", "options": [a for a in all_abilities if a not in already_chosen]}
 
 
-def list_skill_increase_options(character: dict[str, Any]) -> dict[str, Any]:
+def list_skill_increase_options(character: dict[str, Any] | str) -> dict[str, Any]:
     """Which of the 16 core skills are legal to raise one rank right now,
     given the character's current level and current rank in each (the
     trained/expert/master/legendary level-3/7/15 caps are a fixed core rule,
@@ -599,7 +600,7 @@ def _variant_rule_set(variant_rules: list[str]) -> frozenset[str]:
 
 
 def validate_build(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     variant_rules: list[str] | None = None,
     pfs_legal_only: bool = False,
 ) -> dict[str, Any]:
@@ -1903,7 +1904,7 @@ def _fallback_class_baseline(class_name: str) -> tuple[int, int | None]:
     return classhp, _foundry_rank_to_project(unarmored) if unarmored is not None else None
 
 
-def calculate_derived_stats(character: dict[str, Any]) -> dict[str, Any]:
+def calculate_derived_stats(character: dict[str, Any] | str) -> dict[str, Any]:
     """Deterministic PF2e math: AC, saves, Perception, skill totals, HP,
     class DC, and spell DC/attack per casting tradition the character has
     trained. Never left to model arithmetic -- proficiency stacking
@@ -2151,7 +2152,7 @@ def _useful_ranks(base_rank: int, heightening: dict[str, Any] | None, cap: int) 
 
 
 def list_available_spells(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     tradition: Literal["arcane", "divine", "occult", "primal"],
     max_rank: int | None = None,
     include_legacy: bool = False,
@@ -2273,7 +2274,7 @@ def list_available_spells(
 
 
 def get_level_up_choices(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     target_level: int,
     variant_rules: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -2371,7 +2372,7 @@ def get_level_up_choices(
     }
 
 
-def to_pathbuilder_export(character: dict[str, Any]) -> dict[str, Any]:
+def to_pathbuilder_export(character: dict[str, Any] | str) -> dict[str, Any]:
     """Wrap the working character representation as a Pathbuilder-compatible
     export. The working schema already follows Pathbuilder's `build` shape
     (per the user's decision -- see the plan's Pathbuilder-schema

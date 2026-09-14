@@ -5605,7 +5605,7 @@ document.querySelectorAll('.toolbar input[type=checkbox]').forEach(function (box
 
 
 def render_character_sheet(
-    character: dict[str, Any],
+    character: dict[str, Any] | str,
     output_path: str,
     paper: str = "letter",
     logo_path: str | None = None,
@@ -5740,9 +5740,13 @@ def render_character_sheet(
     character had at 1st, has now, or will have at 20th. It is ignored for a
     Pathbuilder export, which describes exactly one level and cannot be
     replayed to another.
+
+    `character` accepts the document itself, or a string naming a
+    `.pf2e.yaml` file on disk to load it from.
     """
+    character = _native.resolve_input(character)
     if not isinstance(character, dict) or not character:
-        raise ValueError("character must be a non-empty character dict")
+        raise ValueError("character must be a non-empty character dict, or a path to one")
     # Accepts a native character document, a Pathbuilder envelope, or a bare
     # build. A native document is replayed to `level` first, which is what
     # makes rendering an earlier or later level a parameter rather than a
