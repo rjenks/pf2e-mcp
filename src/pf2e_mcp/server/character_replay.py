@@ -19,12 +19,25 @@ looked up and accumulated:
   decides what a later boost in the same batch is worth -- which is why order
   is recorded rather than a set.
 - **Proficiency ranks** start from the class's level-1 baseline
-  (`class_progression`'s `*_rank`, `attacks`, `defenses`) and are raised by the
-  class features granted along the way. Those bumps come from
-  `item_proficiency_grants`, which carries a row per rank a feature confers --
-  a class's "Fortitude Expertise" at 3rd, "Expert Spellcaster" at 7th, and so
-  on. 287 of the 556 granted class features carry such rows; the rest grant no
-  proficiency and correctly contribute nothing.
+  (`class_progression`'s `*_rank`, `attacks`, `defenses`, and -- for a caster --
+  the class item's own `system.spellcasting` starting rank, via
+  `_class_baseline`) and are raised by class features granted along the way,
+  automatic or chosen alike. Those bumps come from `item_proficiency_grants`,
+  which carries a row per rank a feature confers -- a class's "Fortitude
+  Expertise" at 3rd, "Expert Spellcaster" at 7th, and so on. 287 of the 556
+  granted class features carry such rows; the rest grant no proficiency and
+  correctly contribute nothing -- except a handful whose real content Foundry
+  resolves at runtime rather than storing as data at all: Cleric's Doctrine
+  chain and Alchemist's Research Field chain each grant a *placeholder*
+  feature with empty rules, the actual grant living on a concrete,
+  subclass-specific variant selected by an actor flag. `_resolve_dynamic_feature`
+  follows that indirection using the chosen subclass's own recorded override,
+  so a Warpriest's martial-weapon training at 3rd (say) is derived rather than
+  silently absent. A **chosen** feat's grants apply the same way an automatic
+  feature's do (`_chosen_feat_features`) -- this is the only path a multiclass
+  archetype's spellcasting proficiency schedule has: a dedication feat grants
+  trained, and separately-chosen "Expert/Master X Spellcasting" feats raise it
+  further at their own levels.
 - **Skills** come from the class's fixed trained list, the background's, the
   free picks recorded as `skillTraining`, and one step per `skillIncrease`.
 - **Hit Points** come from the ancestry and class tables.
@@ -312,6 +325,22 @@ _CASTING_KEYS = {
     "primal": "castingPrimal",
 }
 
+#: A `GrantItem` rule element whose `uuid` is this template, rather than a
+#: literal UUID, is Foundry resolving the grant at runtime against a flag the
+#: character's own subclass choice sets on itself -- confirmed on Cleric's
+#: Doctrine chain (`flags.system.cleric`) and Alchemist's Research Field
+#: chain (`flags.system.alchemist`); no other class uses the pattern as of
+#: this writing. See `_resolve_dynamic_feature`.
+_DYNAMIC_GRANT_RE = re.compile(r"^\{actor\|flags\.system\.([a-zA-Z]+)\.([a-zA-Z]+)\}$")
+
+#: Which subclass-choice-group tag (see `rules_list_subclass_option_groups`)
+#: governs a class's dynamic-flag chain, keyed by the flag namespace embedded
+#: in the placeholder feature's own `GrantItem` template.
+_DYNAMIC_SUBCLASS_TAGS = {
+    "cleric": "cleric-doctrine",
+    "alchemist": "alchemist-research-field",
+}
+
 #: Which `slot` values spend a feat budget, and the `category` string the
 #: legacy feat tuple carries for each. `sheet.py` and
 #: `build_tools._feat_slot_bucket` both read index 2 of the tuple.
@@ -455,8 +484,22 @@ def _replay_attributes(plan: list[dict], level: int) -> tuple[dict[str, int], di
 # ---------------------------------------------------------- proficiencies
 
 
-def _class_baseline(progression: dict, class_slug: str) -> dict[str, int]:
-    """The class's proficiency ranks at 1st level."""
+def _class_baseline(
+    conn: sqlite3.Connection, progression: dict, class_slug: str, tradition: str | None
+) -> dict[str, int]:
+    """The class's proficiency ranks at 1st level.
+
+    `tradition` seeds the caster's own starting spellcasting proficiency, from
+    the class item's own `system.spellcasting` -- "just a starting-proficiency
+    rank integer" (see `_insert_class_spell_progression`'s docstring), 1 for
+    every caster class and 0 for a non-caster, in Foundry's own 0-4 rank
+    encoding. `class_progression` never carried this column at all -- nothing
+    upstream of this function read it -- so a primary caster's own spell DC/
+    attack had no baseline to build on beyond untrained until a later feature
+    or a `proficiencyOverride` raised it by hand. Read directly from the
+    class's raw JSON rather than added to `class_progression` at ingestion
+    time, since it is one integer and not worth a schema migration.
+    """
     proficiencies: dict[str, int] = {
         "perception": _rank_to_project(progression.get("perception_rank")),
         "fortitude": _rank_to_project(progression.get("fortitude_rank")),
@@ -472,17 +515,90 @@ def _class_baseline(progression: dict, class_slug: str) -> dict[str, int]:
             proficiencies[key] = _rank_to_project(rank)
     for skill in SKILLS:
         proficiencies.setdefault(skill, 0)
+    if tradition:
+        class_row = _one(
+            conn, "SELECT raw_json FROM entries WHERE slug = ? AND pack = 'classes'", (class_slug,)
+        )
+        if class_row:
+            starting_rank = json.loads(class_row["raw_json"]).get("system", {}).get("spellcasting")
+            casting_key = _CASTING_KEYS.get(tradition)
+            if casting_key and isinstance(starting_rank, int) and starting_rank > 0:
+                proficiencies[casting_key] = _rank_to_project(starting_rank)
     return proficiencies
 
 
-def _granted_features(conn: sqlite3.Connection, progression: dict, level: int) -> list[dict[str, Any]]:
-    """Class features granted automatically at or below `level`, in level order."""
+def _resolve_dynamic_feature(conn: sqlite3.Connection, entry_id: str, build: dict) -> str:
+    """A class feature's real entry_id, resolving Foundry's actor-flag
+    indirection against the character's own subclass choice.
+
+    Five of Cleric's own automatic class features -- Second Doctrine through
+    Final Doctrine -- carry no content as data at all: Foundry stores each as
+    `GrantItem: {actor|flags.system.cleric.secondDoctrine}`, a template
+    resolved at runtime against a flag the character's chosen doctrine
+    (Warpriest, Cloistered Cleric) sets on itself via its own
+    `item_stat_modifiers` override -- confirmed against Warpriest's
+    `flags.system.cleric`, which maps `secondDoctrine` to the concrete
+    "Second Doctrine (Warpriest)" entry, the one that actually carries
+    Warpriest's proficiency bumps. Alchemist's Research Field chain (Field
+    Discovery, Perpetual Infusions, ...) uses the identical pattern under
+    `flags.system.alchemist`. No other class does, as of this writing.
+
+    Falls back to the placeholder's own entry_id -- empty grants, same as
+    before this existed -- whenever there's no subclass recorded yet, the
+    subclass entry carries no matching override, or the placeholder isn't one
+    of these two known dynamic chains.
+    """
+    row = _one(conn, "SELECT raw_json FROM entries WHERE id = ?", (entry_id,))
+    if not row:
+        return entry_id
+    rules = json.loads(row["raw_json"]).get("system", {}).get("rules") or []
+    for rule in rules:
+        if rule.get("key") != "GrantItem":
+            continue
+        match = _DYNAMIC_GRANT_RE.match(str(rule.get("uuid") or ""))
+        if not match:
+            continue
+        namespace, flag_key = match.groups()
+        tag = _DYNAMIC_SUBCLASS_TAGS.get(namespace)
+        subclass_slug = (build.get("subclasses") or {}).get(tag) if tag else None
+        if not subclass_slug:
+            continue
+        subclass = _one(
+            conn, "SELECT id FROM entries WHERE pack = 'class-features' AND slug = ?", (subclass_slug,)
+        )
+        if not subclass:
+            continue
+        modifier = _one(
+            conn,
+            "SELECT value FROM item_stat_modifiers WHERE entry_id = ? AND path = ?",
+            (subclass["id"], f"flags.system.{namespace}"),
+        )
+        if not modifier:
+            continue
+        target_uuid = json.loads(modifier["value"] or "{}").get(flag_key)
+        if target_uuid:
+            return str(target_uuid).split(".")[-1]
+    return entry_id
+
+
+def _granted_features(
+    conn: sqlite3.Connection, progression: dict, level: int, build: dict | None = None
+) -> list[dict[str, Any]]:
+    """Class features granted automatically at or below `level`, in level order.
+
+    `build` resolves a dynamic doctrine/research-field placeholder to its
+    concrete subclass-specific entry -- see `_resolve_dynamic_feature`. Optional
+    so callers with no subclass context (nothing currently needs one) still
+    work; such a placeholder simply keeps contributing no grants, as before.
+    """
     features = []
     for item in json.loads(progression.get("granted_items") or "[]"):
         item_level = item.get("level") or 1
         if item_level > level:
             continue
         entry_id = (item.get("uuid") or "").split(".")[-1]
+        if build is not None:
+            entry_id = _resolve_dynamic_feature(conn, entry_id, build)
         features.append(
             {
                 "level": item_level,
@@ -811,6 +927,40 @@ def _feat_grants(conn: sqlite3.Connection, feat_slug: str, level: int) -> list[l
         (feat["id"],),
     ).fetchall()
     return [[row["name"], None, "Awarded Feat", level, "Granted Feat"] for row in rows]
+
+
+def _chosen_feat_features(conn: sqlite3.Connection, plan: list[dict], level: int) -> list[dict[str, Any]]:
+    """Chosen feats at or below `level`, in the `{level, name, entry_id}` shape
+    `_granted_features` produces -- so a picked feat's own
+    `item_proficiency_grants` raise a rank exactly the way an automatic class
+    feature's do.
+
+    This is the only path a multiclass archetype's spellcasting proficiency
+    schedule has: a dedication feat grants trained, and separately-chosen
+    "Expert X Spellcasting" / "Master X Spellcasting" feats raise it further
+    at their own levels -- confirmed real, static `item_proficiency_grants`
+    rows on all three ("Wizard Dedication" trained at 2nd, "Expert Wizard
+    Spellcasting" at 12th, "Master Wizard Spellcasting" at 18th). Before this
+    existed, nothing applied a chosen feat's proficiency grant at all --
+    `_apply_feature_proficiencies` only ever saw a class's own automatic
+    progression, so an archetype caster's proficiency never rose past
+    whatever the class baseline or a `proficiencyOverride` separately stated.
+    """
+    features = []
+    for entry in plan:
+        entry_level = entry.get("level")
+        if not isinstance(entry_level, int) or entry_level > level:
+            continue
+        for choice in entry.get("choices") or []:
+            if choice.get("slot") not in _FEAT_CATEGORIES:
+                continue
+            picks = choice.get("pick")
+            picks = picks if isinstance(picks, list) else [picks]
+            for pick in picks:
+                feat = _entry(conn, pick, "feats")
+                if feat:
+                    features.append({"level": entry_level, "name": feat["name"], "entry_id": feat["id"]})
+    return features
 
 
 def _replay_feats(
@@ -1195,9 +1345,12 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
             tradition = entry.get("tradition")
             break
 
-    proficiencies = _class_baseline(progression, class_slug)
-    features = _granted_features(conn, progression, level)
-    prof_trace = _apply_feature_proficiencies(conn, proficiencies, features, class_slug, tradition)
+    proficiencies = _class_baseline(conn, progression, class_slug, tradition)
+    features = _granted_features(conn, progression, level, build)
+    chosen_features = _chosen_feat_features(conn, plan, level)
+    prof_trace = _apply_feature_proficiencies(
+        conn, proficiencies, features + chosen_features, class_slug, tradition
+    )
     languages, language_trace = _replay_languages(document, plan, level)
     lores, skill_trace = _replay_skills(conn, document, progression, plan, level, proficiencies)
 

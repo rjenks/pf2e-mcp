@@ -265,14 +265,15 @@ def test_spellcasting_proficiency_override_reaches_the_spell_caster_block(dwarf_
     still reach `spellCasters[].proficiency` -- the field the rendered sheet's
     Spell DC/attack actually reads.
 
-    Derivation itself has no class-progression path that grants a caster's
-    spellcasting proficiency yet, so a `proficiencyOverride` is the only way
-    one reaches trained today. It's written under the tradition's own name,
-    matching the schema's generic "keys are the proficiency's name"
-    convention and the two forms `build_tools.calculate_derived_stats`
-    already checks (`'occult'` or `'castingOccult'`) -- confirmed live on a
-    Cleric whose sheet showed a spell DC 5 points low because this path only
-    checked the `'castingX'` form.
+    Derivation now seeds a caster's own starting proficiency from the class
+    baseline (see `test_class_baseline_seeds_starting_casting_proficiency`)
+    and raises it further via doctrine/archetype grants where those are
+    modeled, but an override still has to reach this field regardless of
+    which of the two set it, written under the tradition's own name to match
+    the schema's generic "keys are the proficiency's name" convention and the
+    two forms `build_tools.calculate_derived_stats` already checks ('occult'
+    or 'castingOccult') -- confirmed live on a Cleric whose sheet showed a
+    spell DC 5 points low because this path only checked the 'castingX' form.
     """
     dwarf_animist["spellcasting"] = {
         "entries": [
@@ -284,6 +285,119 @@ def test_spellcasting_proficiency_override_reaches_the_spell_caster_block(dwarf_
     }
     build = character_replay.at_level(dwarf_animist, 1, conn)
     assert build["spellCasters"][0]["proficiency"] == 2
+
+
+def test_class_baseline_seeds_starting_casting_proficiency(dwarf_animist, conn):
+    """Every caster class starts trained in its own tradition -- the class
+    item's `system.spellcasting` integer, which nothing upstream of
+    `_class_baseline` ever read. An Animist is occult; confirmed against the
+    real ingested class data rather than assumed."""
+    dwarf_animist["spellcasting"] = {
+        "entries": [
+            {"name": "Animist", "tradition": "occult", "type": "prepared", "ability": "wis", "spells": {}},
+        ]
+    }
+    build = character_replay.at_level(dwarf_animist, 1, conn)
+    assert build["proficiencies"]["castingOccult"] == 2
+    assert build["spellCasters"][0]["proficiency"] == 2
+
+
+@pytest.fixture
+def cleric_warpriest() -> dict:
+    """A Cleric planned through 19th, doctrine recorded structurally
+    (`build.subclasses`) rather than only in prose -- what
+    `_resolve_dynamic_feature` needs to find Warpriest's own doctrine-stage
+    features instead of the empty generic placeholders."""
+    return {
+        "schemaVersion": 1,
+        "identity": {"name": "Test Warpriest", "currentLevel": 19},
+        "build": {
+            "ancestry": "human",
+            "background": "acolyte",
+            "class": "cleric",
+            "deity": "pharasma",
+            "subclasses": {"cleric-doctrine": "warpriest"},
+        },
+        "plan": [{"level": n} for n in range(1, 20)],
+        "spellcasting": {
+            "entries": [
+                {"name": "Cleric", "tradition": "divine", "type": "prepared", "ability": "wis", "spells": {}},
+            ]
+        },
+    }
+
+
+def test_doctrine_chain_resolves_to_the_chosen_doctrines_own_features(cleric_warpriest, conn):
+    """Cleric's own "Second Doctrine" through "Final Doctrine" class features
+    carry no content as data -- Foundry resolves each at runtime against a
+    flag the chosen doctrine sets on itself. Warpriest's proficiency bumps
+    (light/medium armor and expert Fortitude at 1st, martial weapons at 3rd,
+    martial/simple/unarmed to expert at 7th, spell proficiency to expert at
+    11th, Fortitude to master at 15th, spell proficiency to master at 19th)
+    must reach the replayed character exactly on schedule -- confirmed
+    against Warpriest's own printed text, not assumed."""
+    at = lambda level: character_replay.at_level(cleric_warpriest, level, conn)["proficiencies"]
+
+    l1 = at(1)
+    assert l1["fortitude"] == 4, "First Doctrine (Warpriest): expert Fortitude"
+    assert l1["light"] == 2 and l1["medium"] == 2, "First Doctrine (Warpriest): trained light/medium"
+    assert l1["martial"] == 0, "martial training doesn't arrive until 3rd"
+
+    assert at(3)["martial"] == 2, "Second Doctrine (Warpriest): trained martial weapons"
+
+    l7 = at(7)
+    assert l7["martial"] == 4 and l7["simple"] == 4 and l7["unarmed"] == 4, (
+        "Third Doctrine (Warpriest): expert martial/simple/unarmed"
+    )
+
+    assert at(11)["castingDivine"] == 4, "Fourth Doctrine (Warpriest): expert spellcasting"
+    assert at(15)["fortitude"] == 6, "Fifth Doctrine (Warpriest): master Fortitude"
+    assert at(19)["castingDivine"] == 6, "Final Doctrine (Warpriest): master spellcasting"
+
+
+def test_doctrine_chain_falls_back_to_no_grant_without_a_recorded_subclass(cleric_warpriest, conn):
+    """The generic placeholder's own grants are empty; with no `build.subclasses`
+    entry to resolve against, that must stay the case rather than erroring."""
+    del cleric_warpriest["build"]["subclasses"]
+    build = character_replay.at_level(cleric_warpriest, 3, conn)
+    assert build["proficiencies"]["martial"] == 0
+
+
+@pytest.fixture
+def fighter_wizard_archetype() -> dict:
+    """A Fighter multiclassing into Wizard through the standard archetype
+    schedule: Dedication (trained) at 2nd, Expert at 12th -- the "half-level"
+    schedule the class itself would reach at 1st/7th."""
+    return {
+        "schemaVersion": 1,
+        "identity": {"name": "Test Archer-Mage", "currentLevel": 12},
+        "build": {"ancestry": "human", "background": "acolyte", "class": "fighter"},
+        "plan": [
+            {"level": 1},
+            {"level": 2, "choices": [{"slot": "classFeat", "pick": "wizard-dedication"}]},
+            *({"level": n} for n in range(3, 12)),
+            {"level": 12, "choices": [{"slot": "classFeat", "pick": "expert-wizard-spellcasting"}]},
+        ],
+        "spellcasting": {
+            "entries": [
+                {"name": "Wizard", "tradition": "arcane", "type": "prepared", "ability": "int", "spells": {}},
+            ]
+        },
+    }
+
+
+def test_chosen_archetype_feats_raise_spellcasting_proficiency(fighter_wizard_archetype, conn):
+    """Before this existed, nothing applied a *chosen* feat's proficiency
+    grant at all -- `_apply_feature_proficiencies` only ever saw a class's own
+    automatic progression, so a multiclass archetype caster's proficiency
+    never rose past class baseline (untrained, for a Fighter) regardless of
+    which spellcasting feats were actually taken."""
+    at = lambda level: character_replay.at_level(fighter_wizard_archetype, level, conn)["proficiencies"]
+
+    assert at(1).get("castingArcane", 0) == 0, "no dedication taken yet"
+    assert at(2)["castingArcane"] == 2, "Wizard Dedication: trained"
+    assert at(11)["castingArcane"] == 2, "Expert Wizard Spellcasting not taken until 12th"
+    assert at(12)["castingArcane"] == 4, "Expert Wizard Spellcasting: expert"
 
 
 def test_hp_per_level_feats_are_counted(dwarf_animist, conn):
