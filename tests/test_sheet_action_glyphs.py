@@ -66,3 +66,44 @@ def test_rendered_sheet_embeds_action_font(character_doc, tmp_path):
     content = out.read_text(encoding="utf-8")
     assert "font-family:'Pathfinder2eActions'" in content
     assert '<span class="action-glyph">' in content
+
+
+def test_card_header_prefixes_glyph_and_omits_redundant_cost_label():
+    """Card headings prefix the action glyph before the title and omit
+    redundant right-aligned text like '1 ACTION'."""
+    entry = {
+        "name": "Demoralize",
+        "system": {"actions": {"value": 1}, "actionType": {"value": "action"}},
+        "traits": ["auditory", "concentrate", "emotion", "fear", "mental"],
+        "desc_html": "<p>Attempt an Intimidation check...</p>",
+    }
+    card_html = sheet._card(entry, kicker="Intimidation")
+    assert (
+        '<h3><span class="action-glyph">1</span>Demoralize</h3><span class="rank">Intimidation</span>'
+        in card_html
+    )
+    assert '<span class="cost">' not in card_html
+    assert "1 action" not in card_html.lower()
+
+
+def test_features_section_includes_action_icons_and_rules(tmp_path):
+    """Class features granting actions (like Hunt Prey, Rage, Reactive Strike)
+    carry their action glyph prefix and full rules text on their card."""
+    ranger = {
+        "name": "Hunt Prey Tester",
+        "class": "Ranger",
+        "ancestry": "Orc",
+        "level": 1,
+        "abilities": {"str": 18, "dex": 14, "con": 12, "int": 10, "wis": 14, "cha": 10},
+        "proficiencies": {"survival": 2, "nature": 2, "stealth": 2},
+        "feats": [],
+    }
+    out = tmp_path / "ranger.html"
+    sheet.render_character_sheet(ranger, str(out), level=1)
+    content = out.read_text(encoding="utf-8")
+    # Hunt Prey has 1-action glyph prefixing its name in features
+    assert '<h3><span class="action-glyph">1</span>Hunt Prey</h3>' in content
+    # Hunt Prey has full rules text rather than a stub
+    assert "designate a single creature as your prey" in content
+    # No redundant "1 action" cost span
+    assert '<span class="cost">' not in content

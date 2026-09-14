@@ -328,6 +328,28 @@ _LOGO_SOFT_LIMIT = 400 * 1024
 _LOGO_INK_HEIGHT = 27.0
 
 
+_DEFAULT_LOGO_PATH = Path(".data/logos/PF2Logo.png")
+_DEFAULT_SYMBOL_DIR = Path(".data/logos/religious")
+_DEFAULT_MELEE_PORTRAIT_PATH = Path("characters/generic-melee.jpeg")
+_DEFAULT_SPELLCASTER_PORTRAIT_PATH = Path("characters/generic-spellcaster.jpeg")
+
+_SPELLCASTER_CLASSES = frozenset(
+    {
+        "animist",
+        "bard",
+        "cleric",
+        "druid",
+        "magus",
+        "oracle",
+        "psychic",
+        "sorcerer",
+        "summoner",
+        "witch",
+        "wizard",
+    }
+)
+
+
 def _logo_data_uri(path: str) -> tuple[str, list[str]]:
     """Read an image and return it as a data: URI, plus any warnings.
 
@@ -356,6 +378,86 @@ def _logo_data_uri(path: str) -> tuple[str, list[str]]:
             f"at the size it prints."
         )
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}", warnings
+
+
+def _resolve_portrait_data_uri(
+    portrait_val: Any,
+    output_path: str | Path | None = None,
+    class_name: str | None = None,
+) -> str | None:
+    """Resolve a character portrait specification into a base64 data URI.
+
+    Accepts:
+    - A base64 data URI (starts with `data:image/` or `data:`)
+    - A raw base64 string
+    - A filename relative to the character directory or output file path
+    - A file path on disk
+
+    If `portrait_val` is None or omitted, attempts auto-discovery in the output directory.
+    If no specific portrait is found, falls back to generic spellcaster portrait for
+    spellcasting classes (Wizard, Cleric, Druid, Sorcerer, Bard, etc.) or generic melee
+    portrait for martial/unknown classes.
+    """
+    if portrait_val:
+        s = str(portrait_val).strip()
+        if s.startswith("data:image/") or s.startswith("data:"):
+            return s
+        if not re.search(r"\.(jpe?g|png|webp|gif|svg)$", s, re.IGNORECASE):
+            clean_b64 = re.sub(r"\s+", "", s)
+            if len(clean_b64) > 100 and re.match(r"^[A-Za-z0-9+/=\s]+$", s):
+                mime = "image/png" if clean_b64.startswith("iVBORw0KGgo") else "image/jpeg"
+                return f"data:{mime};base64,{clean_b64}"
+
+        candidate_paths = []
+        if output_path:
+            out_dir = Path(output_path).expanduser().parent
+            candidate_paths.append(out_dir / s)
+        candidate_paths.append(Path(s).expanduser())
+
+        for p in candidate_paths:
+            if p.exists() and p.is_file():
+                ext = p.suffix.lower()
+                mime = _LOGO_MIME.get(ext, "image/jpeg")
+                b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+                return f"data:{mime};base64,{b64}"
+
+    if output_path:
+        out_dir = Path(output_path).expanduser().parent
+        for ext in (".jpeg", ".jpg", ".png", ".webp"):
+            for img_file in out_dir.glob(f"*{ext}"):
+                if img_file.is_file() and not img_file.name.startswith("."):
+                    if img_file.name.lower() in (
+                        "generic-melee.jpeg",
+                        "generic-spellcaster.jpeg",
+                        "generic-melee.jpg",
+                        "generic-spellcaster.jpg",
+                    ):
+                        continue
+                    mime = _LOGO_MIME.get(ext, "image/jpeg")
+                    b64 = base64.b64encode(img_file.read_bytes()).decode("ascii")
+                    return f"data:{mime};base64,{b64}"
+
+    cls_slug = str(class_name or "").strip().lower().replace(" ", "-")
+    default_rel = (
+        _DEFAULT_SPELLCASTER_PORTRAIT_PATH
+        if cls_slug in _SPELLCASTER_CLASSES
+        else _DEFAULT_MELEE_PORTRAIT_PATH
+    )
+
+    candidate_defaults = [
+        default_rel,
+        Path(__file__).resolve().parent.parent.parent.parent / default_rel,
+        _DEFAULT_MELEE_PORTRAIT_PATH,
+        Path(__file__).resolve().parent.parent.parent.parent / _DEFAULT_MELEE_PORTRAIT_PATH,
+    ]
+    for p in candidate_defaults:
+        if p.exists() and p.is_file():
+            ext = p.suffix.lower()
+            mime = _LOGO_MIME.get(ext, "image/jpeg")
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            return f"data:{mime};base64,{b64}"
+
+    return None
 
 
 def _png_alpha_bounds(data: bytes) -> tuple[float, float] | None:
@@ -641,7 +743,9 @@ class _Library:
     def _hydrate(self, row) -> dict[str, Any] | None:
         if row is None:
             return None
-        raw = json.loads(row["raw_json"]).get("system", {})
+        raw_full = json.loads(row["raw_json"])
+        raw = raw_full.get("system", {})
+        rules = raw.get("rules", [])
         entry = {
             "name": row["name"],
             "pack": row["pack"],
@@ -653,7 +757,41 @@ class _Library:
             "is_remaster": row["is_remaster"],
             "desc_html": raw.get("description", {}).get("value", ""),
             "system": {k: v for k, v in raw.items() if k not in ("description", "rules", "publication")},
+            "rules": rules,
         }
+        # A class feature that is a passive container granting an action with the
+        # same name/slug (Hunt Prey, Rage, Reactive Strike, Overdrive, etc.) inherits
+        # the action's cost, full rules description, and traits so the rendered card
+        # carries the action icon and playable text rather than a one-sentence stub.
+        if row["pack"] == "class-features":
+            act_id = None
+            for r in rules:
+                if isinstance(r, dict) and r.get("key") == "GrantItem":
+                    uuid = str(r.get("uuid") or "")
+                    if "actionspf2e" in uuid or "actions.Item." in uuid:
+                        act_id = uuid.rsplit(".", 1)[-1]
+                        break
+            action_row = None
+            if act_id:
+                action_row = self._conn.execute(
+                    "SELECT * FROM entries WHERE id = ? AND pack = 'actions'", (act_id,)
+                ).fetchone()
+            if action_row is None:
+                action_row = self._conn.execute(
+                    "SELECT * FROM entries WHERE (name = ? COLLATE NOCASE OR slug = ?) AND pack = 'actions' LIMIT 1",
+                    (row["name"], row["slug"]),
+                ).fetchone()
+            if action_row and (
+                action_row["name"].casefold() == row["name"].casefold() or action_row["slug"] == row["slug"]
+            ):
+                act_raw = json.loads(action_row["raw_json"]).get("system", {})
+                entry["desc_html"] = act_raw.get("description", {}).get("value", "") or entry["desc_html"]
+                entry["system"] = {
+                    k: v for k, v in act_raw.items() if k not in ("description", "rules", "publication")
+                }
+                act_traits = json.loads(action_row["traits"] or "[]")
+                entry["traits"] = sorted(set(entry["traits"] + act_traits))
+                entry["source_book"] = action_row["source_book"] or entry["source_book"]
         self.used.append(entry)
         return entry
 
@@ -688,7 +826,24 @@ class _Library:
                 entry = self.get(grant.get("name", ""), "classfeature")
             if entry:
                 out.append({**entry, "granted_level": grant.get("level")})
-        return out
+                # If this feature grants distinct action items (e.g. On the Case
+                # granting Pursue a Lead and Clue In), include them too.
+                for r in entry.get("rules", []):
+                    if isinstance(r, dict) and r.get("key") == "GrantItem":
+                        r_uuid = str(r.get("uuid") or "")
+                        if "actionspf2e" in r_uuid or "actions.Item." in r_uuid:
+                            sub_act_id = r_uuid.rsplit(".", 1)[-1]
+                            sub_act = self.by_id(sub_act_id)
+                            if sub_act and sub_act["name"].casefold() != entry["name"].casefold():
+                                out.append({**sub_act, "granted_level": grant.get("level")})
+        seen = set()
+        deduped = []
+        for feat in out:
+            k = feat["name"].casefold()
+            if k not in seen:
+                seen.add(k)
+                deduped.append(feat)
+        return deduped
 
     def subclass_selections(self, class_name: str, character: dict[str, Any]) -> list[dict[str, Any]]:
         """Best-effort recovery of a subclass choice (cleric doctrine, druid
@@ -707,11 +862,22 @@ class _Library:
             + " ".join(str(f[0]) for f in character.get("feats", []) or [] if f)
         )
         found = []
+        seen = set()
         for row in rows:
             if re.search(rf"\b{re.escape(row['name'])}\b", haystack):
                 entry = self.get(row["name"], "classfeature")
-                if entry:
+                if entry and entry["name"].casefold() not in seen:
+                    seen.add(entry["name"].casefold())
                     found.append(entry)
+                    for r in entry.get("rules", []):
+                        if isinstance(r, dict) and r.get("key") == "GrantItem":
+                            r_uuid = str(r.get("uuid") or "")
+                            if "actionspf2e" in r_uuid or "actions.Item." in r_uuid:
+                                sub_act_id = r_uuid.rsplit(".", 1)[-1]
+                                sub_act = self.by_id(sub_act_id)
+                                if sub_act and sub_act["name"].casefold() not in seen:
+                                    seen.add(sub_act["name"].casefold())
+                                    found.append(sub_act)
         return found
 
 
@@ -978,6 +1144,42 @@ def _glyph(spec: str) -> str:
     return ""
 
 
+def _note_html(text: Any) -> str:
+    """Format markdown in user-written character notes into HTML.
+
+    Converts bold (**text**), italic (*text*), code (`text`), em-dashes (--),
+    action glyph brackets ([1], [1 action], [reaction]), and line breaks,
+    while safely escaping raw HTML tags.
+    """
+    if not text:
+        return ""
+    s = html.escape(str(text).strip())
+    # Inline code: `code`
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    # Bold: **text**
+    s = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", s)
+    # Italic: *text* (avoiding matching inside words or double asterisks)
+    s = re.sub(r"(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)", r"<em>\1</em>", s)
+    # Em-dashes: -- surrounded by spaces or words
+    s = re.sub(r"\b--\b| -- ", r" &mdash; ", s)
+    # Action glyphs: [1], [2], [3], [1 action], [2 actions], [reaction], [free]
+    s = re.sub(
+        r"\[([123RrFf])(?:\s+actions?)?\]",
+        lambda mo: _glyph(mo.group(1)),
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        r"\[(reaction|free)\]",
+        lambda mo: _glyph(mo.group(1)),
+        s,
+        flags=re.IGNORECASE,
+    )
+    # Newlines to line breaks
+    s = s.replace("\n\n", "<br><br>").replace("\n", "<br>")
+    return s.strip()
+
+
 def _cost(spec: Any) -> str:
     """Glyph plus words for an action cost."""
     if spec in (None, "", {}):
@@ -1003,8 +1205,8 @@ def _cost(spec: Any) -> str:
     return f'<span class="cost-txt">{html.escape(s)}</span>'
 
 
-def _cost_glyphs(spec: Any) -> str:
-    """An action cost as glyphs alone, for a table column.
+def _cost_glyphs(spec: Any, default: str = "") -> str:
+    """An action cost as glyphs alone.
 
     `_cost` spells the cost out in words as well, which is right for a stat
     block's heading but not for a column standing beside Range and Duration --
@@ -1014,7 +1216,7 @@ def _cost_glyphs(spec: Any) -> str:
     since there is nothing else to draw.
     """
     if spec in (None, "", {}):
-        return "&mdash;"
+        return default
     s = str(spec).strip()
     if s == "1 to 3":
         return f'{_glyph("1")}<span class="cost-txt" style="margin:0 2px">to</span>{_glyph("3")}'
@@ -1129,7 +1331,8 @@ def _mod(n: int) -> str:
 def _traits(traits, rarity=None) -> str:
     out = []
     if rarity and rarity != "common":
-        out.append(f'<span class="trait rarity">{html.escape(rarity)}</span>')
+        r_str = html.escape(str(rarity))
+        out.append(f'<span class="trait rarity {r_str.lower()}">{r_str}</span>')
     out += [f'<span class="trait">{html.escape(str(t).replace("-", " "))}</span>' for t in traits or []]
     return f'<span class="traits">{"".join(out)}</span>' if out else ""
 
@@ -1938,7 +2141,7 @@ h1,h2,h3,h4{margin:0;font-weight:640;}
    It also uppercased the Range and Duration columns. */
 div.sub{font-family:'SheetSans',sans-serif;font-weight:650;font-size:7.2pt;
   letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
-  margin:13px 0 6px;break-after:avoid;}
+  margin:13px 0 6px;break-after:avoid;column-break-after:avoid;column-span:all;}
 div.sub:first-child{margin-top:0;}
 .action-glyph{font-family:'Pathfinder2eActions',sans-serif;font-weight:normal;font-style:normal;
   font-size:1.15em;line-height:1;vertical-align:0;display:inline-block;margin-right:2px;
@@ -1982,56 +2185,71 @@ div.sub:first-child{margin-top:0;}
   font-size:6.4pt;font-weight:650;letter-spacing:.09em;text-transform:uppercase;
   color:var(--muted);margin-top:2px;}
 .identity{display:grid;grid-template-columns:repeat(6,1fr);
-  border-bottom:1px solid var(--rule);}
+  margin-bottom:8px;}
 /* One more column, PFS characters only -- see .identity's Faction field. */
 .identity.pfs{grid-template-columns:repeat(7,1fr);}
-.identity .f{padding:4px 7px 5px;border-right:1px solid var(--hair);}
-.identity .f:last-child{border-right:0;}
+.identity .f{padding:4px 8px 5px 0;}
 .identity .v{font-size:8.6pt;font-weight:620;line-height:1.25;margin-top:1px;}
 .identity .v.sm{font-size:7.4pt;font-weight:600;}
-/* The left column only has to fit a skill name, its key attribute and a
-   modifier, so it gives width to the middle and right columns, which carry
-   the wordier blocks. */
-.cols{display:grid;grid-template-columns:1.24fr 1.3fr 1.62fr;}
-.col{padding:8px 9px 0;border-right:1px solid var(--hair);}
-.col:first-child{padding-left:0;}
-.col:last-child{border-right:0;padding-right:0;}
-.block{margin-bottom:9px;}
-.block-hd{font-family:'SheetSans',sans-serif;font-weight:700;font-size:6.6pt;
+
+/* Two-column layout for Page 1 */
+.page[data-sec="core"]{max-height:10.2in;overflow:hidden;padding:0.3in 0.35in;}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;}
+.col{padding:0;}
+
+.portrait-box{
+  border:0;
+  background:transparent;
+  padding:0;
+  margin-bottom:7px;
+  text-align:center;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+}
+.portrait{
+  width:100%;
+  aspect-ratio:9 / 16;
+  max-height:6.8in;
+  object-fit:contain;
+  object-position:top center;
+  display:block;
+  border:0;
+}
+.block{margin-bottom:7px;}
+.block-hd{font-family:'SheetSans',sans-serif;font-weight:700;font-size:6.4pt;
   letter-spacing:.11em;text-transform:uppercase;color:var(--ink);
-  border-bottom:1.2px solid var(--ink);padding-bottom:2.5px;margin-bottom:5px;
+  border-bottom:1.2px solid var(--ink);padding-bottom:2px;margin-bottom:4px;
   display:flex;align-items:baseline;gap:6px;}
-.block-hd .hint{margin-left:auto;font-weight:650;font-size:5.7pt;
+.block-hd .hint{margin-left:auto;font-weight:650;font-size:5.5pt;
   letter-spacing:.055em;color:var(--faint);text-transform:uppercase;}
-.abils{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
-.abil{border:1px solid var(--rule);padding:3.5px 7px 4px;background:var(--warm);}
-.abil .hd{display:flex;justify-content:space-between;align-items:baseline;}
-.abil .k{font-family:'SheetSans',sans-serif;font-weight:700;font-size:6.4pt;
-  letter-spacing:.1em;color:var(--muted);}
-.abil .s{font-size:6.4pt;color:var(--faint);font-weight:600;
-  font-variant-numeric:tabular-nums;}
-.abil .m{font-size:19.5pt;font-weight:700;line-height:1.05;color:var(--ink);
+.abils{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;}
+.abil{border:1px solid var(--rule);padding:2px 3px 3px;background:var(--warm);text-align:center;}
+.abil .k{font-family:'SheetSans',sans-serif;font-weight:700;font-size:6.2pt;
+  letter-spacing:.06em;color:var(--muted);text-transform:uppercase;}
+.abil .m{font-size:12pt;font-weight:700;line-height:1;color:var(--ink);
   text-align:center;margin-top:1px;}
+.sk-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:8px;}
 table.sk{width:100%;border-collapse:collapse;}
 /* The skills table is the tallest fixed block on page 1 and grows with every
    Lore the character has, so its row padding is the lever that keeps a
    many-Lore build on one sheet. */
-table.sk td{padding:1.05px 0;border-bottom:.6px dotted var(--hair);
+table.sk td{padding:.8px 0;border-bottom:.6px dotted var(--hair);
   vertical-align:middle;}
 table.sk tr:last-child td{border-bottom:0;}
-table.sk .n{font-size:8pt;font-weight:600;}
+table.sk .n{font-size:7.6pt;font-weight:600;}
 table.sk .n.untr{color:var(--muted);font-weight:400;}
-table.sk .ka{font-family:'SheetSans',sans-serif;font-size:5.7pt;font-weight:650;
-  color:var(--faint);letter-spacing:.05em;padding-left:4px;}
-table.sk .p{text-align:right;padding-right:5px;white-space:nowrap;}
-table.sk .t{text-align:right;font-size:9pt;font-weight:700;width:26px;}
+table.sk .ka{font-family:'SheetSans',sans-serif;font-size:5.4pt;font-weight:650;
+  color:var(--faint);letter-spacing:.05em;padding-left:3px;}
+table.sk .p{text-align:right;padding-right:3px;white-space:nowrap;}
+table.sk .t{text-align:right;font-size:8.4pt;font-weight:700;width:22px;}
 table.sk .t.untr{font-weight:500;color:var(--muted);}
 table.sk td.noline{border-bottom:0;padding-bottom:0;}
-table.sk tr.sk-assure td{padding-top:0;padding-bottom:1.05px;}
-table.sk tr.sk-assure .n{font-size:6.2pt;font-weight:500;font-style:italic;
-  color:var(--muted);padding-left:7px;}
-table.sk tr.sk-assure .ka{font-size:5.2pt;}
-table.sk tr.sk-assure .t{font-size:7.4pt;font-weight:600;color:var(--muted);}
+table.sk tr.sk-assure td{padding-top:0;padding-bottom:.8px;}
+table.sk tr.sk-assure .n{font-size:5.8pt;font-weight:500;font-style:italic;
+  color:var(--muted);padding-left:5px;}
+table.sk tr.sk-assure .ka{font-size:4.8pt;}
+table.sk tr.sk-assure .t{font-size:7pt;font-weight:600;color:var(--muted);}
 .sk-foot{font-size:6.4pt;color:var(--muted);margin-top:4px;line-height:1.35;}
 .tile{border:1.4px solid var(--ink);display:flex;align-items:stretch;
   background:var(--warm);margin-bottom:6px;}
@@ -2251,7 +2469,7 @@ table.str .tr.rune{color:var(--accent);font-weight:600;text-transform:capitalize
 .track{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:2px;}
 .track .grp{display:flex;align-items:center;gap:4px;}
 .track .grp .lbl{font-size:5.8pt;}
-.conds{display:grid;grid-template-columns:1fr;}
+.conds{display:grid;grid-template-columns:1fr 1fr;column-gap:8px;}
 .cond{display:flex;align-items:baseline;gap:5px;padding:2.1px 0;
   border-bottom:.6px dotted var(--hair);}
 .cond:last-child{border-bottom:0;}
@@ -2291,48 +2509,62 @@ table.str .tr.rune{color:var(--accent);font-weight:600;text-transform:capitalize
   text-align:left;}
 .growth .sprun .more{color:var(--faint);}
 
+/* ---- 2-column reference card flow ---- */
+.cards-flow{column-count:2;column-gap:14px;column-rule:.7px solid var(--hair);}
+
 /* ---- rules cards ---- */
-.card{break-inside:avoid;page-break-inside:avoid;border:1px solid var(--rule);
-  border-left:2.6px solid var(--accent);padding:6px 9px 7px;margin-bottom:7px;}
+.card{break-inside:avoid;page-break-inside:avoid;column-break-inside:avoid;
+  border:1px solid var(--rule);border-left:2.8px solid var(--accent);
+  background:var(--paper);padding:5px 8px 6px;margin-bottom:6px;}
 .card.plain{border-left-color:var(--rule);}
-.card.tight{padding:5px 9px 6px;}
-.card-hd{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;
-  margin-bottom:2px;}
-.card-hd h3{font-size:10.6pt;font-weight:700;}
-.card-hd .rank{font-family:'SheetSans',sans-serif;font-size:6.4pt;
-  font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--accent);border:.8px solid var(--accent-line);
-  padding:1.3px 4.5px;}
+.card.tight{padding:4px 7px 5px;}
+.card-hd{display:flex;align-items:baseline;justify-content:space-between;gap:5px;
+  flex-wrap:wrap;margin-bottom:2px;padding-bottom:2px;border-bottom:.8px solid var(--hair);}
+.card-hd h3{font-family:'SheetSerif',Georgia,serif;font-size:9.5pt;font-weight:700;
+  color:var(--ink);line-height:1.15;margin:0;}
+.card-hd .rank{font-family:'SheetSans',sans-serif;font-size:5.6pt;
+  font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--muted);border:.7px solid var(--rule);background:var(--warm);
+  padding:1px 4px;border-radius:1px;}
 .card-hd .cost{margin-left:auto;white-space:nowrap;display:flex;
   align-items:center;}
-.card-traits{margin:3px 0 4px;}
-.meta{font-size:7.3pt;color:var(--ink-soft);line-height:1.5;margin:0 0 4px;
-  padding:3.5px 6px;border-top:.7px solid var(--hair);
+.card-traits{margin:2.5px 0 3.5px;}
+.card-traits:empty{display:none;}
+.traits{display:inline-flex;flex-wrap:wrap;gap:2.5px;vertical-align:middle;}
+.trait{font-family:'SheetSans',sans-serif;font-size:5.5pt;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;background:#5e1420;color:#ffffff;
+  padding:1.2px 4.5px;border-radius:1px;white-space:nowrap;line-height:1.25;}
+.trait.rarity,.trait.uncommon{background:#8a6a1c;color:#ffffff;}
+.trait.rare{background:#8c3a3a;color:#ffffff;}
+.trait.unique{background:#4d3f6d;color:#ffffff;}
+
+.meta{font-size:6.9pt;color:var(--ink-soft);line-height:1.38;margin:3px 0 4px;
+  padding:2.5px 5px;background:var(--warm);border-top:.7px solid var(--hair);
   border-bottom:.7px solid var(--hair);}
-.meta b{font-family:'SheetSans',sans-serif;font-size:6.1pt;font-weight:700;
-  letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
-.meta .sep{color:var(--faint);margin:0 5px;}
-.rules{font-size:8.4pt;line-height:1.47;}
-.rules p{margin:0 0 4.5px;}
+.meta b{font-family:'SheetSans',sans-serif;font-size:5.8pt;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+.meta .sep{color:var(--faint);margin:0 4px;}
+.rules{font-size:7.6pt;line-height:1.38;}
+.rules p{margin:0 0 3px;}
 .rules p:last-child{margin-bottom:0;}
 .rules p.dim{color:var(--faint);}
-.rules ul,.rules ol{margin:3px 0 5px;padding-left:16px;}
-.rules li{margin-bottom:2px;}
-.rules hr{border:0;border-top:.8px solid var(--hair);margin:5px 0;}
+.rules ul,.rules ol{margin:2px 0 4px;padding-left:14px;}
+.rules li{margin-bottom:1.5px;}
+.rules hr{border:0;border-top:.8px solid var(--hair);margin:4px 0;}
 .rules strong{font-weight:700;}
 .rules h1,.rules h2,.rules h3,.rules h4,.rules h5{
-  font-family:'SheetSans',sans-serif;font-size:6.8pt;font-weight:700;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--accent);
-  margin:7px 0 3px;break-after:avoid;}
-.rules table{border-collapse:collapse;margin:4px 0 2px;}
-.rules table th{font-family:'SheetSans',sans-serif;font-size:5.9pt;
+  font-family:'SheetSans',sans-serif;font-size:6.4pt;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--accent);
+  margin:5px 0 2px;break-after:avoid;column-break-after:avoid;}
+.rules table{border-collapse:collapse;margin:3px 0 2px;width:100%;}
+.rules table th{font-family:'SheetSans',sans-serif;font-size:5.6pt;
   font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--muted);text-align:left;padding:0 12px 2.5px 0;
+  color:var(--muted);text-align:left;padding:0 8px 2px 0;
   border-bottom:.9px solid var(--rule);}
-.rules table td{padding:2.5px 12px 2.5px 0;font-size:8pt;}
+.rules table td{padding:2px 8px 2px 0;font-size:7.4pt;}
 /* Deity block: the one card with its own stat table, since a deity's mechanics
    are label/value pairs rather than prose. */
-.card.deity{border-left-width:3.4px;}
+.card.deity{border-left-width:3.4px;column-span:all;}
 /* Symbol beside the stat table. Height-only sizing keeps the artwork's own
    proportions, which the Community Use Policy requires. */
 .deitybody{display:flex;align-items:flex-start;gap:12px;}
@@ -2577,13 +2809,13 @@ def _card(
         actions = (system.get("actions") or {}).get("value")
         atype = (system.get("actionType") or {}).get("value") or ""
         cost = str(actions) if actions else (atype if atype in ("reaction", "free") else None)
-    cost_html = f'<span class="cost">{_cost(cost)}</span>' if cost else ""
+    cost_glyph = _cost_glyphs(cost) if cost else ""
     kick = f'<span class="rank">{_esc(kicker)}</span>' if kicker else ""
-    chosen_html = f'<div class="chosen"><b>As chosen</b> &nbsp;{chosen}</div>' if chosen else ""
+    chosen_html = f'<div class="chosen"><b>As chosen</b> &nbsp;{_note_html(chosen)}</div>' if chosen else ""
     heightened_html = _heightened_note(entry) if spell_rank is not None else ""
     return f"""
 <article class="card{' plain' if plain else ''}">
-  <div class="card-hd"><h3>{_esc(title or entry['name'])}</h3>{kick}{cost_html}</div>
+  <div class="card-hd"><h3>{cost_glyph}{_esc(title or entry['name'])}</h3>{kick}</div>
   <div class="card-traits">{_traits(entry.get('traits'), entry.get('rarity'))}</div>
   {meta}
   <div class="rules">{_rules_html(entry.get('desc_html', ''), spell_rank)}</div>
@@ -2615,6 +2847,42 @@ def _spell_meta(entry: dict[str, Any], dc: int | None) -> str:
     return f'<div class="meta">{"<span class=\'sep\'>|</span>".join(bits)}</div>' if bits else ""
 
 
+def _equipment_summary_html(ctx: dict[str, Any]) -> str:
+    ch = ctx["character"]
+    money = ch.get("money") if isinstance(ch.get("money"), dict) else {}
+    coins = []
+    for denom in ("gp", "sp", "cp", "pp"):
+        if money.get(denom):
+            coins.append(f"{money[denom]} {denom}")
+    wealth_str = ", ".join(coins) if coins else "0 gp"
+
+    worn_items = []
+    for a in ch.get("armor", []) or []:
+        if isinstance(a, dict) and a.get("name"):
+            worn_items.append(a["name"])
+    for w in ch.get("weapons", []) or []:
+        if isinstance(w, dict) and w.get("name"):
+            worn_items.append(w["name"])
+    for eq in ch.get("equipment", []) or []:
+        if isinstance(eq, dict) and eq.get("name"):
+            if eq.get("invested") or eq.get("worn"):
+                worn_items.append(eq["name"])
+        elif isinstance(eq, (list, tuple)) and eq:
+            worn_items.append(str(eq[0]))
+
+    worn_str = _esc(", ".join(worn_items[:8])) if worn_items else "—"
+    if len(worn_items) > 8:
+        worn_str += " &hellip;"
+
+    return f"""
+      <div class="block">
+        <div class="block-hd">Equipment Summary</div>
+        <div class="statrow"><span class="nm">Wealth</span>
+          <span class="tot" style="font-size:8.5pt">{_esc(wealth_str)}</span></div>
+        <div class="note" style="margin-top:4px"><b>Worn / Carried</b> {worn_str}</div>
+      </div>"""
+
+
 def _page_core(ctx: dict[str, Any]) -> str:
     ch, d = ctx["character"], ctx["derived"]
     abilities, level = ctx["abilities"], ctx["level"]
@@ -2626,12 +2894,9 @@ def _page_core(ctx: dict[str, Any]) -> str:
     # the character's -- so the binding is kept distinct.
     shield, character_name = ctx["shield"], ctx["name"]
 
-    # Score and modifier are printed together, but the modifier is what's
-    # actually rolled with -- it leads at nearly triple the size, the raw
-    # score demoted to a quiet corner note next to the ability's label.
+    # Modifier is what's actually rolled with -- led in a single row without raw scores.
     abil_html = "".join(
-        f'<div class="abil"><div class="hd"><span class="k">{_ABILITY_NAMES[k][1]}</span>'
-        f'<span class="s">{abilities[k]}</span></div>'
+        f'<div class="abil"><div class="k">{_ABILITY_NAMES[k][1]}</div>'
         f'<div class="m">{_mod(m.ability_mod(abilities[k]))}</div></div>'
         for k in _ABILITY_KEYS
     )
@@ -2656,7 +2921,13 @@ def _page_core(ctx: dict[str, Any]) -> str:
             )
         return html
 
-    sk_html = "".join(sk_row(r) for r in ctx["skills"])
+    skills = ctx["skills"]
+    mid = (len(skills) + 1) // 2
+    left_skills = skills[:mid]
+    right_skills = skills[mid:]
+    left_sk_html = "".join(sk_row(r) for r in left_skills)
+    right_sk_html = "".join(sk_row(r) for r in right_skills)
+    sk_html = f'<div class="sk-grid"><table class="sk">{left_sk_html}</table><table class="sk">{right_sk_html}</table></div>'
 
     save_html = "".join(
         f'<div class="statrow"><span class="nm">{label}</span>'
@@ -2792,6 +3063,8 @@ def _page_core(ctx: dict[str, Any]) -> str:
         for n, e in _CONDITIONS
     )
 
+    portrait_html = ctx.get("portrait_html") or ""
+
     return f"""
 <section class="page" data-sec="core">
   <div class="nameplate">{ctx['logo_html'] or _spiral(30)}
@@ -2801,9 +3074,7 @@ def _page_core(ctx: dict[str, Any]) -> str:
   </div>
   <div class="identity{' pfs' if ch.get('faction') else ''}">
     <div class="f"><div class="lbl">Ancestry &amp; Heritage</div>
-      <div class="v">{_esc(ch.get('ancestry') or '—')}
-        <span style="color:var(--muted)">/</span>
-        {_esc(ch.get('heritage') or '—')}</div></div>
+      <div class="v">{_esc(ch.get('ancestry') or '—')}{f'<br>{_esc(ch["heritage"])}' if ch.get('heritage') else ''}</div></div>
     <div class="f"><div class="lbl">Background</div>
       <div class="v">{_esc(ch.get('background') or '—')}</div></div>
     <div class="f"><div class="lbl">Deity</div>
@@ -2823,14 +3094,6 @@ def _page_core(ctx: dict[str, Any]) -> str:
     <div class="col">
       <div class="block"><div class="block-hd">Attributes</div>
         <div class="abils">{abil_html}</div></div>
-      <div class="block">
-        <div class="block-hd">Skills <span class="hint">T &middot; E &middot; M &middot; L</span></div>
-        <table class="sk">{sk_html}</table>
-        {f'<div class="sk-foot">{ctx["armor_note"]}</div>' if ctx["armor_note"] else ""}
-      </div>
-    </div>
-
-    <div class="col">
       <div class="block"><div class="block-hd">Defense</div>
         <div class="itemcap">{ac_cap}</div>
         <div class="tile">
@@ -2838,35 +3101,43 @@ def _page_core(ctx: dict[str, Any]) -> str:
           <div class="grid2">{ac_cells}</div>
         </div>{shield_tile}
       </div>
-      <div class="block"><div class="block-hd">Saving Throws</div>{save_html}</div>
-      <div class="block"><div class="block-hd">Hit Points</div>
-        <div class="hpboxes">
-          <div class="hpbox"><div class="v">{d['hp']}</div>
-            <div class="k">Full</div></div>
-          <div class="hpbox write"><div class="v"></div>
-            <div class="k">Current</div></div>
-          <div class="hpbox write"><div class="v"></div>
-            <div class="k">Temporary</div></div>
+      <div style="display:grid;grid-template-columns:1.05fr 0.95fr;gap:6px;">
+        <div class="block"><div class="block-hd">Hit Points</div>
+          <div class="hpboxes">
+            <div class="hpbox"><div class="v">{d['hp']}</div>
+              <div class="k">Full</div></div>
+            <div class="hpbox write"><div class="v"></div>
+              <div class="k">Current</div></div>
+            <div class="hpbox write"><div class="v"></div>
+              <div class="k">Temp</div></div>
+          </div>
+          <div class="track">
+            <div class="grp"><span class="lbl">Dying</span>{_circles(4, "hp")}</div>
+            <div class="grp"><span class="lbl">Wounded</span>{_circles(3, "hp")}</div>
+          </div>
         </div>
-        <div class="track">
-          <div class="grp"><span class="lbl">Dying</span>{_circles(4, "hp")}</div>
-          <div class="grp"><span class="lbl">Wounded</span>{_circles(3, "hp")}</div>
+        <div class="block"><div class="block-hd">Saving Throws</div>{save_html}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div class="block"><div class="block-hd">Perception &amp; Senses</div>
+          <div class="statrow"><span class="nm">Perception</span>
+            {_pips(prof.get('perception', 0) or 0)}
+            <span class="rk">{_RANK_ABBR.get(prof.get('perception', 0) or 0, '?')}</span>
+            <span class="tot">{_mod(d['perception'])}</span></div>
+          {f'<div class="note"><b>Senses</b> {_esc(ctx["vision"])}</div>' if ctx["vision"] else ""}
         </div>
-        <div class="note">Dying 4 = dead.</div>
+        <div class="block">
+          <div class="block-hd">Class DC</div>
+          <div class="statrow"><span class="nm">Class DC</span>
+            {_pips(prof.get('classDC', 0) or 0)}
+            <span class="rk">{_RANK_ABBR.get(prof.get('classDC', 0) or 0, '?')}</span>
+            <span class="tot">{d['class_dc']}</span></div>
+        </div>
       </div>
-      <div class="block"><div class="block-hd">Conditions
-        <span class="hint">tick &middot; write N</span></div>
-        <div class="conds">{conds}</div>
-      </div>
-    </div>
-
-    <div class="col">
-      <div class="block"><div class="block-hd">Perception &amp; Senses</div>
-        <div class="statrow"><span class="nm">Perception</span>
-          {_pips(prof.get('perception', 0) or 0)}
-          <span class="rk">{_RANK_ABBR.get(prof.get('perception', 0) or 0, '?')}</span>
-          <span class="tot">{_mod(d['perception'])}</span></div>
-        {f'<div class="note"><b>Senses</b> {_esc(ctx["vision"])}</div>' if ctx["vision"] else ""}
+      <div class="block">
+        <div class="block-hd">Skills <span class="hint">T &middot; E &middot; M &middot; L</span></div>
+        {sk_html}
+        {f'<div class="sk-foot">{ctx["armor_note"]}</div>' if ctx["armor_note"] else ""}
       </div>
       <div class="block"><div class="block-hd">Strikes</div>
         <table class="str">
@@ -2876,13 +3147,15 @@ def _page_core(ctx: dict[str, Any]) -> str:
         <div class="note">Multiple attack penalty &minus;5 / &minus;10, or
           &minus;4 / &minus;8 with an agile weapon.</div>
       </div>
-      {f'<div class="block"><div class="block-hd">Spellcasting</div>{cast_tile}</div>' if cast_tile else ""}
-      <div class="block">
-        <div class="statrow"><span class="nm">Class DC</span>
-          {_pips(prof.get('classDC', 0) or 0)}
-          <span class="rk">{_RANK_ABBR.get(prof.get('classDC', 0) or 0, '?')}</span>
-          <span class="tot">{d['class_dc']}</span></div>
+    </div>
+
+    <div class="col">
+      {portrait_html}
+      <div class="block"><div class="block-hd">Conditions
+        <span class="hint">tick &middot; write N</span></div>
+        <div class="conds">{conds}</div>
       </div>
+      {f'<div class="block"><div class="block-hd">Spellcasting</div>{cast_tile}</div>' if cast_tile else ""}
     </div>
   </div>
 
@@ -2915,7 +3188,7 @@ def _spell_cells(spell: dict[str, Any]) -> str:
     """
     system = spell.get("system", {}) or {}
     return (
-        f'<td class="ac">{_cost_glyphs((system.get("time") or {}).get("value"))}'
+        f'<td class="ac">{_cost_glyphs((system.get("time") or {}).get("value"), default="&mdash;")}'
         f'</td><td class="rg">{_spell_range(spell)}</td>'
         f'<td class="du">{_spell_duration(spell)}</td>'
     )
@@ -4042,7 +4315,7 @@ def _page_spells(ctx: dict[str, Any]) -> str:
 <section class="page" data-sec="spells">
   {_section("Spells", "Full rules text, alphabetical<br>"
                       "across every casting source")}
-  {cards or '<div class="rules"><p>No spells recorded.</p></div>'}
+  {f'<div class="cards-flow">{cards}</div>' if cards else '<div class="rules"><p>No spells recorded.</p></div>'}
   {_foot(ctx['name'], "Spells")}
 </section>"""
 
@@ -4111,7 +4384,7 @@ def _page_skill_actions(ctx: dict[str, Any]) -> str:
   {_section("Skill Actions",
             "Actions your training unlocks; those anyone<br>"
             "can attempt, and downtime, are omitted")}
-  {cards}
+  <div class="cards-flow">{cards}</div>
   {_foot(ctx['name'], "Skill Actions")}
 </section>"""
 
@@ -4198,9 +4471,7 @@ def _page_features(ctx: dict[str, Any]) -> str:
         # feat, that feat's card has to be printed too, because "you gain a
         # fighter feat" is not something anyone can play from.
         qualifier = _strip_to_qualifier(name, entry["name"])
-        feat_entries.append(
-            (name, _card(entry, kicker=kicker, title=name, chosen=_esc(note) if note else ""))
-        )
+        feat_entries.append((name, _card(entry, kicker=kicker, title=name, chosen=note if note else "")))
         if not qualifier:
             continue
         granted = lib.get(qualifier, "feat", quiet=True)
@@ -4214,22 +4485,20 @@ def _page_features(ctx: dict[str, Any]) -> str:
 
     feat_cards = "".join(html for _, html in sorted(feat_entries, key=lambda p: p[0].casefold()))
 
-    specials = [s for s in (ch.get("specials", []) or []) if str(s).strip()]
-    special_html = ""
-    if specials:
-        special_html = (
-            '<div class="sub">Recorded on the character, verbatim</div>'
-            '<article class="card plain tight"><div class="rules"><ul class="plainlist">'
-            + "".join(f"<li>{_esc(s)}</li>" for s in specials)
-            + "</ul></div></article>"
-        )
+    cards_block = (
+        f'<div class="cards-flow">{cards}</div>'
+        if cards
+        else '<div class="rules"><p>Nothing resolved.</p></div>'
+    )
+    feats_block = (
+        f'<div class="sub">Feats</div><div class="cards-flow">{feat_cards}</div>' if feat_cards else ""
+    )
 
     return f"""
 <section class="page" data-sec="features">
   {_section("Features", "Ancestry, heritage, background<br>and class features, in full")}
-  {cards or '<div class="rules"><p>Nothing resolved.</p></div>'}
-  {f'<div class="sub">Feats</div>{feat_cards}' if feat_cards else ""}
-  {special_html}
+  {cards_block}
+  {feats_block}
   {_foot(ctx['name'], "Features")}
 </section>"""
 
@@ -4801,7 +5070,7 @@ def _page_equipment(ctx: dict[str, Any]) -> str:
 <section class="page" data-sec="item-rules">
   {_section("Item Rules", "Full text for carried gear,<br>"
                           "in inventory order")}
-  {item_cards}
+  <div class="cards-flow">{item_cards}</div>
   {_foot(ctx['name'], "Item Rules")}
 </section>"""
 
@@ -5140,6 +5409,42 @@ def _armor_stats(
     return None, ""
 
 
+def _subclass_label(subclasses: list[dict[str, Any]], character: dict[str, Any]) -> str:
+    """Format the subclass and archetype subtitle under class & level on Page 1.
+
+    Combines the class subclass choice (e.g. 'Flurry', 'Warpriest', 'Thief')
+    and any taken archetype dedications (e.g. 'Fighter Archetype'). Falls back
+    to 'Key attribute STR' when no subclass or archetype dedication is active.
+    """
+    parts = []
+    if subclasses:
+        parts.append(subclasses[0]["name"])
+
+    archetypes = []
+    for feat in character.get("feats", []) or []:
+        if isinstance(feat, (list, tuple)) and feat:
+            name = str(feat[0]).strip()
+            if name.lower().endswith(" dedication"):
+                arch_name = name[:-11].strip()
+                if arch_name and arch_name not in archetypes:
+                    archetypes.append(arch_name)
+
+    if archetypes:
+        if len(archetypes) == 1:
+            parts.append(f"{archetypes[0]} Archetype")
+        else:
+            arch_str = " & ".join(archetypes)
+            parts.append(f"{arch_str} Archetypes")
+
+    if parts:
+        return " · ".join(parts)
+
+    keyability = character.get("keyability")
+    if keyability:
+        return f"Key attribute {str(keyability).upper()}"
+    return ""
+
+
 def _license_split(lib: _Library) -> tuple[set[str], set[str]]:
     """Which sourcebooks the sheet reproduced text from, split by licence
     regime, so the attribution page lists only what is actually on the page."""
@@ -5228,15 +5533,7 @@ def _build_context(
         "subclasses": subclasses,
         # Repeating the class name under "Fighter 9" tells the reader nothing;
         # classes with no subclass mechanic get their key attribute instead.
-        "subclass_label": (
-            subclasses[0]["name"]
-            if subclasses
-            else (
-                f"Key attribute {str(character.get('keyability') or '').upper()}"
-                if character.get("keyability")
-                else ""
-            )
-        ),
+        "subclass_label": _subclass_label(subclasses, character),
         "ancestry_stats": ancestry_stats,
         "ledger": character.get("ledger") or [],
         "quick_reference": character.get("quickReference"),
@@ -5463,6 +5760,11 @@ def render_character_sheet(
     if not out.parent.exists():
         raise ValueError(f"directory does not exist: {out.parent}")
 
+    if logo_path is None and _DEFAULT_LOGO_PATH.is_file():
+        logo_path = str(_DEFAULT_LOGO_PATH)
+    if symbol_dir is None and _DEFAULT_SYMBOL_DIR.is_dir():
+        symbol_dir = str(_DEFAULT_SYMBOL_DIR)
+
     logo_html, logo_warnings, logo_bytes = "", [], 0
     if logo_path:
         uri, logo_warnings = _logo_data_uri(logo_path)
@@ -5492,6 +5794,21 @@ def render_character_sheet(
         ctx = _build_context(character, lib, conn, native_variant_rules)
         ctx["logo_html"] = logo_html
         ctx["warnings"] = ctx["warnings"] + logo_warnings
+
+        portrait_val = character.get("portrait") or (character.get("identity") or {}).get("portrait")
+        portrait_uri = _resolve_portrait_data_uri(
+            portrait_val, output_path, class_name=character.get("class")
+        )
+        if portrait_uri:
+            ctx["portrait_uri"] = portrait_uri
+            ctx["portrait_html"] = (
+                f'<div class="portrait-box">'
+                f'<img class="portrait" src="{portrait_uri}" alt="{_esc(ctx["name"])}">'
+                f"</div>"
+            )
+        else:
+            ctx["portrait_uri"] = None
+            ctx["portrait_html"] = ""
 
         if symbol_dir and ctx["deity"]["status"] == "resolved":
             found = _find_symbol(symbol_dir, ctx["deity"]["entry"]["name"])

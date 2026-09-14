@@ -67,7 +67,7 @@
           "minimum": 1
         },
         "portrait": {
-          "description": "Filename of a portrait image, relative to the directory holding this file.",
+          "description": "Filename of a portrait image relative to the character file, or a base64 data URI / raw base64 string. Rendered sheets reserve a 9:16 aspect ratio area on Page 1 and scale images using object-fit: contain to preserve original dimensions without clipping.",
           "type": [
             "string",
             "null"

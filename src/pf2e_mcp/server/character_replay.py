@@ -1239,6 +1239,7 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
 
     return {
         "name": identity.get("name"),
+        "portrait": identity.get("portrait"),
         "class": _name_of(conn, class_slug, "classes"),
         "dualClass": None,
         "level": level,

@@ -19,9 +19,12 @@ from pf2e_mcp.server import sheet
 
 def _headings(html: str) -> list[tuple[str, str]]:
     return [
-        (m.group(1), m.group(2))
+        (
+            re.sub(r"<[^>]+>", "", re.sub(r'<span class="action-glyph">.*?</span>', "", m.group(1))).strip(),
+            m.group(2),
+        )
         for m in re.finditer(
-            r'<div class="card-hd"><h3>([^<]*)</h3><span class="rank">([^<]*)</span>',
+            r'<div class="card-hd"><h3>(.*?)</h3>\s*<span class="rank">([^<]*)</span>',
             html,
         )
     ]
@@ -64,7 +67,7 @@ def test_repeated_wrapper_does_not_print_indistinguishable_cards(rendered):
 
 
 def test_the_granted_feat_prints_its_own_rules_text(rendered):
-    """"You gain a fighter feat" is not something anyone can play from."""
+    """ "You gain a fighter feat" is not something anyone can play from."""
     granted = {h for h, kicker in _headings(rendered) if kicker.startswith("Granted by")}
     assert {"Double Slice", "Combat Grab", "Dueling Parry"} <= granted
     # The text itself, not just the name, has to be on the page.
@@ -122,20 +125,23 @@ def test_a_granted_feat_files_under_its_own_name(rendered):
 
 # ---------------------------------------------------------------- advancement
 
+
 @pytest.fixture
 def advancement(conn, tmp_path) -> str:
     """A native-format character whose plan names every skill choice."""
     from pf2e_mcp.server import character_replay
+
     document = {
         "schemaVersion": 1,
         "identity": {"name": "Skill Namer", "currentLevel": 7},
-        "build": {"ancestry": "orc", "background": "acolyte", "class": "ranger",
-                  "heritage": None},
+        "build": {"ancestry": "orc", "background": "acolyte", "class": "ranger", "heritage": None},
         "plan": [
-            {"level": 1, "choices": [
-                {"slot": "skillTraining",
-                 "pick": ["athletics", "nature", "intimidation", "stealth"]},
-            ]},
+            {
+                "level": 1,
+                "choices": [
+                    {"slot": "skillTraining", "pick": ["athletics", "nature", "intimidation", "stealth"]},
+                ],
+            },
             {"level": 3, "choices": [{"slot": "skillIncrease", "pick": "athletics"}]},
             {"level": 5, "choices": [{"slot": "skillIncrease", "pick": "intimidation"}]},
             {"level": 7, "choices": [{"slot": "skillIncrease", "pick": "athletics"}]},
@@ -174,8 +180,12 @@ def test_repeated_increases_on_one_skill_are_not_duplicate_feats(conn):
     """Athletics goes trained -> expert -> master through separate increases
     naming the same skill. That is the norm, not a duplicate feat."""
     from pf2e_mcp.server import build_tools
+
     character = {
-        "name": "Repeater", "class": "Ranger", "ancestry": "Orc", "level": 7,
+        "name": "Repeater",
+        "class": "Ranger",
+        "ancestry": "Orc",
+        "level": 7,
         "abilities": {"str": 18, "dex": 14, "con": 14, "int": 10, "wis": 14, "cha": 10},
         "proficiencies": {},
         "feats": [
@@ -185,26 +195,89 @@ def test_repeated_increases_on_one_skill_are_not_duplicate_feats(conn):
     }
     result = build_tools.validate_build(character)
     assert not [e for e in result["errors"] if "Duplicate" in e], result["errors"]
-    assert not [w for w in result["warnings"] if "not found in rules database" in w], \
-        result["warnings"]
+    assert not [w for w in result["warnings"] if "not found in rules database" in w], result["warnings"]
 
 
 # ------------------------------------------- parameterised feat names (#74)
+
+
+def test_feat_note_markdown_formatting():
+    """Feat notes recorded with markdown syntax (e.g. **bold**, -- em-dash,
+    [1] action glyph) should render HTML formatting in the 'As chosen' block."""
+    raw_note = "One action, **two Strikes**, against two enemies -- and [1] action cost"
+    formatted = sheet._note_html(raw_note)
+    assert "<strong>two Strikes</strong>" in formatted
+    assert "&mdash;" in formatted
+    assert '<span class="action-glyph">1</span>' in formatted
+    assert "<script>" not in formatted
+
+
+def test_rendered_feat_card_formats_sub_selection_note(tmp_path):
+    character = {
+        "name": "Sub-selection Tester",
+        "class": "Ranger",
+        "ancestry": "Orc",
+        "level": 8,
+        "abilities": {"str": 18, "dex": 14, "con": 12, "int": 10, "wis": 14, "cha": 10},
+        "proficiencies": {},
+        "feats": [
+            [
+                "Advanced Maneuver (Quick Reversal)",
+                "One action, **two Strikes**, against two different enemies -- flanked",
+                "Class Feat",
+                8,
+            ],
+        ],
+    }
+    out = tmp_path / "sub_selection.html"
+    sheet.render_character_sheet(character, str(out), level=8)
+    html_content = out.read_text(encoding="utf-8")
+    assert "<strong>two Strikes</strong>" in html_content
+    assert "&mdash;" in html_content
+    assert '<div class="chosen"><b>As chosen</b>' in html_content
+
+
+def test_subclass_and_archetype_label_formatting():
+    """Verify subclass and archetype dedications combine cleanly into the subtitle label."""
+    # Subclass + Archetype Dedication
+    label = sheet._subclass_label(
+        [{"name": "Flurry"}], {"feats": [["Fighter Dedication", None, "Class Feat", 2]]}
+    )
+    assert label == "Flurry · Fighter Archetype"
+
+    # Multiple Archetype Dedications
+    label_multi = sheet._subclass_label(
+        [{"name": "Flurry"}],
+        {
+            "feats": [
+                ["Fighter Dedication", None, "Class Feat", 2],
+                ["Rogue Dedication", None, "Class Feat", 9],
+            ]
+        },
+    )
+    assert label_multi == "Flurry · Fighter & Rogue Archetypes"
+
+    # Fallback to key attribute
+    label_fallback = sheet._subclass_label([], {"keyability": "str"})
+    assert label_fallback == "Key attribute STR"
+
 
 def test_a_prerequisite_matches_a_feat_recorded_with_its_choice(conn):
     """Mask of Pain requires "Orc Warmask". The character records the choice
     made inside that feat -- "Orc Warmask (The Unknown)" -- and the two must
     still match, or the prerequisite fails on a legal build."""
     from pf2e_mcp.server import pf2e_math as m
+
     character = {"feats": [["Orc Warmask (The Unknown)", None, "Ancestry Feat", 1]]}
     assert m.has_feat(character, "Orc Warmask") is True
 
 
 def test_a_printed_parenthetical_is_not_stripped_into_a_false_match(conn):
-    """"Tusks (Orc)" is the entry's printed name, not a recorded choice.
+    """ "Tusks (Orc)" is the entry's printed name, not a recorded choice.
     A prerequisite for a bare "Tusks" must not be satisfied by it via the
     stripping fallback... but the exact name must still match itself."""
     from pf2e_mcp.server import pf2e_math as m
+
     character = {"feats": [["Tusks (Orc)", None, "Ancestry Feat", 1]]}
     assert m.has_feat(character, "Tusks (Orc)") is True
 
@@ -213,10 +286,15 @@ def test_parameterised_feats_resolve_for_prerequisite_checking(conn):
     """They used to be reported as absent from the rules database, leaving
     their own prerequisites unverified and miscounting the archetype budget."""
     from pf2e_mcp.server import build_tools
+
     character = {
-        "name": "Param", "class": "Ranger", "ancestry": "Orc", "level": 11,
+        "name": "Param",
+        "class": "Ranger",
+        "ancestry": "Orc",
+        "level": 11,
         "abilities": {"str": 20, "dex": 16, "con": 16, "int": 12, "wis": 18, "cha": 10},
-        "proficiencies": {}, "feats": [
+        "proficiencies": {},
+        "feats": [
             ["Fighter Dedication", None, "Class Feat", 2],
             ["Basic Maneuver (Double Slice)", None, "Class Feat", 4],
             ["Advanced Maneuver (Combat Grab)", None, "Class Feat", 6],
@@ -229,8 +307,12 @@ def test_parameterised_feats_resolve_for_prerequisite_checking(conn):
 
 def test_a_heritage_in_the_feat_list_is_not_looked_up_as_a_feat(conn):
     from pf2e_mcp.server import build_tools
+
     character = {
-        "name": "Her", "class": "Ranger", "ancestry": "Orc", "level": 1,
+        "name": "Her",
+        "class": "Ranger",
+        "ancestry": "Orc",
+        "level": 1,
         "abilities": {"str": 18, "dex": 14, "con": 14, "int": 10, "wis": 14, "cha": 10},
         "proficiencies": {},
         "feats": [["Battle-Ready Orc", None, "Heritage", 1, "Heritage Feat"]],

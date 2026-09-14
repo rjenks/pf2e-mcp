@@ -43,9 +43,18 @@ PascalCase, the sections joined with hyphens, so a hyphen always means a
 section boundary and a two-word name never looks like one.
 
 Everything else about that character lives in the same folder: rendered sheets,
-chronicle scans, a portrait. **Call `build_character_schema` before writing your
-first one** -- the schema carries a description on every field and is the actual
-specification, not this document.
+chronicle scans, a portrait. The portrait can be stored as a standalone image
+file (e.g. `DrozaTheArbiter.jpeg`) or embedded directly into `identity.portrait` in the YAML
+as a base64 data URI (`data:image/jpeg;base64,...`).
+
+**Portrait Aspect Ratio & Defaults**: Sheet rendering reserves a **9:16 portrait space** on Page 1.
+The renderer uses `object-fit: contain` so images of any aspect ratio scale cleanly within
+the reserved 9:16 area without cropping, clipping, or distortion. When no specific character
+portrait is provided or auto-discovered, the sheet automatically falls back to a default generic
+portrait mapped from the character's class (`characters/generic-spellcaster.jpeg` for spellcasters
+such as Wizard, Cleric, Druid, Sorcerer, Bard, etc., or `characters/generic-melee.jpeg` for martial or unknown classes).
+
+**Call `build_character_schema` before writing your first one** -- the schema carries a description on every field and is the actual specification, not this document.
 
 Four things about the format change how you work:
 
