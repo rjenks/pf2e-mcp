@@ -4928,6 +4928,51 @@ def _page_ledger(ctx: dict[str, Any]) -> str:
 </section>"""
 
 
+def _page_organized_play(ctx: dict[str, Any], conn) -> str:
+    """The character's Pathfinder Society record: current standing plus every
+    chronicle applied, in the order they were played. Reuses
+    `chronicle_sheet`'s own page-building so this reads exactly like the
+    standalone chronicle document that tool produces -- one definition of
+    what a chronicle page looks like, not two that can drift apart.
+
+    Imported lazily to avoid a module-level cycle: `chronicle_sheet` imports
+    several helpers from this module already.
+
+    Absent entirely for a character with no `organizedPlay` block, the same
+    as every other section with nothing to show.
+    """
+    op = ctx.get("organized_play")
+    if not op:
+        return ""
+    from . import chronicle as ch
+    from . import chronicle_sheet as cs
+
+    log = {"schemaVersion": ch.SCHEMA_VERSION, "character": ctx["name"], **op}
+    result = ch.validate_chronicle_log(log, conn)
+    entries = log.get("chronicles") or []
+    adventures = [ch.lookup_adventure(conn, e.get("adventure", "")) for e in entries]
+
+    pages = [cs._page_summary(log, result, adventures, ctx.get("logo_html", ""))]
+    journal_page = cs._page_journal(log, result)
+    if journal_page:
+        pages.append(journal_page)
+    findings_page = cs._page_findings(result)
+    if findings_page:
+        pages.append(findings_page)
+    for i, (entry, adventure) in enumerate(zip(entries, adventures)):
+        pages.append(cs._page_chronicle(entry, adventure, i, log, result))
+
+    # These pages carry chronicle_sheet's own data-sec values (summary,
+    # journal, findings, chronicles) so its standalone toolbar can toggle
+    # them individually. Folded into this sheet, they read as one section --
+    # the same "one shared toggle" treatment `extra_pages` gets under
+    # "quick-reference" -- so every value is renamed to this section's own.
+    html = "".join(pages)
+    for key in ("summary", "journal", "findings", "chronicles"):
+        html = html.replace(f'data-sec="{key}"', 'data-sec="pfs"')
+    return html
+
+
 def _interpolate_quickref(text: str, ctx: dict[str, Any]) -> str:
     """Resolve `{token}` placeholders in quick-reference text against derived stats."""
     if not text or "{" not in text:
@@ -5734,6 +5779,7 @@ def _build_context(
 _OPTIONAL_SECTIONS = [
     ("advancement", "Advancement"),
     ("ledger", "Gold journal"),
+    ("pfs", "Pathfinder Society"),
     ("skill-actions", "Skill actions"),
     ("spells", "Spells"),
     ("features", "Features"),
@@ -5848,6 +5894,14 @@ def render_character_sheet(
     * `spellcasting` -- the slot table alone: every source's spells, what's
       prepared, and a bubble per slot to strike off as it's spent.
     * `inventory` -- the carried-gear table alone: quantity, Bulk, price.
+    * `pfs` -- the character's Pathfinder Society record, read from a native
+      document's `organizedPlay` block: a summary page (level, XP, currency
+      on hand, Reputation per faction, adventures played), a gold journal, a
+      validation page if anything about the chronicle chain doesn't add up,
+      and one page per chronicle in the order it was applied. Reuses
+      `pfs_render_chronicle_sheet`'s own page layout, folded under one
+      shared toggle rather than that tool's four. Absent for a Pathbuilder
+      export, which has nowhere to carry this.
     * `skill-actions` -- the skill actions the character's training unlocks,
       in full. Trained-gated ones only (actions anyone can attempt untrained
       are the basic rules, not this character's options), and downtime
@@ -5946,6 +6000,10 @@ def render_character_sheet(
     native_variant_rules = (
         ((character.get("build") or {}).get("variantRules") or []) if _native.is_native(character) else []
     )
+    # `as_legacy` returns the Pathbuilder-shaped build, which has no
+    # organizedPlay field at all -- captured here, ahead of that conversion,
+    # the same way native_variant_rules is.
+    organized_play = character.get("organizedPlay") if _native.is_native(character) else None
     character = _native.as_legacy(character, level)
     if paper not in _PAPER:
         raise ValueError(f"paper must be one of {sorted(_PAPER)}, got {paper!r}")
@@ -5990,6 +6048,7 @@ def render_character_sheet(
         ctx = _build_context(character, lib, conn, native_variant_rules)
         ctx["logo_html"] = logo_html
         ctx["warnings"] = ctx["warnings"] + logo_warnings
+        ctx["organized_play"] = organized_play
 
         portrait_val = character.get("portrait") or (character.get("identity") or {}).get("portrait")
         portrait_uri = _resolve_portrait_data_uri(
@@ -6029,6 +6088,7 @@ def render_character_sheet(
             + _page_spell_slots(ctx)
             + _page_inventory(ctx)
             + _page_ledger(ctx)
+            + _page_organized_play(ctx, conn)
             + qr_pages
             + _page_skill_actions(ctx)
             + _page_spells(ctx)
@@ -6054,6 +6114,8 @@ def render_character_sheet(
         sections.append("inventory")
         if ctx["ledger"]:
             sections.append("ledger")
+        if ctx["organized_play"]:
+            sections.append("pfs")
         if qr_pages or extra_pages:
             sections.append("quick-reference")
         if ctx["skill_actions"]:
@@ -6066,13 +6128,18 @@ def render_character_sheet(
         sections += ["tent-card", "notes", "attribution"]
 
         actions_font_b64 = _get_actions_font(conn)
+        pfs_css = ""
+        if ctx["organized_play"]:
+            from . import chronicle_sheet as _chronicle_sheet
+
+            pfs_css = _chronicle_sheet._CHRONICLE_CSS
         doc = (
             '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{_esc(ctx["name"])} &mdash; '
             f'{_esc(character.get("ancestry") or "")} '
             f'{_esc(character.get("class") or "")} {ctx["level"]}</title>\n'
-            f"<style>{_stylesheet(paper, actions_font_b64=actions_font_b64)}</style>\n</head>\n<body>\n"
+            f"<style>{_stylesheet(paper, actions_font_b64=actions_font_b64)}{pfs_css}</style>\n</head>\n<body>\n"
             f'{_toolbar(sections)}<div class="sheet">{pages}</div>\n'
             f"{_TOGGLE_SCRIPT}</body>\n</html>\n"
         )
