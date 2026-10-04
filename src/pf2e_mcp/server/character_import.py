@@ -43,6 +43,7 @@ from typing import Any
 from . import character as ch
 from . import character_replay as replay
 from . import feat_skill_grants
+from . import skill_reconstruction
 from .build_tools import _feat_slot_bucket
 
 #: The four feat buckets `build_tools._feat_slot_bucket` reports, mapped onto
@@ -542,7 +543,7 @@ def from_pathbuilder(
             "body": notes.strip(),
         }]
 
-    _recover_dedication_skills(document, build, conn)
+    skill_shortfall = _recover_skills(document, build, conn)
     _recover_lores(document, build, conn)
 
     # `_overrides_for` and `_attribute_mismatch` both diff the export against
@@ -574,6 +575,8 @@ def from_pathbuilder(
     }
     if unexplained:
         document["_import"]["derived_higher_than_export"] = unexplained
+    if skill_shortfall:
+        document["_import"]["skill_shortfall"] = skill_shortfall
 
     # An export lists languages as a flat set with no levels, exactly as this
     # format used to. Which one arrived with which Intelligence increase is not
@@ -621,6 +624,11 @@ def _overrides_for(
     unexplained: list[str] = []
     for key, value in stated.items():
         if not isinstance(value, int) or key in ("piloting", "computers"):
+            continue
+        # A caster rank means nothing to a character with no spells and no
+        # focus pool: Pathbuilder rates a spell-less Ranger's primal casting
+        # at its class DC regardless (#116). Nothing observable depends on it.
+        if key.startswith("casting") and not build.get("spellCasters") and not build.get("focusPoints"):
             continue
         have = derived.get(key, 0)
         if value > have:
@@ -702,7 +710,10 @@ def _lore_slug(name: str) -> str:
 
 
 def _recover_dedication_skills(
-    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+    document: dict[str, Any],
+    build: dict[str, Any],
+    conn: sqlite3.Connection,
+    have: dict[str, int],
 ) -> None:
     """Record which skill each dedication's training was spent on.
 
@@ -743,13 +754,6 @@ def _recover_dedication_skills(
     if not pending:
         return
 
-    try:
-        have = dict(
-            replay.at_level(document, current, conn)["proficiencies"]
-        )
-    except ValueError:
-        return
-
     def unexplained(skill: str) -> bool:
         return int(stated.get(skill) or 0) > 0 and int(have.get(skill) or 0) == 0
 
@@ -784,6 +788,157 @@ def _recover_dedication_skills(
         if level <= current:
             new_choice["status"] = "locked"
         entry.setdefault("choices", []).append(new_choice)
+
+
+def _recover_skills(
+    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+) -> dict[str, int]:
+    """Reconstruct how the export's skill ranks were bought, from the plan up.
+
+    One replay serves both steps -- the dedication picks and the general
+    training/increase reconstruction -- since the second builds on the first.
+    """
+    try:
+        have = dict(
+            replay.at_level(document, document["identity"]["currentLevel"], conn)["proficiencies"]
+        )
+    except ValueError:
+        return {}
+    _recover_dedication_skills(document, build, conn, have)
+    return _recover_skill_progression(document, build, conn, have)
+
+
+def _plan_entry(document: dict[str, Any], level: int) -> dict[str, Any]:
+    for entry in document["plan"]:
+        if entry.get("level") == level:
+            return entry
+    entry = {"level": level}
+    document["plan"].append(entry)
+    document["plan"].sort(key=lambda e: e.get("level") or 0)
+    return entry
+
+
+def _recover_skill_progression(
+    document: dict[str, Any],
+    build: dict[str, Any],
+    conn: sqlite3.Connection,
+    have: dict[str, int],
+) -> dict[str, int]:
+    """Spread the export's skill ranks over the grants that could have paid for them.
+
+    The export has final ranks only (#113). The plan needs a `skillTraining`
+    or `skillIncrease` per spend, so this works out a legal history: free
+    training at 1st level and at each Intelligence increase, class skill
+    increases, a heritage that trains a chosen skill, and feats that raise
+    ranks outright. See `skill_reconstruction` for the assignment itself.
+    Whatever the grants cannot pay for is left to become an override.
+    """
+    stated = build.get("proficiencies") or {}
+    current = document["identity"]["currentLevel"]
+    final = {s: int(stated.get(s) or 0) // 2 for s in replay.SKILLS}
+    derived = {s: int(have.get(s) or 0) // 2 for s in replay.SKILLS}
+    if not any(final[s] > derived[s] for s in final):
+        return {}
+
+    progression = conn.execute(
+        "SELECT trained_skills, skill_increase_levels FROM class_progression WHERE class_slug = ?",
+        (document["build"].get("class"),),
+    ).fetchone()
+    if progression is None:
+        return {}
+    additional = int((json.loads(progression["trained_skills"] or "{}")).get("additional") or 0)
+    int_score = replay._replay_attributes(document["plan"], 1)[0].get("int", 10)
+    level_one_picks = sum(
+        len(c["pick"]) if isinstance(c.get("pick"), list) else 1
+        for entry in document["plan"] if entry.get("level") == 1
+        for c in entry.get("choices") or []
+        if c.get("slot") == "skillTraining" and not c.get("grantedBy")
+    )
+
+    training: list[skill_reconstruction.Slot] = []
+    increases: list[skill_reconstruction.Slot] = []
+    count = max(additional + max((int_score - 10) // 2, 0) - level_one_picks, 0)
+    training += [skill_reconstruction.Slot(1) for _ in range(count)]
+    training += [
+        skill_reconstruction.Slot(lv, "intelligence")
+        for lv in replay.int_gain_levels(document["plan"], current)
+    ]
+    for lv in json.loads(progression["skill_increase_levels"] or "[]"):
+        if lv <= current:
+            increases.append(skill_reconstruction.Slot(lv))
+
+    heritage = document["build"].get("heritage")
+    row = conn.execute(
+        "SELECT description FROM entries WHERE slug = ? AND pack = 'heritages'", (heritage,)
+    ).fetchone() if heritage else None
+    if row:
+        grants_training, expert_at = skill_reconstruction.heritage_training(
+            feat_skill_grants.clean(row["description"])
+        )
+        if grants_training:
+            slot = skill_reconstruction.Slot(1, heritage)
+            training.append(slot)
+            if expert_at and expert_at <= current:
+                increases.append(
+                    skill_reconstruction.Slot(expert_at, heritage, pin_target=2, link=slot)
+                )
+
+    # Skills trained by something other than the class and background arrive
+    # at a level of their own, and nothing can be raised before then.
+    trained_at = {s: 1 for s in replay.SKILLS if derived[s] > 0}
+    for entry in document["plan"]:
+        entry_level = entry.get("level")
+        if not isinstance(entry_level, int):
+            continue
+        for choice in entry.get("choices") or []:
+            picks = choice.get("pick")
+            if choice.get("slot") == "skillTraining" and entry_level > 1:
+                for pick in picks if isinstance(picks, list) else [picks]:
+                    if pick in trained_at:
+                        trained_at[pick] = max(trained_at[pick], entry_level)
+            elif choice.get("slot") in replay._FEAT_CATEGORIES and isinstance(picks, str):
+                feat = conn.execute(
+                    "SELECT description FROM entries WHERE slug = ? AND pack = 'feats'", (picks,)
+                ).fetchone()
+                if not feat:
+                    continue
+                for target in skill_reconstruction.feat_increase_steps(
+                    feat_skill_grants.clean(feat["description"])
+                ):
+                    if entry_level <= current:
+                        increases.append(
+                            skill_reconstruction.Slot(entry_level, picks, pin_target=target)
+                        )
+
+    assigned_training, assigned_increases, shortfall = skill_reconstruction.solve(
+        final, derived, trained_at, training, increases
+    )
+
+    def record(level: int, slot_name: str, pick: str, source: str | None, note: str) -> None:
+        choice: dict[str, Any] = {"slot": slot_name, "pick": pick}
+        if source:
+            choice["grantedBy"] = source
+        choice["note"] = note
+        if level <= current:
+            choice["status"] = "locked"
+        _plan_entry(document, level).setdefault("choices", []).append(choice)
+
+    note = (
+        "Reconstructed from the Pathbuilder export's final ranks, which do not say "
+        "when each was gained. A legal history, not necessarily the one played."
+    )
+    level_one = [a.skill for a in assigned_training if a.slot.level == 1 and not a.slot.source]
+    if level_one:
+        _plan_entry(document, 1).setdefault("choices", []).append(
+            {"slot": "skillTraining", "pick": level_one, "status": "locked", "note": note}
+        )
+    for assignment in assigned_training:
+        if assignment.slot.level == 1 and not assignment.slot.source:
+            continue
+        record(assignment.slot.level, "skillTraining", assignment.skill, assignment.slot.source, note)
+    for assignment in sorted(assigned_increases, key=lambda a: a.slot.level):
+        record(assignment.slot.level, "skillIncrease", assignment.skill, assignment.slot.source, note)
+    return shortfall
 
 
 def _recover_lores(

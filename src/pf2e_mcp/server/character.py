@@ -648,6 +648,11 @@ def _check_skill_grants(document: dict[str, Any]) -> list[dict[str, Any]]:
     """Check provenance recorded for non-increase skill training choices."""
     issues: list[dict[str, Any]] = []
     feat_levels: dict[str, int] = {}
+    # A heritage grants from 1st level and is not a plan choice, so it is a
+    # valid source in its own right ("skilled-human" trains a chosen skill).
+    heritage = (document.get("build") or {}).get("heritage")
+    if heritage:
+        feat_levels[heritage] = 1
     for entry in document.get("plan") or []:
         level = entry.get("level")
         if not isinstance(level, int):

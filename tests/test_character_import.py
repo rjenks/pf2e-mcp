@@ -111,7 +111,7 @@ def test_the_plan_is_reconstructed_level_by_level(export, conn):
     }
     assert picks[1] == {"stonemasons-eye"}
     assert picks[2] == {"soul-warden-dedication", "recognize-spell"}
-    assert picks[3] == {"incredible-initiative"}
+    assert picks[3] == {"incredible-initiative", "medicine"}  # + the skill increase
 
 
 def test_awarded_feats_become_grants_not_choices(export, conn):
@@ -236,8 +236,9 @@ def test_import_shares_one_replay_between_overrides_and_attribute_mismatch(expor
     its replay has to see the plan *before* that mutation while the other
     two need to see it *after*. But `_overrides_for` and `_attribute_mismatch`
     both then diff against the exact same, now-final document -- collapsible
-    from two replays into one shared result, down to two total rather than
-    three."""
+    from two replays into one shared result. `_recover_skills` (dedication
+    picks and skill reconstruction share one replay) runs before both, making
+    three in total rather than the four of one replay per consumer."""
     calls = {"n": 0}
     real_at_level = character_import.replay.at_level
 
@@ -248,7 +249,7 @@ def test_import_shares_one_replay_between_overrides_and_attribute_mismatch(expor
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(character_import.replay, "at_level", counting_at_level)
         character_import.from_pathbuilder(export, conn)
-    assert calls["n"] == 2
+    assert calls["n"] == 3
 
 
 def test_a_nonzero_export_rank_lower_than_derived_is_reported():

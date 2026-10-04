@@ -678,6 +678,38 @@ def _background_lore_name(raw: Any) -> str | None:
     return text.removesuffix(" Lore").strip() or None
 
 
+_CANNY_ACUMEN_TARGETS = {"fortitude", "reflex", "will", "perception"}
+
+
+def _apply_canny_acumen(plan: list[dict], level: int, proficiencies: dict[str, int]) -> list[str]:
+    """Canny Acumen: expert in a chosen save or Perception, master at 17th level.
+
+    The choice has no structured home in the rules data (it is a ChoiceSet
+    whose answer lives on the character), so it is read from the plan choice's
+    `note` or `parameter`. The feat sets a rank rather than adding a step, so a
+    class that is already expert there still reaches master at 17th.
+    """
+    trace: list[str] = []
+    for entry in plan:
+        entry_level = entry.get("level")
+        if not isinstance(entry_level, int) or entry_level > level:
+            continue
+        for choice in entry.get("choices") or []:
+            if choice.get("pick") != "canny-acumen":
+                continue
+            raw = choice.get("parameter") or choice.get("note")
+            if isinstance(raw, list):
+                raw = raw[0] if raw else None
+            target = str(raw or "").strip().lower()
+            if target not in _CANNY_ACUMEN_TARGETS:
+                continue
+            rank = 6 if level >= 17 else 4
+            if proficiencies.get(target, 0) < rank:
+                proficiencies[target] = rank
+                trace.append(f"L{entry_level} Canny Acumen: {target}")
+    return trace
+
+
 def _apply_feat_skill_grants(
     conn: sqlite3.Connection,
     entry: dict,
@@ -1399,6 +1431,7 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
     prof_trace = _apply_feature_proficiencies(
         conn, proficiencies, features + chosen_features, class_slug, tradition
     )
+    prof_trace += _apply_canny_acumen(plan, level, proficiencies)
     languages, language_trace = _replay_languages(document, plan, level)
     lores, skill_trace = _replay_skills(conn, document, progression, plan, level, proficiencies)
 

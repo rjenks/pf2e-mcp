@@ -552,7 +552,7 @@
           }
         },
         "grantedBy": {
-          "description": "Deterministic provenance for a skillTraining choice. Use a feat slug when the feat grants it, or 'intelligence' for the additional skill granted when an Intelligence modifier increases.",
+          "description": "Deterministic provenance for a skillTraining choice. Use a feat or heritage slug when it grants it, or 'intelligence' for the additional skill granted when an Intelligence modifier increases.",
           "type": [
             "string",
             "null"

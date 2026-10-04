@@ -149,3 +149,58 @@ def test_import_infers_dedication_picks_from_final_ranks(conn):
     assert sorted(grants_[0]["pick"]) == ["stealth", "thievery"]
     assert "stealth" not in doc.get("proficiencyOverrides", {})
     assert "thievery" not in doc.get("proficiencyOverrides", {})
+
+
+def test_canny_acumen_reaches_master_at_17_even_for_a_class_already_expert(conn):
+    plan = [{"level": 13, "choices": [{"slot": "generalFeat", "pick": "canny-acumen", "note": "Will"}]}]
+    doc = _document(plan)
+    assert character_replay.at_level(doc, 16, conn)["proficiencies"]["will"] >= 4
+    assert character_replay.at_level(doc, 17, conn)["proficiencies"]["will"] == 6
+
+
+from pf2e_mcp.server import skill_reconstruction as sr
+
+
+def test_feat_increase_steps_read_skill_mastery_once():
+    text = (
+        "Rogue: Increase your proficiency rank in one of your skills from expert to "
+        "master and in another of your skills from trained to expert. Investigator: "
+        "Increase your proficiency rank in one of your skills from expert to master "
+        "and in another of your skills from trained to expert."
+    )
+    assert sr.feat_increase_steps(text) == [3, 2]
+
+
+def test_heritage_training_with_later_expert():
+    text = (
+        "You become trained in one skill of your choice. At 5th level, you become an "
+        "expert in the chosen skill."
+    )
+    assert sr.heritage_training(text) == (True, 5)
+
+
+def test_solver_respects_rank_gates_and_chains():
+    # Legendary needs 15th level, and every step needs the one before it.
+    final = {"athletics": 4}
+    inc = [sr.Slot(lv) for lv in (3, 5, 7, 9, 11, 13, 15, 17, 19)]
+    training, increases, short = sr.solve(final, {"athletics": 1}, {"athletics": 1}, [], inc)
+    assert not short
+    levels = sorted(a.slot.level for a in increases)
+    assert len(levels) == 3 and levels[0] >= 3 and levels[1] >= 7 and levels[2] >= 15
+
+
+def test_solver_leaves_unpayable_ranks_as_shortfall():
+    # Nothing to buy legendary with before 15th level.
+    _, _, short = sr.solve({"athletics": 4}, {"athletics": 1}, {"athletics": 1}, [], [sr.Slot(3), sr.Slot(5), sr.Slot(7)])
+    assert short == {"athletics": 1}
+
+
+def test_solver_picks_the_heritage_skill_that_lets_everything_fit():
+    # Two skills each need expert at 14 (pinned) and master later; the heritage's
+    # chosen skill is expert at 5, so it must be the one that needs two steps.
+    heritage = sr.Slot(1, "skilled-human")
+    linked = sr.Slot(5, "skilled-human", pin_target=2, link=heritage)
+    inc = [linked, sr.Slot(14, "skill-mastery", pin_target=2), sr.Slot(15), sr.Slot(17)]
+    final = {"acrobatics": 3, "diplomacy": 2}
+    training, increases, short = sr.solve(final, {}, {}, [heritage, sr.Slot(1)], inc)
+    assert not short
