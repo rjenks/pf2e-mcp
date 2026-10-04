@@ -42,6 +42,7 @@ from typing import Any
 
 from . import character as ch
 from . import character_replay as replay
+from . import feat_skill_grants
 from .build_tools import _feat_slot_bucket
 
 #: The four feat buckets `build_tools._feat_slot_bucket` reports, mapped onto
@@ -541,6 +542,7 @@ def from_pathbuilder(
             "body": notes.strip(),
         }]
 
+    _recover_dedication_skills(document, build, conn)
     _recover_lores(document, build, conn)
 
     # `_overrides_for` and `_attribute_mismatch` both diff the export against
@@ -697,6 +699,91 @@ def _lore_slug(name: str) -> str:
     if text.lower().endswith(" lore"):
         text = text[:-5].strip()
     return text.lower().replace(" ", "-")
+
+
+def _recover_dedication_skills(
+    document: dict[str, Any], build: dict[str, Any], conn: sqlite3.Connection
+) -> None:
+    """Record which skill each dedication's training was spent on.
+
+    A dedication that trains "Stealth or Thievery plus one skill of your
+    choice" leaves no trace in a Pathbuilder export beyond the skills' final
+    ranks, so replay has nothing to apply and the ranks would otherwise come
+    back as overrides. The export is the rules authority here -- Pathbuilder
+    only lets a skill be trained if some grant paid for it -- so any skill it
+    rates trained that replay still leaves untrained, and that this feat could
+    have granted, is that feat's pick.
+
+    Fixed grants ("you become trained in Arcana") need nothing recorded; replay
+    applies them from the feat's text. Only `choice` grants, and the `free`
+    grant that rides alongside one ("... plus one skill of your choice", which
+    is routinely spent on the other half of the same pair), are inferred. A
+    free pick with no such hint is indistinguishable from a class's own free
+    pick and is left for the generic skill recovery (#113).
+    """
+    stated = build.get("proficiencies") or {}
+    current = document["identity"]["currentLevel"]
+
+    # Each dedication that leaves a decision to the player, with what it grants.
+    pending: list[tuple[dict, dict, Any, list[dict]]] = []
+    for entry in document["plan"]:
+        for choice in entry.get("choices") or []:
+            slug_ = choice.get("pick")
+            if choice.get("slot") not in replay._FEAT_CATEGORIES or not isinstance(slug_, str):
+                continue
+            row = conn.execute(
+                "SELECT name, traits, description FROM entries WHERE slug = ? AND pack = 'feats'",
+                (slug_,),
+            ).fetchone()
+            if not row or "dedication" not in (row["traits"] or ""):
+                continue
+            parsed = feat_skill_grants.parse(row["description"])["grants"]
+            if any(g["kind"] != "fixed" for g in parsed):
+                pending.append((entry, choice, row, parsed))
+    if not pending:
+        return
+
+    try:
+        have = dict(
+            replay.at_level(document, current, conn)["proficiencies"]
+        )
+    except ValueError:
+        return
+
+    def unexplained(skill: str) -> bool:
+        return int(stated.get(skill) or 0) > 0 and int(have.get(skill) or 0) == 0
+
+    for entry, choice, row, parsed in pending:
+        level = entry.get("level")
+        slug_ = choice["pick"]
+        options: list[str] = []
+        picks: list[str] = []
+        for grant in parsed:
+            if grant["kind"] == "choice":
+                options += grant["options"]
+                candidates = [o for o in grant["options"] if unexplained(o)]
+            elif grant["kind"] == "free":
+                candidates = [o for o in options if unexplained(o)]
+            else:
+                continue
+            if not candidates:
+                continue
+            have[candidates[0]] = 2
+            picks.append(candidates[0])
+        if not picks:
+            continue
+        new_choice: dict[str, Any] = {
+            "slot": "skillTraining",
+            "pick": picks if len(picks) > 1 else picks[0],
+            "grantedBy": slug_,
+            "note": (
+                f"Inferred from the Pathbuilder export: {row['name']} trains these, "
+                f"and nothing else in the plan accounts for them."
+            ),
+        }
+        if level <= current:
+            new_choice["status"] = "locked"
+        entry.setdefault("choices", []).append(new_choice)
 
 
 def _recover_lores(

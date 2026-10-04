@@ -87,6 +87,7 @@ import sqlite3
 from typing import Any
 
 from . import class_skills
+from . import feat_skill_grants
 from . import character as ch
 from . import pf2e_math as m
 
@@ -677,6 +678,48 @@ def _background_lore_name(raw: Any) -> str | None:
     return text.removesuffix(" Lore").strip() or None
 
 
+def _apply_feat_skill_grants(
+    conn: sqlite3.Connection,
+    entry: dict,
+    entry_level: int,
+    proficiencies: dict[str, int],
+) -> list[str]:
+    """Apply the unconditional skill training of the feats chosen at one level.
+
+    Only `fixed` grants are applied here -- the skill is named by the feat, so
+    nothing needs deciding. A skill the character already had becomes expert
+    where the feat says so, and is otherwise left for a `skillTraining` pick
+    (`grantedBy` the feat) to cover, since "instead trained in a skill of your
+    choice" is the player's choice. `choice` and `free` grants are likewise
+    only ever the plan's say-so; see `feat_skill_grants`.
+    """
+    trace: list[str] = []
+    for choice in entry.get("choices") or []:
+        if choice.get("slot") not in _FEAT_CATEGORIES:
+            continue
+        picks = choice.get("pick")
+        for pick in picks if isinstance(picks, list) else [picks]:
+            row = _one(
+                conn,
+                "SELECT name, description FROM entries WHERE slug = ? AND pack = 'feats'",
+                (pick,),
+            ) if isinstance(pick, str) else None
+            if not row:
+                continue
+            for grant in feat_skill_grants.parse(row["description"])["grants"]:
+                if grant["kind"] != "fixed":
+                    continue
+                skill = grant["options"][0]
+                current = proficiencies.get(skill, 0)
+                if current == 0:
+                    proficiencies[skill] = 2
+                    trace.append(f"L{entry_level} {row['name']}: trained in {skill}")
+                elif grant["if_trained"] == "expert" and current == 2:
+                    proficiencies[skill] = 4
+                    trace.append(f"L{entry_level} {row['name']}: expert in {skill}")
+    return trace
+
+
 def _replay_skills(
     conn: sqlite3.Connection,
     document: dict,
@@ -722,6 +765,11 @@ def _replay_skills(
         entry_level = entry.get("level")
         if not isinstance(entry_level, int) or entry_level > level:
             continue
+        # A chosen feat's own fixed skill grants (a dedication's "you become
+        # trained in Arcana") come before the level's explicit picks, so that
+        # a pick recorded for the same skill is judged against the character as
+        # they stood before the feat.
+        trace += _apply_feat_skill_grants(conn, entry, entry_level, proficiencies)
         for choice in entry.get("choices") or []:
             slot = choice.get("slot")
             picks = choice.get("pick") if slot in ("skillTraining", "skillIncrease") else []
