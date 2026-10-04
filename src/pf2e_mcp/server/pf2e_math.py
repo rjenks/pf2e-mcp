@@ -115,6 +115,17 @@ def has_feat(character: dict, name: str) -> bool:
     return any(strip_trailing_parenthetical(r) == target for r in recorded)
 
 
+def has_feature(character: dict, name: str) -> bool:
+    """True if the character has the named class feature (or other special).
+
+    Class features such as Unimpeded Journey are not feats and never appear in
+    the feat list, but a feat can name one as a prerequisite; replay records
+    them under `specials`.
+    """
+    target = name.strip().lower()
+    return any(str(s).strip().lower() == target for s in character.get("specials") or [])
+
+
 def has_lore(character: dict, name: str) -> bool:
     lores = character.get("lores", [])
     return any(l and l[0] and name.strip().lower() in l[0].strip().lower() for l in lores)
@@ -225,6 +236,28 @@ def check_single_prerequisite(
         return None
 
     if kind == "skill_rank":
+        # Two shapes the ingestion's parser leaves in the `skill` field verbatim
+        # rather than splitting: "acrobatics or athletics" (any of several) and
+        # Skill Mastery's "at least one skill and expert in at least one skill"
+        # (two ranks over any skills).
+        text = str(structured["skill"]).strip().lower()
+        both = re.fullmatch(
+            r"at least one skill and (trained|expert|master|legendary) in at least one skill", text
+        )
+        if both:
+            ranks = sorted(
+                (skill_rank_value(character, s) or 0 for s in KNOWN_SKILLS), reverse=True
+            )
+            first = RANK_BONUS.get(structured["rank"], 999)
+            second = RANK_BONUS.get(both.group(1), 999)
+            return len(ranks) >= 2 and ranks[0] >= max(first, second) and ranks[1] >= min(first, second)
+        if " or " in text:
+            names = [n.strip() for n in re.split(r",|\bor\b", text) if n.strip()]
+            values = [skill_rank_value(character, n) for n in names]
+            threshold = RANK_BONUS.get(structured["rank"], 999)
+            if any(v is not None and v >= threshold for v in values):
+                return True
+            return False if all(v is not None for v in values) else None
         current = skill_rank_value(character, structured["skill"])
         if current is None:
             return None
@@ -272,6 +305,7 @@ def check_single_prerequisite(
             return bool(has_familiar)
         return (
             has_feat(character, name)
+            or has_feature(character, name)
             or character.get("ancestry", "").lower() == name_lower
             or character.get("heritage", "").lower() == name_lower
             or character.get("background", "").lower() == name_lower

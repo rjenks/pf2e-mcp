@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from typing import Any, Literal
 
 from . import class_skills
@@ -560,6 +561,38 @@ def list_skill_increase_options(character: dict[str, Any] | str) -> dict[str, An
 # pack, none has prerequisites, and a Skill Increase may legitimately repeat.
 _NON_FEAT_ROW_CATEGORIES = frozenset({"skill increase", "skill training", "heritage"})
 
+# A granted row is a class feature or feat handed out by something else (a
+# dedication's Surprise Attack, a feat's Sneak Attack), not a choice. Its name
+# can coincide with an unrelated feat -- Surprise Attack is also an Assassin
+# archetype feat -- so looking it up in the feats pack and checking
+# prerequisites reports errors about a feat the character never took (#115).
+_GRANTED_ROW_CATEGORIES = frozenset({"awarded feat"})
+
+
+def _is_granted_row(feat: Any) -> bool:
+    if not (isinstance(feat, (list, tuple)) and len(feat) > 2):
+        return False
+    return str(feat[2] or "").strip().lower() in _GRANTED_ROW_CATEGORIES
+
+
+_REPEATABLE = re.compile(
+    r"(?:can|may) (?:select|take|choose) this feat (?:more than once|multiple times|up to)"
+    r"|(?:can|may) (?:select|take) (?:this feat )?(?:up to )?\w+ times",
+    re.IGNORECASE,
+)
+
+
+def _is_repeatable_feat(conn: sqlite3.Connection, name: str) -> bool:
+    """True if the feat's own text says it can be taken more than once (#70)."""
+    row = conn.execute(
+        "SELECT description FROM entries WHERE pack = 'feats' AND name = ? COLLATE NOCASE",
+        (name,),
+    ).fetchone() or conn.execute(
+        "SELECT description FROM entries WHERE pack = 'feats' AND name = ? COLLATE NOCASE",
+        (m.strip_trailing_parenthetical(name) or name,),
+    ).fetchone()
+    return bool(row and _REPEATABLE.search(re.sub(r"<[^>]+>", " ", row["description"] or "")))
+
 
 def _is_skill_row(feat: Any) -> bool:
     """True for a row in the feat list that is not a feat -- see
@@ -706,6 +739,14 @@ def validate_build(
 
     feats = character.get("feats", [])
     seen = set()
+    _repeat_conn = get_connection()
+    _repeat_cache: dict[str, bool] = {}
+
+    def _repeatable_names(feat_name: str) -> bool:
+        if feat_name not in _repeat_cache:
+            _repeat_cache[feat_name] = _is_repeatable_feat(_repeat_conn, feat_name)
+        return _repeat_cache[feat_name]
+
     for f in feats:
         name = f[0] if f else None
         if not name:
@@ -717,12 +758,13 @@ def validate_build(
         # master -> legendary through four separate increases naming the same
         # skill. Counting those as duplicate feats reported hard errors on a
         # correct build.
-        if _is_skill_row(f):
+        if _is_skill_row(f) or _is_granted_row(f):
             continue
         key = name.strip().lower()
-        if key in seen:
+        if key in seen and not _repeatable_names(name):
             errors.append(f"Duplicate feat: {name}")
         seen.add(key)
+    _repeat_conn.close()
 
     overrides = pfs.load_overrides()
     ancestry_taken = 0
@@ -733,6 +775,8 @@ def validate_build(
         for f in feats:
             name = f[0] if f else None
             if not name:
+                continue
+            if _is_granted_row(f):
                 continue
             if _is_skill_row(f):
                 # A skill name, not a feat name. Looking it up would report
