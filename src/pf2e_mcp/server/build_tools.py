@@ -1300,6 +1300,12 @@ def _feat_prerequisite_names(feat_name: str) -> list[str]:
     without re-deriving prerequisite structure the ingestion already
     parsed."""
     entry_rows = _fetchall("SELECT id FROM entries WHERE name = ? COLLATE NOCASE", (feat_name,))
+    if not entry_rows and feat_name.rstrip().endswith(")") and " (" in feat_name:
+        # A parameterized pick, e.g. "Basic Maneuver (Combat Grab)": the entry
+        # is named without its parameter.
+        entry_rows = _fetchall(
+            "SELECT id FROM entries WHERE name = ? COLLATE NOCASE", (feat_name.rsplit(" (", 1)[0],)
+        )
     if not entry_rows:
         return []
     prereq_rows = _fetchall(

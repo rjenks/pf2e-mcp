@@ -38,3 +38,16 @@ def test_skill_mastery_prerequisite_needs_two_ranks():
     assert m.check_single_prerequisite({"proficiencies": {"stealth": 4, "thievery": 2}}, "skill_rank", spec, {})
     assert not m.check_single_prerequisite({"proficiencies": {"stealth": 2}}, "skill_rank", spec, {})
     assert not m.check_single_prerequisite({"proficiencies": {"stealth": 4}}, "skill_rank", spec, {})
+
+
+def test_parameterized_feat_resolves_prerequisites_of_its_base_entry(conn):
+    # #124: "Basic Maneuver (Combat Grab)" is not an entry name, so the second
+    # dedication after Fighter Dedication was reported as premature.
+    assert build_tools._feat_prerequisite_names("Basic Maneuver (Combat Grab)") == ["Fighter Dedication"]
+    feats = [
+        ["Fighter Dedication", None, "Class Feat", 2, "Archetype Feat"],
+        ["Basic Maneuver (Combat Grab)", None, "Class Feat", 4, "Archetype Feat"],
+        ["Reactive Striker", None, "Class Feat", 4, "Class Feat 4"],
+        ["Rogue Dedication", None, "Class Feat", 6, "Archetype Feat"],
+    ]
+    assert build_tools._validate_dedication_exclusivity({"feats": feats}) == []
