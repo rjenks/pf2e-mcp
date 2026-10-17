@@ -51,3 +51,19 @@ def test_parameterized_feat_resolves_prerequisites_of_its_base_entry(conn):
         ["Rogue Dedication", None, "Class Feat", 6, "Archetype Feat"],
     ]
     assert build_tools._validate_dedication_exclusivity({"feats": feats}) == []
+
+
+def test_null_optional_strings_do_not_crash_prerequisites():
+    # #121: a document replayed with `heritage: null` has the key, so
+    # `.get("heritage", "")` returned None and `.lower()` raised.
+    character = {"ancestry": None, "heritage": None, "background": None, "class": None}
+    assert not m.check_single_prerequisite(character, "named_reference", {"name": "Dhampir"}, {})
+    assert not m.check_single_prerequisite(
+        character, "class_feature", {"class": "Fighter", "kind": "class_feature"}, {}
+    )
+
+
+def test_null_class_and_ancestry_do_not_crash_level_up_choices():
+    character = {"class": None, "ancestry": None, "level": 1, "feats": []}
+    for category in ("class", "ancestry"):
+        build_tools.list_available_feats(character, category)

@@ -345,11 +345,11 @@ def list_available_feats(
 
     required_traits: set[str] = set()
     if feat_category == "class":
-        class_name = character.get("class", "").strip().lower()
+        class_name = (character.get("class") or "").strip().lower()
         if class_name:
             required_traits.add(class_name)
     elif feat_category == "ancestry":
-        ancestry = character.get("ancestry", "").strip().lower()
+        ancestry = (character.get("ancestry") or "").strip().lower()
         if ancestry:
             required_traits.add(ancestry)
         # A heritage's own feat list is gated on a trait matching the
