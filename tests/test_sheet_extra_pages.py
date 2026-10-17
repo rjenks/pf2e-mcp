@@ -54,6 +54,27 @@ def test_an_extra_page_lands_before_the_licence_page(character, conn, tmp_path):
     assert html.index('id="canary"') < html.index('data-sec="attribution"')
 
 
+def test_an_extra_page_sits_with_the_other_quick_reference_cards(character, conn, tmp_path):
+    """Reading order, not just "before the licence page": a caller's card is
+    grouped with this project's own quick-reference pages, not stranded after
+    every later section (features, item rules, the tent card, sheet notes)."""
+    out = tmp_path / "adjacent.html"
+    character = {
+        **character,
+        "quickReference": {
+            "pages": [{"title": "Built-in Card", "groups": [
+                {"title": "A", "moves": [{"name": "Built-in move", "text": "x"}]}
+            ]}]
+        },
+    }
+    marker = '<section class="page" data-sec="quick-reference"><p id="canary"></p></section>'
+    sheet.render_character_sheet(character, str(out), level=5, extra_pages=[marker])
+    html = out.read_text(encoding="utf-8")
+    assert html.index("Built-in Card") < html.index('id="canary"') < html.index(
+        'data-sec="features"'
+    )
+
+
 def test_multiple_extra_pages_are_all_inserted(character, conn, tmp_path):
     out = tmp_path / "multi.html"
     pages = [

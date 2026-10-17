@@ -930,10 +930,11 @@
           "maximum": 20
         },
         "kind": {
-          "description": "'starting' is the character's initial purse and should appear exactly once, first. 'purchase' and 'sale' are for gear -- buying and selling something, including a full-credit return before anything has been played. 'treasure' is an adventure award; 'gift' is anything handed over rather than found or bought (an NPC's payment, a party split); 'income' covers everything else that adds or removes gold without being one of the above (Earn Income, a fine, a tax).",
+          "description": "'starting' is the character's initial purse and should appear exactly once, first. 'startingSlot' is a permanent item granted free by a higher-level start's item allotment (Character Wealth table); it carries gp 0 and names the item. 'purchase' and 'sale' are for gear -- buying and selling something, including a full-credit return before anything has been played. 'treasure' is an adventure award; 'gift' is anything handed over rather than found or bought (an NPC's payment, a party split); 'income' covers everything else that adds or removes gold without being one of the above (Earn Income, a fine, a tax).",
           "type": "string",
           "enum": [
             "starting",
+            "startingSlot",
             "purchase",
             "sale",
             "treasure",

@@ -2796,8 +2796,8 @@ table.grid td.du .sust{font-family:'SheetSans',sans-serif;font-size:5.6pt;
 .tent-data,.tent-data *{line-height:1.15;}
 .tent-data{flex:1 1 auto;min-width:0;height:100%;
   display:flex;flex-direction:column;justify-content:center;gap:6px;}
-.tent-portrait-wrap{flex:none;height:100%;display:flex;align-items:center;}
-.tent-portrait{height:100%;width:auto;object-fit:cover;}
+.tent-portrait-wrap{flex:none;height:100%;width:2.3in;display:flex;align-items:center;}
+.tent-portrait{height:100%;width:100%;object-fit:cover;}
 .tent-portrait-blank{height:100%;width:2.3in;border:1.6px dashed var(--rule);
   background:var(--warm);}
 .tent-name{border-bottom:2px solid var(--ink);padding-bottom:4px;}
@@ -2832,6 +2832,10 @@ table.grid td.du .sust{font-family:'SheetSans',sans-serif;font-size:5.6pt;
   .toolbar{display:none !important;}
   .sheet{max-width:none;margin:0;padding:0;}
   .page{box-shadow:none;margin:0;padding:0 0 0.2in;min-height:0;background:#fff;}
+  /* The printable height on letter is 10.18in (11in less the @page margins),
+     so the screen cap of 10.2in would make a full page 1 taller than a
+     printed page and Chrome would break it, printing the nameplate alone. */
+  .page[data-sec="core"]{max-height:10.1in;}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 }
 @page{size:__PAPER__;margin:0.42in 0.45in 0.4in;}
@@ -4873,6 +4877,7 @@ def _page_inventory(ctx: dict[str, Any]) -> str:
 #: a title-cased version of the raw value rather than disappearing.
 _LEDGER_KIND_LABELS = {
     "starting": "Starting purse",
+    "startingSlot": "Starting slot",
     "purchase": "Purchase",
     "sale": "Sale",
     "treasure": "Treasure",
@@ -5836,7 +5841,7 @@ document.querySelectorAll('.toolbar input[type=checkbox]').forEach(function (box
 
 
 def render_character_sheet(
-    character: dict[str, Any] | str,
+    character: _native.CharacterInput,
     output_path: str,
     paper: str = "letter",
     logo_path: str | None = None,
@@ -5847,8 +5852,10 @@ def render_character_sheet(
     """Write a print-ready, fully self-contained HTML character sheet and
     return a summary of what went onto it.
 
-    `extra_pages` appends caller-supplied HTML after the rest of the sheet
-    (still ahead of the licence page, which stays last) -- each string is
+    `extra_pages` inserts caller-supplied HTML in reading order right after
+    this project's own quick-reference cards (the ones built from the
+    character's `quickReference.pages`), and still ahead of every later
+    section and the licence page, which stays last -- each string is
     inserted verbatim, so a full `<section class="page" data-sec="...">
     ...</section>` block is expected, not a bare fragment; anything not
     scoped under its own class risks colliding with this file's own
@@ -5858,7 +5865,8 @@ def render_character_sheet(
     the same file as the sheet rather than keeping it a separate document,
     without this renderer needing to know anything about what that content
     is. Every such page is grouped under one shared toolbar toggle,
-    `"quick-reference"`.
+    `"quick-reference"`, and now sits with the rest of that toggle's pages
+    rather than stranded after everything else.
 
     The rendered file has no external dependencies of any kind -- fonts are
     inlined as base64 WOFF2, all ornament is generated inline SVG, and nothing
@@ -6082,6 +6090,12 @@ def render_character_sheet(
         # text, is what makes that possible: as one section each, the tables
         # were stranded on top of a dozen pages nobody re-reads.
         qr_pages = _page_quick_reference(ctx)
+        if extra_pages:
+            # Caller-supplied cards share the quick-reference toggle, so they
+            # belong in reading order right after the cards this project
+            # generates from the character's own data -- not stranded after
+            # every other section, which is where a bare append would put them.
+            qr_pages += "".join(extra_pages)
         pages = (
             _page_core(ctx)
             + _page_advancement(ctx)
@@ -6097,8 +6111,6 @@ def render_character_sheet(
             + _page_tent_card(ctx)
             + _page_notes(ctx)
         )
-        if extra_pages:
-            pages += "".join(extra_pages)
         orc_books, ogl_books = _license_split(lib)
         ctx["orc_books"], ctx["ogl_books"] = orc_books, ogl_books
         pages += _page_legal(ctx)

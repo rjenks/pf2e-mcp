@@ -83,7 +83,7 @@ def character_schema() -> dict[str, Any]:
     }
 
 
-def validate_character(character: dict[str, Any] | str) -> dict[str, Any]:
+def validate_character(character: ch.CharacterInput) -> dict[str, Any]:
     """Check that a character file is well formed and internally consistent.
 
     Runs two layers. The **structural** layer checks the document against the
@@ -127,7 +127,7 @@ def validate_character(character: dict[str, Any] | str) -> dict[str, Any]:
 
 
 def character_at_level(
-    character: dict[str, Any] | str, level: int | None = None
+    character: ch.CharacterInput, level: int | None = None
 ) -> dict[str, Any]:
     """Work out what a character looks like at a given level.
 
@@ -214,7 +214,7 @@ def import_pathbuilder(export: dict[str, Any]) -> dict[str, Any]:
 
 
 def export_pathbuilder(
-    character: dict[str, Any] | str, level: int | None = None
+    character: ch.CharacterInput, level: int | None = None
 ) -> dict[str, Any]:
     """Render a character at a given level as a Pathbuilder export.
 

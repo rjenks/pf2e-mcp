@@ -133,3 +133,29 @@ def test_unknown_class_defaults_to_generic_melee(conn, tmp_path):
     ftr_src = re.search(r'<img class="portrait" src="([^"]+)"', ftr_html).group(1)
     # Unknown class matches generic melee default
     assert unk_src == ftr_src
+
+
+def test_tent_card_portrait_slot_has_a_fixed_width_and_covers_it(base_character, conn, tmp_path):
+    """A landscape portrait must not widen the tent card's portrait slot: the
+    slot has a fixed width and the image fills it, cropping rather than
+    overflowing into the stat column."""
+    base_character["portrait"] = (
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    out = tmp_path / "tent_portrait.html"
+    sheet.render_character_sheet(base_character, str(out), level=3)
+    html = out.read_text(encoding="utf-8")
+
+    assert ".tent-portrait-wrap{flex:none;height:100%;width:2.3in;" in html
+    assert ".tent-portrait{height:100%;width:100%;object-fit:cover;}" in html
+
+
+def test_core_page_is_capped_below_the_printable_height_in_print(base_character, conn, tmp_path):
+    """The core page's 10.2in screen cap exceeds the 10.18in printable height
+    on letter, so a full page 1 broke in print and lost its stat blocks."""
+    out = tmp_path / "core_print_cap.html"
+    sheet.render_character_sheet(base_character, str(out), level=3)
+    html = out.read_text(encoding="utf-8")
+
+    print_block = html[html.index("@media print"):]
+    assert '.page[data-sec="core"]{max-height:10.1in;}' in print_block

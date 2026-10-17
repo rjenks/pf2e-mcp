@@ -129,6 +129,28 @@ def test_an_unresolvable_item_slug_is_flagged_as_a_warning(conn):
     assert warning["level"] == "warning"
 
 
+def test_a_starting_slot_grant_is_valid_and_leaves_the_balance_alone(conn):
+    """A permanent item from a higher-level start's item allotment is free,
+    so it must validate as its own kind and not move the running total."""
+    document = _document(
+        [
+            {"level": 8, "kind": "starting", "gp": 180, "note": "Starting purse."},
+            {"level": 8, "kind": "startingSlot", "gp": 0, "item": "lifting-belt",
+             "note": "4th-level slot."},
+            {"level": 8, "kind": "purchase", "gp": -80, "note": "Bought a belt."},
+        ],
+        currency={"gp": 100, "sp": 0},
+    )
+    result = ch.validate_document(document, conn)
+    assert not [i for i in result["issues"] if i["level"] == "error"], result["issues"]
+    assert not [i for i in result["issues"]
+                if i["code"] == "currency_disagrees_with_ledger"]
+
+
+def test_a_starting_slot_prints_with_its_own_heading():
+    assert sheet._LEDGER_KIND_LABELS["startingSlot"] == "Starting slot"
+
+
 def test_a_character_with_no_ledger_at_all_is_unaffected(conn):
     """The feature is additive -- nothing about it should break a character
     file written before it existed."""

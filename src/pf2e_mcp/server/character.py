@@ -61,9 +61,10 @@ import re
 import sqlite3
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from jsonschema import Draft202012Validator
+from pydantic import Field
 from referencing import Registry, Resource
 from ruamel.yaml import YAML
 
@@ -1026,6 +1027,22 @@ def validate_document(document: Any, conn: sqlite3.Connection | None = None) -> 
 
 
 # --------------------------------------------------------------- front door
+
+
+CharacterInput = Annotated[
+    dict[str, Any] | str,
+    Field(
+        description=(
+            "A character: either the document itself, or a path to a "
+            "`.pf2e.yaml` file on disk to load it from (e.g. "
+            "`characters/AshKordun-Orc-Cleric/AshKordun.pf2e.yaml`). "
+            "A string is always read as a path, never as inline JSON or YAML."
+        )
+    ),
+]
+"""The type of every tool's `character` parameter. Annotated so that the
+"or a path" half of the contract appears in each tool's generated schema,
+where a caller sees it, rather than only in prose a caller may skim."""
 
 
 def resolve_input(character: Any) -> Any:
