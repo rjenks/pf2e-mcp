@@ -306,10 +306,10 @@ def check_single_prerequisite(
         return (
             has_feat(character, name)
             or has_feature(character, name)
-            or character.get("ancestry", "").lower() == name_lower
-            or character.get("heritage", "").lower() == name_lower
-            or character.get("background", "").lower() == name_lower
-            or character.get("class", "").lower() == name_lower
+            or (character.get("ancestry") or "").lower() == name_lower
+            or (character.get("heritage") or "").lower() == name_lower
+            or (character.get("background") or "").lower() == name_lower
+            or (character.get("class") or "").lower() == name_lower
         )
 
     if kind == "compound_named":
@@ -373,7 +373,7 @@ def check_single_prerequisite(
             # "unconfirmed" -- a hard, wrong False. Deliberately narrow:
             # only true if the character's class matches, not a broader
             # "does this class ever get this feature" claim.
-            return character.get("class", "").lower() == structured["class"].lower()
+            return (character.get("class") or "").lower() == structured["class"].lower()
         if inner_kind and inner_kind != "override":
             return check_single_prerequisite(character, inner_kind, structured, derived)
         return None
