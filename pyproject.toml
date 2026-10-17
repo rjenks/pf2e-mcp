@@ -1,6 +1,6 @@
 [project]
 name = "pf2e-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for Pathfinder 2nd Edition Remastered rules lookup and character building"
 readme = "README.md"
 authors = [
