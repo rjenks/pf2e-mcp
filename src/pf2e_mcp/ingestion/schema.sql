@@ -191,6 +191,21 @@ CREATE TABLE skill_actions (
 );
 CREATE INDEX idx_skill_actions_skill ON skill_actions(skill);
 
+-- Feats from other classes that an archetype lets you take as archetype feats,
+-- at the level the archetype names. Only the "Archetypes" journal in
+-- foundryvtt/pf2e carries this (an "Additional Feats:" paragraph on each
+-- archetype's page, e.g. Wrestler: 4th Combat Grab, ...), so this table is a
+-- parse of that paragraph -- see _insert_archetype_additional_feats. About 63
+-- archetypes have one.
+CREATE TABLE archetype_additional_feats (
+    archetype TEXT NOT NULL,       -- the journal page name, e.g. 'Wrestler'
+    feat_id TEXT NOT NULL REFERENCES entries(id),
+    feat_name TEXT NOT NULL,       -- entries.name of the resolved feat
+    level INTEGER NOT NULL,        -- level at which the archetype grants access
+    PRIMARY KEY (archetype, feat_id, level)
+);
+CREATE INDEX idx_archetype_additional_feats_feat ON archetype_additional_feats(feat_id);
+
 CREATE TABLE ancestry_boosts (
     ancestry_slug TEXT PRIMARY KEY,
     hp INTEGER,

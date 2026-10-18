@@ -981,6 +981,69 @@ def _insert_skill_actions(conn: sqlite3.Connection, data_dir: Path) -> None:
     print(f"Linked {inserted} skill/action pairs from the Skill Actions table")
 
 
+_ADDITIONAL_FEATS_PARA_RE = re.compile(r"<p>\s*<strong>\s*Additional Feats:?\s*</strong>(.*?)</p>", re.S)
+_ADDITIONAL_FEATS_LEVEL_RE = re.compile(r"<strong>\s*(\d+)(?:st|nd|rd|th)\s*</strong>")
+_UUID_OPTIONAL_LABEL_RE = re.compile(r"@UUID\[([^\]]+)\](?:\{([^}]*)\})?")
+
+
+def _insert_archetype_additional_feats(conn: sqlite3.Connection, data_dir: Path) -> None:
+    """Reads each page of the "Archetypes" journal for its "Additional Feats"
+    paragraph into `archetype_additional_feats` (see that table's schema
+    comment). The paragraph is `<strong>4th</strong> link, link;
+    <strong>8th</strong> link`, so it is split on the level labels.
+
+    A link is resolved by its trailing id first, falling back to its name
+    (the `{label}`, or the last UUID segment when older data names the feat
+    there instead of giving an id) against `feats` -- preferring the Remaster
+    entry when legacy and Remaster feats share a name. A link that resolves to
+    neither is logged and skipped rather than failing ingestion.
+
+    Must run after `_insert_entries`."""
+    journals_path = data_dir / "packs" / "journals.json"
+    try:
+        journals = json.loads(journals_path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+    archetypes = next((j for j in journals if j.get("name") == "Archetypes"), None)
+    if not archetypes:
+        return
+
+    inserted = 0
+    unresolved: list[str] = []
+    for page in archetypes.get("pages", []):
+        archetype = page.get("name", "")
+        match = _ADDITIONAL_FEATS_PARA_RE.search(page.get("text", {}).get("content", ""))
+        if not archetype or not match:
+            continue
+        # parts = [preamble, "4", "links...", "8", "links..."]
+        parts = _ADDITIONAL_FEATS_LEVEL_RE.split(match.group(1))
+        for level, links in zip(parts[1::2], parts[2::2]):
+            for uuid, label in _UUID_OPTIONAL_LABEL_RE.findall(links):
+                tail = _resolve_uuid_to_id(uuid) or ""
+                row = conn.execute(
+                    "SELECT id, name FROM entries WHERE id = ? AND pack = 'feats'", (tail,)
+                ).fetchone()
+                if row is None:
+                    name = (label or tail).strip()
+                    row = conn.execute(
+                        "SELECT id, name FROM entries WHERE pack = 'feats' AND name = ? "
+                        "ORDER BY COALESCE(is_remaster, 0) DESC, id LIMIT 1",
+                        (name,),
+                    ).fetchone()
+                if row is None:
+                    unresolved.append(f"{archetype}: {label or tail}")
+                    continue
+                conn.execute(
+                    "INSERT OR REPLACE INTO archetype_additional_feats "
+                    "(archetype, feat_id, feat_name, level) VALUES (?, ?, ?, ?)",
+                    (archetype, row[0], row[1], int(level)),
+                )
+                inserted += 1
+    print(f"Linked {inserted} archetype additional-feat rows")
+    for item in unresolved:
+        print(f"  unresolved additional feat: {item}")
+
+
 def _insert_ancestry_boosts(conn: sqlite3.Connection, packs: dict[str, list[dict]]) -> None:
     for anc in packs.get("ancestries", []):
         system = anc.get("system", {})
@@ -1125,6 +1188,7 @@ def build_database(output_path: Path, cache_dir: Path) -> None:
     _insert_class_progression(conn, packs)
     _insert_class_spell_progression(conn, data_dir)
     _insert_skill_actions(conn, data_dir)
+    _insert_archetype_additional_feats(conn, data_dir)
     _insert_ancestry_boosts(conn, packs)
     _insert_background_boosts(conn, packs)
     _insert_pfs_adventures(conn)

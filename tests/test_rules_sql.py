@@ -117,3 +117,29 @@ def test_runaway_query_is_aborted_at_the_documented_step_budget(monkeypatch) -> 
         "select count(*) from counter"
     )
     assert "too much work" in result["error"]
+
+
+def test_archetype_additional_feats_wrestler() -> None:
+    """The Archetypes journal's "Additional Feats" paragraph is ingested."""
+    result = rules_tools.rules_sql(
+        "select feat_name, level from archetype_additional_feats where archetype = ? order by level, feat_name",
+        params=["Wrestler"],
+    )
+    assert [(r["feat_name"], r["level"]) for r in result["rows"]] == [
+        ("Combat Grab", 4),
+        ("Crushing Grab", 4),
+        ("Snagging Strike", 4),
+        ("Whirling Throw", 8),
+        ("Godbreaker", 20),
+    ]
+
+
+def test_archetype_additional_feats_all_resolve_to_entries() -> None:
+    result = rules_tools.rules_sql(
+        "select count(*) as n, "
+        "sum(feat_id not in (select id from entries)) as dangling "
+        "from archetype_additional_feats"
+    )
+    row = result["rows"][0]
+    assert row["n"] > 50
+    assert row["dangling"] == 0
