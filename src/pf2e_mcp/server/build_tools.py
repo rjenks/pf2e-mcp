@@ -1710,7 +1710,7 @@ def _validate_proficiency_ranks(character: dict[str, Any]) -> list[str]:
     _bump("fortitude", c["fortitude_rank"])
     _bump("reflex", c["reflex_rank"])
     _bump("will", c["will_rank"])
-    _bump("classDC", c["class_dc_rank"])
+    _bump("classDC", c["class_dc_rank"] if c["class_dc_rank"] is not None else 1)  # trained: see character_replay
     attacks = json.loads(c["attacks"]) if c["attacks"] else {}
     for atk_key in ("simple", "martial", "advanced", "unarmed"):
         _bump(atk_key, attacks.get(atk_key))
