@@ -309,6 +309,83 @@ def _feat_flat_bonus(conn: sqlite3.Connection, feat_slugs: set, selector: str) -
     return total
 
 
+#: Speed bonuses that Foundry spells as an `AdjustModifier` upgrade keyed to panache rather than as a plain
+#: `FlatModifier`, so `_rule_speed_bonus` cannot read them. Swashbuckler's Vivacious Speed raises the
+#: status bonus from stylish combatant; out of panache it is 5 * floor((level + 5) / 8).
+_CURATED_SPEED_FEATURES = {"vivacious-speed": lambda level: 5 * ((level + 5) // 8)}
+
+_LEVEL_FORMULA_RE = re.compile(r"^\s*(\d+)\s*\*\s*\(?\s*floor\(\s*\(\s*@actor\.level\s*\+\s*(\d+)\s*\)\s*/\s*(\d+)\s*\)\s*\)?\s*$")
+
+#: The only predicates under which a speed rule is applied. An empty predicate always applies; "not armored"
+#: is taken as met because the replay carries no worn armor for most characters (a known gap), which is the
+#: right default for the monk's Incredible Movement.
+_UNCONDITIONAL_PREDICATES = ([], [{"not": "self:armored"}])
+
+
+def _rule_speed_bonus(rules: list[dict[str, Any]], level: int) -> int:
+    """Sum the always-on `land-speed` FlatModifiers of one rules list, evaluating the level formula some use.
+
+    Conditional rules (raging, panache, a worn item) are skipped rather than guessed: their predicate is
+    not something a static replay can know. Typed bonuses of the same type do not stack, so this keeps
+    only the best status bonus and sums untyped ones, which is how the rules treat them.
+    """
+    best_by_type: dict[str, int] = {}
+    untyped = 0
+    for rule in rules or []:
+        if rule.get("key") != "FlatModifier" or str(rule.get("selector") or "").lower() != "land-speed":
+            continue
+        if (rule.get("predicate") or []) not in _UNCONDITIONAL_PREDICATES:
+            continue
+        value = rule.get("value")
+        if isinstance(value, str):
+            m = _LEVEL_FORMULA_RE.match(value)
+            if not m:
+                continue
+            value = int(m.group(1)) * ((level + int(m.group(2))) // int(m.group(3)))
+        if not isinstance(value, int):
+            continue
+        kind = rule.get("type")
+        if kind in (None, "", "untyped"):
+            untyped += value
+        else:
+            best_by_type[kind] = max(best_by_type.get(kind, 0), value)
+    return untyped + sum(best_by_type.values())
+
+
+def _feature_speed_bonus(
+    conn: sqlite3.Connection, features: list[dict[str, Any]], heritage_slug: str | None, level: int
+) -> int:
+    """Speed from automatic class features and the heritage, which `_feat_flat_bonus` (taken feats only) misses.
+
+    Examples it now derives: monk Incredible Movement, barbarian Furious Footfalls, champion Blessed
+    Swiftness, and flat heritage bonuses. Status bonuses from different sources do not stack, so the
+    class-feature total is the best single status bonus.
+    """
+    status: list[int] = []
+    total = 0
+    sources = [(f.get("entry_id"), None) for f in features] + [(None, heritage_slug)]
+    for entry_id, slug in sources:
+        if entry_id:
+            row = _one(conn, "SELECT slug, raw_json FROM entries WHERE id = ?", (entry_id,))
+        elif slug:
+            row = _one(conn, "SELECT slug, raw_json FROM entries WHERE slug = ? AND pack = 'heritages'", (slug,))
+        else:
+            row = None
+        if not row:
+            continue
+        curated = _CURATED_SPEED_FEATURES.get(row["slug"])
+        if curated:
+            status.append(curated(level))
+            continue
+        rules = json.loads(row["raw_json"]).get("system", {}).get("rules") or []
+        value = _rule_speed_bonus(rules, level)
+        if value and any(r.get("type") == "status" for r in rules if r.get("selector") == "land-speed"):
+            status.append(value)
+        else:
+            total += value
+    return total + (max(status) if status else 0)
+
+
 #: Foundry's size codes into Pathbuilder's numeric size and its display name.
 _SIZES = {
     "tiny": (1, "Tiny"),
@@ -506,7 +583,13 @@ def _class_baseline(
         "fortitude": _rank_to_project(progression.get("fortitude_rank")),
         "reflex": _rank_to_project(progression.get("reflex_rank")),
         "will": _rank_to_project(progression.get("will_rank")),
-        "classDC": _rank_to_project(progression.get("class_dc_rank")),
+        # Every class starts trained in its class DC (Player Core, each class's "Initial Proficiencies:
+        # CLASS DC Trained in <class> class DC"). The ingested Foundry class items carry no such rank,
+        # so `class_progression.class_dc_rank` is NULL for all classes; fall back to trained (1) rather
+        # than untrained, which understated every class DC by level + 2.
+        "classDC": _rank_to_project(
+            progression.get("class_dc_rank") if progression.get("class_dc_rank") is not None else 1
+        ),
     }
     for group in ("attacks", "defenses"):
         values = json.loads(progression.get(group) or "{}")
@@ -1471,7 +1554,9 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
         for pick in (choice.get("pick") if isinstance(choice.get("pick"), list) else [choice.get("pick")])
     }
     hp_per_level = sum(bonus for slug, bonus in HP_PER_LEVEL_FEATS.items() if slug in feat_slugs)
-    speed_feat_bonus = _feat_flat_bonus(conn, feat_slugs, "land-speed")
+    speed_feat_bonus = _feat_flat_bonus(conn, feat_slugs, "land-speed") + _feature_speed_bonus(
+        conn, features, (document.get("build") or {}).get("heritage"), level
+    )
 
     gear = _replay_gear(conn, document)
     casters, focus, focus_points = _replay_spellcasting(conn, document, proficiencies)
@@ -1481,9 +1566,14 @@ def at_level(document: Any, level: int | None, conn: sqlite3.Connection) -> dict
     # and taking the first listed silently made every Strength Ranger a
     # Dexterity one: two points of class DC, and with it the save DC of every
     # critical specialization effect the character lands.
-    options = json.loads(progression.get("key_ability") or '["str"]') or ["str"]
+    options = json.loads(progression.get("key_ability") or "[]")
     chosen = str(((document.get("build") or {}).get("keyAttribute") or "")).lower()
-    key_ability = chosen if chosen in options else options[0]
+    if options:
+        key_ability = chosen if chosen in options else options[0]
+    else:
+        # Psychic's key attribute is set by its subconscious mind, so the class item lists no options at
+        # all. Falling back to "str" ignored the plan's own choice and understated class DC by up to 4.
+        key_ability = chosen if chosen in ("str", "dex", "con", "int", "wis", "cha") else "int"
 
     return {
         "name": identity.get("name"),
